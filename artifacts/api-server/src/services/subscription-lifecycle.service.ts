@@ -18,6 +18,9 @@ import {
   type SubscriptionStatus,
 } from "../lib/billing/lifecycle.js";
 import { writeSubscriptionAudit, sanitizeReason, type AuditActor, PROVIDER_ACTOR } from "../lib/billing/audit.js";
+import { trialEndPolicyOf } from "../lib/billing/plan-versions.js";
+import { trialGraceEndsAt } from "../lib/billing/lifecycle.js";
+import { invalidateAiSettingsCache } from "../lib/ai-settings-cache.js";
 import { getBillingProvider, type ProviderSubscription } from "../lib/billing/provider.js";
 
 // Batch 20 — the ONLY writer of canonical subscription state. Every change:
@@ -76,6 +79,10 @@ async function commitChange(
   if (!after) throw new AppError(404, "Subscription not found");
   await repo.writeCompanyMirror(before.companyId, mirrorFor(after), tx);
   await writeSubscriptionAudit(tx, { action, companyId: before.companyId, subscriptionId: before.id, before, after, actor, extra });
+  // Batch 41: a plan / version move changes the AI allowance the Enterprise AI
+  // Layer seeds from the version — drop the tenant's cached settings so the next
+  // request resolves the new budget (the cache otherwise refreshes on its TTL).
+  if (after.plan !== before.plan || after.planVersionId !== before.planVersionId) invalidateAiSettingsCache(before.companyId);
   logger.info({ companyId: before.companyId, subscriptionId: before.id, action, from: before.status, to: after.status, actorUserId: actor.userId }, "Subscription lifecycle change");
   return after;
 }
@@ -138,7 +145,19 @@ export async function setPlan(companyId: number, actor: Actor, input: { plan?: u
   if (!(await findAssignablePlan(plan))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
   return withLockedSubscription(companyId, async (tx, sub) => {
     assertTransition("set_plan", sub);
-    if (sub.plan === plan) return sub; // same plan: the tenant's pinned version is never moved implicitly
+    if (sub.plan === plan) {
+      // Same plan: the tenant's pinned version is never moved implicitly (grandfathering), and a
+      // legacy NULL reference stays legacy (the version-1 backfill owns it). Batch 41: the ONE
+      // exception is an INVALID reference (version missing, unpublished or of another plan) —
+      // the operator's explicit re-assignment repairs it to the plan's current published version
+      // with an audit row, so an integrity fault never leaves a tenant without recovery.
+      if (sub.planVersionId == null) return sub;
+      const pinned = await repo.findPlanVersionById(sub.planVersionId, tx);
+      if (pinned && pinned.planId === sub.plan && pinned.publishedAt) return sub;
+      const repair = await resolvePlanAssignment(plan, tx);
+      if (!repair || repair.planVersionId == null) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+      return commitChange(tx, sub, { planVersionId: repair.planVersionId }, "subscription.set_plan", actor, { planVersionId: repair.planVersionId, repairedInvalidReference: true, previousPlanVersionId: sub.planVersionId });
+    }
     // Batch 40: explicit pin to the target plan's current published version.
     const assignment = await resolvePlanAssignment(plan, tx);
     if (!assignment) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
@@ -530,9 +549,25 @@ export async function syncFromProvider(companyId: number, actor: Actor): Promise
 
 // ── System sweep (elapsed manual trials) ─────────────────────────────────────
 
-export async function expireElapsedTrial(tx: Executor, sub: SubscriptionRow, actor: Actor): Promise<SubscriptionRow | null> {
+// Batch 41 (U5): a version with a read-only grace keeps the row `trialing`
+// (read-only through the single entitlement resolver) until trial end + grace;
+// only then does the sweep expire it. The grace is read from the pinned
+// PUBLISHED version; a legacy NULL reference or an invalid reference uses the
+// default policy (no grace) — the sweep never grants a grace it cannot prove.
+export async function trialGraceEndFor(tx: Executor | undefined, sub: SubscriptionRow): Promise<Date | null> {
+  if (!sub.trialExpiresAt) return null;
+  let policy = trialEndPolicyOf(null);
+  if (sub.planVersionId != null) {
+    const version = await repo.findPlanVersionById(sub.planVersionId, tx);
+    if (version && version.planId === sub.plan && version.publishedAt) policy = trialEndPolicyOf(version.trialPolicy);
+  }
+  return trialGraceEndsAt(sub.trialExpiresAt, policy);
+}
+
+export async function expireElapsedTrial(tx: Executor, sub: SubscriptionRow, actor: Actor, now: Date = new Date()): Promise<SubscriptionRow | null> {
   const check = checkTransition("sweep_expire_trial", sub);
   if (!check.ok) return null;
-  if (!sub.trialExpiresAt || sub.trialExpiresAt.getTime() > Date.now()) return null;
-  return commitChange(tx, sub, { status: "expired", endedAt: new Date() }, "subscription.trial_expired", actor, { sweep: true });
+  const graceEnd = await trialGraceEndFor(tx, sub);
+  if (!graceEnd || graceEnd.getTime() > now.getTime()) return null;
+  return commitChange(tx, sub, { status: "expired", endedAt: now }, "subscription.trial_expired", actor, { sweep: true, graceEndedAt: graceEnd.toISOString() });
 }

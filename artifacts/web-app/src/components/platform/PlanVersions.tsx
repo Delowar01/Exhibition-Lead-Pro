@@ -46,8 +46,15 @@ import { Lock, GitBranch, ShieldCheck, AlertTriangle } from "lucide-react";
 // new assignments take the newest published version, and a published version
 // can be retired (kept for its subscribers, no longer assigned). Every control
 // here maps 1:1 to a platform_owner-only API action that is itself guarded and
-// audited server-side; the UI never decides policy. Feature flags and the trial
-// policy are stored, validated and previewed only — enforcement is PB-3.
+// audited server-side; the UI never decides policy.
+//
+// Batch 41 (PB-3): a version's feature matrix is ENFORCED for its pinned tenants
+// only when its enforcement mode is `enforced`; `legacy` versions (every
+// version published before PB-3, and any version that keeps the mode) are
+// grandfathered — every catalog feature stays allowed whatever the recorded
+// flags say. AI/OCR allowances seed the Enterprise AI Layer budget (a tenant's
+// own non-null budget wins), and the trial end-of-trial policy may configure a
+// 1–90 day read-only grace instead of the default immediate block.
 
 type Resource = (typeof LIMIT_RESOURCES)[number];
 const RESOURCE_LABEL: Record<Resource, string> = { contacts: "Contacts", events: "Events", admins: "Admins", employees: "Employees", scans: "Scans", storageMb: "Storage (MB)" };
@@ -76,9 +83,11 @@ export function stateLabel(v: { state: string; isCurrent?: boolean }): string {
 export function stateTone(state: string): "success" | "warning" | "neutral" | "info" {
   return state === "published" ? "success" : state === "draft" ? "warning" : "neutral";
 }
-function compareValue(group: string, v: unknown): string {
-  if (v == null) return group === "limits" ? "Unlimited" : "—";
+function compareValue(group: string, v: unknown, field?: string): string {
+  if (v == null) return group === "limits" ? "Unlimited" : group === "allowances" ? "None" : "—";
   if (typeof v === "boolean") return v ? "on" : "off";
+  if (group === "enforcement") return ENFORCEMENT_LABEL[String(v)] ?? String(v);
+  if (group === "allowances" && field === "aiCostMicroUsdPerMonth" && typeof v === "number") return microToUsdText(v);
   return String(v);
 }
 function issueText(i: PlatformFieldIssue): string {
@@ -100,7 +109,20 @@ export function invalidatePlanQueries(queryClient: QueryClient): Promise<void> {
 }
 
 type TrialForm = { trialDays: string; eligible: boolean; oncePerCompany: boolean; endOutcome: "blocked" | "read_only"; readOnlyGraceDays: string };
-type DraftForm = { name: string; description: string; sortOrder: string; limits: Record<Resource, string>; features: Record<string, boolean>; trial: TrialForm };
+type Enforcement = "legacy" | "enforced";
+type AllowanceForm = { aiTokensPerMonth: string; aiCostUsdPerMonth: string };
+type DraftForm = { name: string; description: string; sortOrder: string; limits: Record<Resource, string>; features: Record<string, boolean>; featureEnforcement: Enforcement; allowances: AllowanceForm; trial: TrialForm };
+
+export const ENFORCEMENT_LABEL: Record<string, string> = { legacy: "Legacy (grandfathered)", enforced: "Enforced", invalid: "Invalid reference" };
+export function enforcementTone(mode: string): "success" | "warning" | "neutral" | "info" {
+  return mode === "enforced" ? "info" : mode === "invalid" ? "warning" : "neutral";
+}
+export function microToUsdText(micro: number | null | undefined): string {
+  return micro == null ? "None" : `$${(micro / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 6 })}`;
+}
+export function tokensText(n: number | null | undefined): string {
+  return n == null ? "None" : n.toLocaleString();
+}
 
 function formFrom(v: PlatformPlanVersionDetail): DraftForm {
   const limits = {} as Record<Resource, string>;
@@ -114,6 +136,11 @@ function formFrom(v: PlatformPlanVersionDetail): DraftForm {
     sortOrder: String(v.snapshot.sortOrder),
     limits,
     features: { ...v.snapshot.features },
+    featureEnforcement: v.featureEnforcement,
+    allowances: {
+      aiTokensPerMonth: v.allowances.aiTokensPerMonth == null ? "" : String(v.allowances.aiTokensPerMonth),
+      aiCostUsdPerMonth: v.allowances.aiCostMicroUsdPerMonth == null ? "" : String(v.allowances.aiCostMicroUsdPerMonth / 1_000_000),
+    },
     trial: {
       trialDays: String(v.trialPolicy.trialDays),
       eligible: v.trialPolicy.eligible,
@@ -136,6 +163,11 @@ function bodyFrom(f: DraftForm): PlatformUpdateDraftInput {
     sortOrder: num(f.sortOrder),
     limits,
     features: { ...f.features },
+    featureEnforcement: f.featureEnforcement,
+    allowances: {
+      aiTokensPerMonth: f.allowances.aiTokensPerMonth.trim() === "" ? null : num(f.allowances.aiTokensPerMonth),
+      aiCostMicroUsdPerMonth: f.allowances.aiCostUsdPerMonth.trim() === "" ? null : Math.round(num(f.allowances.aiCostUsdPerMonth) * 1_000_000),
+    },
     trialPolicy: {
       trialDays: num(f.trial.trialDays),
       eligible: f.trial.eligible,
@@ -361,6 +393,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
               <TableRow>
                 <TableHead>Version</TableHead>
                 <TableHead>State</TableHead>
+                <TableHead>Entitlements</TableHead>
                 <TableHead>Published</TableHead>
                 <TableHead>Retired</TableHead>
                 <TableHead className="text-right">Subscribers</TableHead>
@@ -372,6 +405,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                 <TableRow key={x.id} data-testid={`version-row-${x.id}`} data-version={x.version} data-state={selectedId === x.id ? "selected" : undefined}>
                   <TableCell className="font-medium">{versionLabel(x)}</TableCell>
                   <TableCell><span data-testid={`version-state-${x.id}`}><StatusBadge tone={stateTone(x.state)}>{stateLabel(x)}</StatusBadge></span></TableCell>
+                  <TableCell><span data-testid={`version-enforcement-${x.id}`}><StatusBadge tone={enforcementTone(x.featureEnforcement)}>{ENFORCEMENT_LABEL[x.featureEnforcement] ?? x.featureEnforcement}</StatusBadge></span></TableCell>
                   <TableCell>{fmtDateTime(x.publishedAt)}</TableCell>
                   <TableCell>{fmtDateTime(x.retiredAt)}</TableCell>
                   <TableCell className="text-right tabular-nums" data-testid={`version-subs-${x.id}`}>{x.subscribers}</TableCell>
@@ -399,6 +433,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="text-base font-semibold" data-testid="version-title">{versionLabel(v)} · {v.snapshot.name}</span>
                   <span data-testid="version-state"><StatusBadge tone={stateTone(v.state)}>{stateLabel(v)}</StatusBadge></span>
+                  <span data-testid="version-enforcement"><StatusBadge tone={enforcementTone(v.featureEnforcement)}>{ENFORCEMENT_LABEL[v.featureEnforcement] ?? v.featureEnforcement}</StatusBadge></span>
                   <Badge variant="outline">{v.subscribers} subscriber{v.subscribers === 1 ? "" : "s"}</Badge>
                   {v.publishedAt && <span className="text-muted-foreground">Published {fmtDateTime(v.publishedAt)}</span>}
                   {v.retiredAt && <span className="text-muted-foreground">Retired {fmtDateTime(v.retiredAt)}</span>}
@@ -476,16 +511,48 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
 
                   <div className="space-y-4">
                     <div>
-                      <h4 className="mb-2 text-sm font-semibold">Feature entitlements (preview)</h4>
-                      <p className="mb-2 text-xs text-muted-foreground">The fixed feature catalog every version carries. Stored and previewed only — feature gating is not enforced until PB-3, so existing tenants are never restricted by these flags.</p>
+                      <h4 className="mb-2 text-sm font-semibold">Feature entitlements</h4>
+                      <div className="mb-3 space-y-1.5">
+                        <Label>Enforcement for tenants pinned to this version</Label>
+                        <Select value={form.featureEnforcement} onValueChange={(val) => setForm({ ...form, featureEnforcement: val as Enforcement })}>
+                          <SelectTrigger data-testid="version-enforcement-select"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="legacy">Legacy — grandfathered: every feature stays allowed, flags are recorded only</SelectItem>
+                            <SelectItem value="enforced">Enforced — tenants get exactly the features switched on below</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground" data-testid="version-enforcement-note">
+                          {form.featureEnforcement === "enforced"
+                            ? "Enforced: once published, a tenant assigned to this version is refused every feature switched off here (API 403 FEATURE_NOT_ENTITLED; hidden in the web and mobile apps). Tenants pinned to other versions are never affected."
+                            : "Legacy: the flags below are recorded for information only. Every tenant on this version keeps access to every feature (grandfathered) — identical to versions published before PB-3."}
+                        </p>
+                      </div>
                       <ul className="grid gap-2 sm:grid-cols-2" data-testid="version-features">
                         {Object.keys(form.features).map((k) => (
                           <li key={k} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
-                            <span>{FEATURE_LABEL[k] ?? k}</span>
+                            <span>
+                              {FEATURE_LABEL[k] ?? k}
+                              {form.featureEnforcement === "legacy" && !form.features[k] && <span className="ml-1 text-xs text-muted-foreground">(allowed — grandfathered)</span>}
+                            </span>
                             <Switch checked={form.features[k]} onCheckedChange={(on) => setForm({ ...form, features: { ...form.features, [k]: on } })} aria-label={FEATURE_LABEL[k] ?? k} data-testid={`version-feature-${k}`} />
                           </li>
                         ))}
                       </ul>
+                    </div>
+
+                    <div>
+                      <h4 className="mb-2 text-sm font-semibold">AI / OCR allowances</h4>
+                      <p className="mb-2 text-xs text-muted-foreground">Monthly AI budget seeded into the Enterprise AI Layer for tenants on this version. Blank = no plan allowance (unlimited unless the tenant has its own budget). A tenant's own AI budget override always takes precedence.</p>
+                      <div className="grid gap-3 sm:grid-cols-2" data-testid="version-allowances">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pv-allow-tokens">AI tokens / month</Label>
+                          <Input id="pv-allow-tokens" type="number" min={0} inputMode="numeric" placeholder="No allowance" value={form.allowances.aiTokensPerMonth} onChange={(e) => setForm({ ...form, allowances: { ...form.allowances, aiTokensPerMonth: e.target.value } })} data-testid="version-allowance-tokens" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pv-allow-cost">AI cost / month (USD)</Label>
+                          <Input id="pv-allow-cost" type="number" min={0} step="0.000001" inputMode="decimal" placeholder="No allowance" value={form.allowances.aiCostUsdPerMonth} onChange={(e) => setForm({ ...form, allowances: { ...form.allowances, aiCostUsdPerMonth: e.target.value } })} data-testid="version-allowance-cost" />
+                        </div>
+                      </div>
                     </div>
 
                     <div>
@@ -512,8 +579,8 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                           <Select value={form.trial.endOutcome} onValueChange={(val) => setForm({ ...form, trial: { ...form.trial, endOutcome: val as TrialForm["endOutcome"] } })}>
                             <SelectTrigger data-testid="version-trial-outcome"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="blocked">Blocked (today's behaviour)</SelectItem>
-                              <SelectItem value="read_only">Read-only grace (not supported until PB-3)</SelectItem>
+                              <SelectItem value="blocked">Blocked immediately (platform default)</SelectItem>
+                              <SelectItem value="read_only">Read-only grace, then blocked (needs 1–90 grace days)</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -609,8 +676,8 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                                 {comparison.data.rows.map((r: PlatformCompareRow) => (
                                   <TableRow key={`${r.group}.${r.field}`} data-testid={`compare-row-${r.group}-${r.field}`} data-changed={r.changed ? "true" : "false"} className={r.changed ? "bg-amber-50/60 dark:bg-amber-950/20" : undefined}>
                                     <TableCell><span className="text-muted-foreground">{r.group} · </span>{r.field}</TableCell>
-                                    <TableCell className="tabular-nums">{compareValue(r.group, r.left)}</TableCell>
-                                    <TableCell className={`tabular-nums ${r.changed ? "font-medium" : ""}`}>{compareValue(r.group, r.right)}</TableCell>
+                                    <TableCell className="tabular-nums">{compareValue(r.group, r.left, r.field)}</TableCell>
+                                    <TableCell className={`tabular-nums ${r.changed ? "font-medium" : ""}`}>{compareValue(r.group, r.right, r.field)}</TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>
@@ -730,19 +797,42 @@ function VersionSnapshot({ v }: { v: PlatformPlanVersionDetail }) {
       </div>
       <div className="space-y-4">
         <div>
-          <h4 className="mb-2 text-sm font-semibold">Feature entitlements (preview — not enforced until PB-3)</h4>
+          <h4 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold">
+            Feature entitlements
+            <span data-testid="snapshot-enforcement"><StatusBadge tone={enforcementTone(v.featureEnforcement)}>{ENFORCEMENT_LABEL[v.featureEnforcement] ?? v.featureEnforcement}</StatusBadge></span>
+          </h4>
+          <p className="mb-2 text-xs text-muted-foreground">
+            {v.featureEnforcement === "enforced"
+              ? "Enforced for every tenant pinned to this version: features marked off are refused by the API and hidden in the apps."
+              : "Legacy (grandfathered): every feature is allowed for tenants on this version; recorded flags are informational."}
+          </p>
           <ul className="flex flex-wrap gap-2" data-testid="snapshot-features">
-            {Object.entries(v.snapshot.features).map(([k, on]) => (
-              <li key={k}><Badge variant={on ? "default" : "outline"} data-testid={`snapshot-feature-${k}`}>{FEATURE_LABEL[k] ?? k}: {on ? "on" : "off"}</Badge></li>
-            ))}
+            {Object.entries(v.effectiveFeatures).map(([k, allowed]) => {
+              const recorded = v.snapshot.features[k] === true;
+              return (
+                <li key={k}>
+                  <Badge variant={allowed ? "default" : "outline"} data-testid={`snapshot-feature-${k}`} data-allowed={allowed ? "true" : "false"}>
+                    {FEATURE_LABEL[k] ?? k}: {allowed ? (recorded ? "allowed" : "allowed (grandfathered)") : "denied"}
+                  </Badge>
+                </li>
+              );
+            })}
           </ul>
+        </div>
+        <div>
+          <h4 className="mb-2 text-sm font-semibold">AI / OCR allowances</h4>
+          <div className="grid grid-cols-2 gap-2 text-sm" data-testid="snapshot-allowances">
+            <div className="rounded-md border p-2"><div className="text-muted-foreground">AI tokens / month</div><div className="font-medium tabular-nums" data-testid="snapshot-allowance-tokens">{tokensText(v.allowances.aiTokensPerMonth)}</div></div>
+            <div className="rounded-md border p-2"><div className="text-muted-foreground">AI cost / month</div><div className="font-medium tabular-nums" data-testid="snapshot-allowance-cost">{microToUsdText(v.allowances.aiCostMicroUsdPerMonth)}</div></div>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">A tenant's own AI budget override takes precedence over the plan allowance.</p>
         </div>
         <div>
           <h4 className="mb-2 text-sm font-semibold">Trial policy</h4>
           <div className="grid grid-cols-2 gap-2 text-sm" data-testid="snapshot-trial">
             <div className="rounded-md border p-2"><div className="text-muted-foreground">Trial length</div><div className="font-medium tabular-nums" data-testid="snapshot-trial-days">{v.trialPolicy.trialDays} days</div></div>
             <div className="rounded-md border p-2"><div className="text-muted-foreground">Eligible</div><div className="font-medium">{v.trialPolicy.eligible ? "Yes" : "No"}{v.trialPolicy.oncePerCompany ? " · once per company" : ""}</div></div>
-            <div className="rounded-md border p-2"><div className="text-muted-foreground">End of trial</div><div className="font-medium">{v.trialPolicy.endOutcome === "blocked" ? "Blocked" : `Read-only ${v.trialPolicy.readOnlyGraceDays} d`}</div></div>
+            <div className="rounded-md border p-2"><div className="text-muted-foreground">End of trial</div><div className="font-medium" data-testid="snapshot-trial-outcome">{v.trialPolicy.endOutcome === "blocked" ? "Blocked immediately" : `Read-only for ${v.trialPolicy.readOnlyGraceDays} day${v.trialPolicy.readOnlyGraceDays === 1 ? "" : "s"}, then blocked`}</div></div>
             <div className="rounded-md border p-2"><div className="text-muted-foreground">Prices captured</div><div className="font-medium tabular-nums">{v.snapshot.prices.length}</div></div>
           </div>
         </div>
@@ -778,11 +868,16 @@ function ImpactSummary({ impact, changedRows, compact = false }: { impact: Platf
             {impact.unpinnedSubscribers > 0 ? ` ${impact.unpinnedSubscribers} legacy subscriber${impact.unpinnedSubscribers === 1 ? "" : "s"} must be pinned (version-1 backfill) before publication is allowed.` : ""}
           </p>
           {changedRows.length > 0 ? (
-            <p data-testid="impact-diff">Changes vs the current version: {changedRows.map((r) => `${r.field} ${compareValue(r.group, r.left)} → ${compareValue(r.group, r.right)}`).join("; ")}.</p>
+            <p data-testid="impact-diff">Changes vs the current version: {changedRows.map((r) => `${r.field} ${compareValue(r.group, r.left, r.field)} → ${compareValue(r.group, r.right, r.field)}`).join("; ")}.</p>
           ) : (
             <p className="text-muted-foreground" data-testid="impact-diff">{impact.currentVersion ? "No field differs from the current version." : "First publication of this plan."}</p>
           )}
           {pub.tightenedLimits.length > 0 && <span data-testid="impact-tightened"><StatusBadge tone="warning">tightens {pub.tightenedLimits.join(", ")}</StatusBadge></span>}
+          {changedRows.some((r) => r.group === "enforcement" || r.group === "features") && (
+            <p className="text-muted-foreground" data-testid="impact-entitlements">
+              Feature entitlements change only for tenants assigned to this version after publication; every existing subscriber keeps the entitlements of its pinned version (grandfathered).
+            </p>
+          )}
           <div data-testid="impact-exceeding">
             {exceeding.tenants.length === 0 ? (
               <p className="text-muted-foreground">No current subscriber's usage exceeds the new limits ({exceeding.checked} checked{exceeding.sampled ? ", sampled" : ""}). Existing subscribers are not affected anyway — they stay pinned.</p>

@@ -5,9 +5,11 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlatformPlanAllowances } from './platformPlanAllowances';
 import type { PlatformPlanFeatureMatrix } from './platformPlanFeatureMatrix';
 import type { PlatformPlanLimits } from './platformPlanLimits';
 import type { PlatformPlanVersionPrice } from './platformPlanVersionPrice';
+import type { PlatformPlanVersionSnapshotFeatureEnforcement } from './platformPlanVersionSnapshotFeatureEnforcement';
 
 export interface PlatformPlanVersionSnapshot {
   name: string;
@@ -17,4 +19,7 @@ export interface PlatformPlanVersionSnapshot {
   limits: PlatformPlanLimits;
   features: PlatformPlanFeatureMatrix;
   prices: PlatformPlanVersionPrice[];
+  /** Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered) */
+  featureEnforcement?: PlatformPlanVersionSnapshotFeatureEnforcement;
+  allowances?: PlatformPlanAllowances;
 }

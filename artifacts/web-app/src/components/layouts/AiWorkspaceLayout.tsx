@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { featureAllowed } from "@/lib/entitlements";
 import { Bot, Sparkles, Briefcase, Workflow, LineChart, Layers, SlidersHorizontal } from "lucide-react";
 
 export function AiWorkspaceLayout({ children, activeTab }: { children: React.ReactNode; activeTab: string }) {
@@ -8,15 +9,22 @@ export function AiWorkspaceLayout({ children, activeTab }: { children: React.Rea
   
   const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
   const execPerms = (user?.permissions as Record<string, string[]> | undefined)?.ai_executive ?? [];
-  const canViewExecutive = user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
+  // Batch 41 (PB-3): RBAC first, then the plan version's feature entitlement.
+  const canViewExecutive =
+    user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view")) && featureAllowed(user, "executive.intelligence");
   const assistantPerms = (user?.permissions as Record<string, string[]> | undefined)?.ai_assistant ?? [];
-  const canViewAssistant = user?.role !== "platform_owner" && (isFullAccess || assistantPerms.includes("view"));
+  const canViewAssistant =
+    user?.role !== "platform_owner" &&
+    (isFullAccess || assistantPerms.includes("view")) &&
+    featureAllowed(user, "ai.assistant") &&
+    featureAllowed(user, "ai.command_center");
+  const canViewWorkflow = featureAllowed(user, "workflow.intelligence");
 
   const navItems = [
     ...(canViewAssistant ? [{ id: "command", name: "Command Center", href: "/admin/ai-command", icon: Bot }] : []),
     { id: "insights", name: "Insights Review", href: "/admin/ai-insights", icon: Sparkles },
     { id: "copilot", name: "Sales Copilot", href: "/admin/ai-copilot", icon: Briefcase },
-    { id: "workflow", name: "Workflow Intelligence", href: "/admin/workflow", icon: Workflow },
+    ...(canViewWorkflow ? [{ id: "workflow", name: "Workflow Intelligence", href: "/admin/workflow", icon: Workflow }] : []),
     ...(canViewExecutive ? [{ id: "executive", name: "Executive Intelligence", href: "/admin/executive", icon: LineChart }] : []),
     { id: "batch", name: "Batch Operations", href: "/admin/ai-batch", icon: Layers },
     { id: "settings", name: "Settings", href: "/admin/ai", icon: SlidersHorizontal },

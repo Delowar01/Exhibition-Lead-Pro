@@ -157,11 +157,14 @@ describe("publication validation", () => {
     expect(validateVersionForPublish(off, defaultTrialPolicy(14), ctx).warnings.map((w) => w.code)).toContain("FEATURES_NOT_ENFORCED");
   });
 
-  it("trial policy must be complete and consistent with the approved end-of-trial rule (blocked, no grace)", () => {
+  it("trial policy must be complete and consistent: blocked carries no grace; read-only (Batch 41, U5) needs a 1–90 day grace", () => {
     const grace = validateVersionForPublish(okSnapshot(), { ...defaultTrialPolicy(14), readOnlyGraceDays: 3 }, ctx);
     expect(grace.errors.map((e) => e.code)).toEqual(["TRIAL_GRACE_INCONSISTENT"]);
     const readOnly = validateVersionForPublish(okSnapshot(), { ...defaultTrialPolicy(14), endOutcome: "read_only", readOnlyGraceDays: 7 }, ctx);
-    expect(readOnly.errors.map((e) => e.code)).toEqual(["TRIAL_END_OUTCOME_UNSUPPORTED"]);
+    expect(readOnly.errors).toEqual([]);
+    expect(readOnly.warnings.map((w) => w.code)).toContain("TRIAL_READ_ONLY_GRACE");
+    const readOnlyNoGrace = validateVersionForPublish(okSnapshot(), { ...defaultTrialPolicy(14), endOutcome: "read_only", readOnlyGraceDays: 0 }, ctx);
+    expect(readOnlyNoGrace.errors.map((e) => e.code)).toEqual(["TRIAL_GRACE_REQUIRED"]);
     const incomplete = validateVersionForPublish(okSnapshot(), { trialDays: 14 } as never, ctx);
     expect(incomplete.ok).toBe(false);
     expect(incomplete.errors.map((e) => e.code)).toEqual(expect.arrayContaining(["TRIAL_ELIGIBLE_INVALID", "TRIAL_ONCE_INVALID", "TRIAL_END_OUTCOME_INVALID", "TRIAL_GRACE_INVALID"]));
@@ -184,7 +187,7 @@ describe("comparison", () => {
     const b = { snapshot: { ...okSnapshot(), limits: { ...okSnapshot().limits, contacts: 500, events: 10 } }, trialPolicy: { ...defaultTrialPolicy(14), trialDays: 7 } };
     const rows = compareVersions(a, b);
     expect(rows.filter((r) => r.changed).map((r) => `${r.group}.${r.field}`).sort()).toEqual(["limits.contacts", "limits.events", "trialPolicy.trialDays"]);
-    expect(rows.length).toBe(3 + PLAN_LIMIT_KEYS.length + PLAN_FEATURE_KEYS.length + 5);
+    expect(rows.length).toBe(3 + PLAN_LIMIT_KEYS.length + PLAN_FEATURE_KEYS.length + 5 + 3);
     expect(limitTightens(null, 10)).toBe(true);
     expect(limitTightens(10, null)).toBe(false);
     expect(limitTightens(10, 5)).toBe(true);

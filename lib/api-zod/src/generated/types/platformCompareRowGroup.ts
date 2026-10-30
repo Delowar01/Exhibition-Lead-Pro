@@ -14,4 +14,6 @@ export const PlatformCompareRowGroup = {
   limits: 'limits',
   features: 'features',
   trialPolicy: 'trialPolicy',
+  enforcement: 'enforcement',
+  allowances: 'allowances',
 } as const;

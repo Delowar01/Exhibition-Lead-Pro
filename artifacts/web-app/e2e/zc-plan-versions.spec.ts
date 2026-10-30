@@ -182,7 +182,10 @@ test("platform owner: create → edit → validate → publish → pin → publi
   // 2. Edit the draft: limits, feature matrix, trial policy; save.
   await page.getByTestId("version-limit-contacts").fill("25");
   await page.getByTestId("version-limit-admins").fill("2");
+  // Batch 41: a new draft starts with every catalog feature allowed (legacy default), so the toggle switches the flag OFF.
+  await expect(page.getByTestId("version-feature-ai.assistant")).toHaveAttribute("data-state", "checked");
   await page.getByTestId("version-feature-ai.assistant").click();
+  await expect(page.getByTestId("version-feature-ai.assistant")).toHaveAttribute("data-state", "unchecked");
   await page.getByTestId("version-trial-days").fill("7");
   await page.getByTestId("version-save").click();
   await expect.poll(async () => (await versions()).versions[0]?.snapshot.limits.contacts, { timeout: 10_000 }).toBe(25);
@@ -191,7 +194,9 @@ test("platform owner: create → edit → validate → publish → pin → publi
   v1Id = afterSave.versions[0].id;
   expect(afterSave.versions[0]).toMatchObject({ version: 1, state: "draft" });
   expect(afterSave.versions[0].snapshot.limits).toMatchObject({ contacts: 25, admins: 2 });
-  expect(afterSave.versions[0].snapshot.features["ai.assistant"]).toBe(true);
+  expect(afterSave.versions[0].snapshot.features["ai.assistant"]).toBe(false);
+  expect(afterSave.versions[0].snapshot.features.documents).toBe(true);
+  expect(afterSave.versions[0].featureEnforcement).toBe("legacy"); // recorded only: every feature stays allowed
   expect(afterSave.versions[0].trialPolicy.trialDays).toBe(7);
 
   // 3. Validate: publishable.

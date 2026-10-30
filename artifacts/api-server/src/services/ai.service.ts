@@ -5,6 +5,9 @@ import { config } from "../config.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import * as repo from "../repositories/ai.repository.js";
 import type { RawAgg } from "../repositories/ai.repository.js";
+import * as subsRepo from "../repositories/subscriptions.repository.js";
+import { allowancesOf } from "../lib/billing/plan-versions.js";
+import { getCachedAiSettings, setCachedAiSettings, invalidateAiSettingsCache } from "../lib/ai-settings-cache.js";
 import { AI_FEATURES, type AiFeature, type AiUsage } from "../ai/types.js";
 import { availableProviders } from "../ai/providers/index.js";
 import { geminiProvider } from "../ai/providers/gemini.js";
@@ -24,6 +27,16 @@ import {
 // unlimited budgets). Existing tenants therefore keep working with zero behavior
 // change — the gates only fire when an admin has explicitly disabled a feature or set
 // a budget that has been exhausted.
+//
+// Batch 41 (PB-3.3 / U4) — plan-version AI allowances SEED the monthly budgets
+// through this SAME resolver (no second budget system): for each budget,
+//   explicit tenant budget in ai_settings (non-null)  → wins ("tenant")
+//   else the pinned PUBLISHED plan version's allowance → applies ("plan")
+//   else                                               → unlimited ("none")
+// Legacy / pre-Batch-41 versions carry no allowances, so nothing changes for
+// them; an invalid version reference contributes no allowance either (the
+// limits path already fails closed on it). Reservations, usage accounting and
+// the 429 path are untouched — they read the resolved budget as before.
 
 export interface EffectiveAiSettings {
   companyId: number;
@@ -40,13 +53,13 @@ export interface EffectiveAiSettings {
   workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   updatedAt: Date | null;
+  // Batch 41: where each effective budget comes from (tenant override, plan
+  // version allowance, or none = unlimited) + the allowance itself.
+  budgetSource: { tokens: BudgetSource; cost: BudgetSource };
+  planAllowance: { planVersionId: number | null; aiTokensPerMonth: number | null; aiCostMicroUsdPerMonth: number | null };
 }
 
-interface CacheEntry {
-  value: EffectiveAiSettings;
-  expires: number;
-}
-const settingsCache = new Map<number, CacheEntry>();
+export type BudgetSource = "tenant" | "plan" | "none";
 
 function defaults(companyId: number): EffectiveAiSettings {
   return {
@@ -60,20 +73,49 @@ function defaults(companyId: number): EffectiveAiSettings {
     workflowRules: normalizeWorkflowRules(null),
     hasCustomSettings: false,
     updatedAt: null,
+    budgetSource: { tokens: "none", cost: "none" },
+    planAllowance: { planVersionId: null, aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null },
   };
 }
 
 export function invalidateSettingsCache(companyId: number): void {
-  settingsCache.delete(companyId);
+  invalidateAiSettingsCache(companyId);
+}
+
+// The pinned PUBLISHED plan version's AI allowances (none for a legacy NULL
+// reference, an unpinned tenant, or an invalid reference — fail closed to "no
+// allowance", never to a budget the row cannot prove).
+async function planAllowanceFor(companyId: number): Promise<EffectiveAiSettings["planAllowance"]> {
+  const none = { planVersionId: null, aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null };
+  const sub = await subsRepo.findByCompanyId(companyId);
+  if (!sub || sub.planVersionId == null) return none;
+  const version = await subsRepo.findPlanVersionById(sub.planVersionId);
+  if (!version || version.planId !== sub.plan || !version.publishedAt) return none;
+  const a = allowancesOf(version.snapshot);
+  return { planVersionId: version.id, aiTokensPerMonth: a.aiTokensPerMonth, aiCostMicroUsdPerMonth: a.aiCostMicroUsdPerMonth };
+}
+
+export function applyPlanAllowance(
+  base: Pick<EffectiveAiSettings, "monthlyTokenBudget" | "monthlyCostBudgetMicroUsd">,
+  allowance: EffectiveAiSettings["planAllowance"],
+): Pick<EffectiveAiSettings, "monthlyTokenBudget" | "monthlyCostBudgetMicroUsd" | "budgetSource" | "planAllowance"> {
+  const tokens = base.monthlyTokenBudget != null ? "tenant" : allowance.aiTokensPerMonth != null ? "plan" : "none";
+  const cost = base.monthlyCostBudgetMicroUsd != null ? "tenant" : allowance.aiCostMicroUsdPerMonth != null ? "plan" : "none";
+  return {
+    monthlyTokenBudget: tokens === "tenant" ? base.monthlyTokenBudget : tokens === "plan" ? allowance.aiTokensPerMonth : null,
+    monthlyCostBudgetMicroUsd: cost === "tenant" ? base.monthlyCostBudgetMicroUsd : cost === "plan" ? allowance.aiCostMicroUsdPerMonth : null,
+    budgetSource: { tokens, cost },
+    planAllowance: allowance,
+  };
 }
 
 export async function resolveSettings(companyId: number): Promise<EffectiveAiSettings> {
   const now = Date.now();
-  const cached = settingsCache.get(companyId);
-  if (cached && cached.expires > now) return cached.value;
+  const cached = getCachedAiSettings(companyId, now);
+  if (cached) return cached;
 
   const row = await repo.getSettingsByCompany(companyId);
-  const value: EffectiveAiSettings = row
+  const base: EffectiveAiSettings = row
     ? {
         companyId,
         provider: row.provider,
@@ -85,11 +127,14 @@ export async function resolveSettings(companyId: number): Promise<EffectiveAiSet
         workflowRules: normalizeWorkflowRules(row.workflowRules),
         hasCustomSettings: true,
         updatedAt: row.updatedAt,
+        budgetSource: { tokens: "none", cost: "none" },
+        planAllowance: { planVersionId: null, aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null },
       }
     : defaults(companyId);
+  const value: EffectiveAiSettings = { ...base, ...applyPlanAllowance(base, await planAllowanceFor(companyId)) };
 
   if (config.ai.settingsCacheTtlMs > 0) {
-    settingsCache.set(companyId, { value, expires: now + config.ai.settingsCacheTtlMs });
+    setCachedAiSettings(companyId, value, now + config.ai.settingsCacheTtlMs);
   }
   return value;
 }
@@ -348,6 +393,13 @@ function formatSettings(s: EffectiveAiSettings) {
     hasCustomSettings: s.hasCustomSettings,
     availableProviders: availableProviders(),
     updatedAt: s.updatedAt ? s.updatedAt.toISOString() : null,
+    // Batch 41: provenance of the effective budgets (tenant override > plan allowance > none).
+    budgetSource: s.budgetSource,
+    planAllowance: {
+      planVersionId: s.planAllowance.planVersionId,
+      aiTokensPerMonth: s.planAllowance.aiTokensPerMonth,
+      aiCostBudgetUsd: s.planAllowance.aiCostMicroUsdPerMonth == null ? null : microToUsd(s.planAllowance.aiCostMicroUsdPerMonth),
+    },
   };
 }
 

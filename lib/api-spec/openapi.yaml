@@ -9545,6 +9545,11 @@ components:
           oneOf:
             - $ref: "#/components/schemas/SubscriptionSummary"
             - type: "null"
+        entitlements:
+          oneOf:
+            - $ref: "#/components/schemas/TenantEntitlements"
+            - type: "null"
+          description: Batch 41 — null for platform operators and users without a tenant subscription
 
     UserList:
       type: object
@@ -12815,6 +12820,63 @@ components:
         cancelAtPeriodEnd:
           type: boolean
 
+    TenantEntitlements:
+      type: object
+      description: Batch 41 (PB-3) — the tenant's resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata
+      required: [planVersionId, featureEnforcement, features, trialPolicy]
+      properties:
+        planVersionId:
+          type: ["integer", "null"]
+          description: The pinned plan version (null = legacy NULL reference)
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced, invalid]
+          description: legacy = grandfathered (every catalog feature allowed); enforced = the published version's feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
+          description: Effective allow/deny per catalog feature key
+        trialPolicy:
+          $ref: "#/components/schemas/TrialEndPolicyView"
+
+    TrialEndPolicyView:
+      type: object
+      required: [endOutcome, readOnlyGraceDays, graceEndsAt]
+      properties:
+        endOutcome:
+          type: string
+          enum: [blocked, read_only]
+        readOnlyGraceDays:
+          type: integer
+        graceEndsAt:
+          type: ["string", "null"]
+          format: date-time
+          description: trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise
+
+    PlatformPlanAllowances:
+      type: object
+      description: Batch 41 (U4) — per-version AI/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)
+      required: [aiTokensPerMonth, aiCostMicroUsdPerMonth]
+      properties:
+        aiTokensPerMonth:
+          type: ["integer", "null"]
+        aiCostMicroUsdPerMonth:
+          type: ["integer", "null"]
+
+    PlatformPlanAllowancesInput:
+      type: object
+      description: Partial allowances; null = no plan allowance for that budget
+      properties:
+        aiTokensPerMonth:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 1000000000000
+        aiCostMicroUsdPerMonth:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 1000000000000
+
     EffectiveLimit:
       type: object
       required: [resource, limit, source]
@@ -12897,7 +12959,7 @@ components:
 
     Subscription:
       type: object
-      required: [id, companyId, plan, status, billingSource, accessMode, cancelAtPeriodEnd, statusChangedAt, providerLinked, providerSubscriptionLinked, billing, limits, usage]
+      required: [id, companyId, plan, status, billingSource, accessMode, cancelAtPeriodEnd, statusChangedAt, providerLinked, providerSubscriptionLinked, billing, limits, usage, planVersionId, entitlements]
       properties:
         id:
           type: integer
@@ -12905,6 +12967,11 @@ components:
           type: integer
         plan:
           type: string
+        planVersionId:
+          type: ["integer", "null"]
+          description: The pinned plan version (null = legacy NULL reference)
+        entitlements:
+          $ref: "#/components/schemas/TenantEntitlements"
         status:
           type: string
           enum: [trialing, active, past_due, cancelled, expired, suspended]
@@ -13468,8 +13535,10 @@ components:
         endOfTrialOutcome:
           type: string
           enum: [blocked]
+          description: The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace
         readOnlyGraceDays:
           type: integer
+          description: The platform default grace (0); per-version grace is shown on the version
         manualTrialExpirySweep:
           type: boolean
         rule:
@@ -13579,7 +13648,7 @@ components:
 
     PlatformEffectiveLimitPreview:
       type: object
-      required: [companyId, companyName, currentPlan, currentPlanVersionId, previewPlan, previewVersionId, previewVersion, previewVersionState, isCurrentPlan, status, accessMode, billingSource, rows, changedResources, blockingResources, readOnly, generatedAt]
+      required: [companyId, companyName, currentPlan, currentPlanVersionId, previewPlan, previewVersionId, previewVersion, previewVersionState, isCurrentPlan, status, accessMode, billingSource, rows, changedResources, blockingResources, featureEnforcement, features, changedFeatures, trialPolicy, aiAllowances, readOnly, generatedAt]
       properties:
         companyId:
           type: integer
@@ -13620,11 +13689,96 @@ components:
           type: array
           items:
             type: string
+        featureEnforcement:
+          type: object
+          description: Batch 41 — the previewed version's enforcement mode vs the tenant's current mode
+          required: [preview, current]
+          properties:
+            preview:
+              type: string
+              enum: [legacy, enforced]
+            current:
+              type: string
+              enum: [legacy, enforced, invalid]
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformEffectiveFeaturePreviewRow"
+        changedFeatures:
+          type: array
+          items:
+            type: string
+        trialPolicy:
+          type: object
+          required: [preview, current]
+          properties:
+            preview:
+              $ref: "#/components/schemas/TrialEndPolicyView"
+            current:
+              $ref: "#/components/schemas/TrialEndPolicyView"
+        aiAllowances:
+          type: object
+          description: Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)
+          required: [tenantOverride, preview, current]
+          properties:
+            tenantOverride:
+              type: object
+              required: [monthlyTokenBudget, monthlyCostBudgetMicroUsd]
+              properties:
+                monthlyTokenBudget:
+                  type: ["integer", "null"]
+                monthlyCostBudgetMicroUsd:
+                  type: ["integer", "null"]
+            preview:
+              $ref: "#/components/schemas/PlatformAiAllowancePreview"
+            current:
+              $ref: "#/components/schemas/PlatformAiAllowancePreview"
         readOnly:
           type: boolean
         generatedAt:
           type: string
           format: date-time
+
+    PlatformEffectiveFeaturePreviewRow:
+      type: object
+      required: [feature, label, recorded, previewAllowed, currentAllowed, changes]
+      properties:
+        feature:
+          type: string
+        label:
+          type: string
+        recorded:
+          type: boolean
+          description: The flag recorded in the previewed snapshot
+        previewAllowed:
+          type: boolean
+          description: What the previewed version would entitle (all true under legacy enforcement)
+        currentAllowed:
+          type: boolean
+          description: What the tenant is entitled to today
+        changes:
+          type: boolean
+
+    PlatformAiAllowancePreview:
+      type: object
+      required: [allowance, effectiveTokenBudget, effectiveCostBudgetMicroUsd, source]
+      properties:
+        allowance:
+          $ref: "#/components/schemas/PlatformPlanAllowances"
+        effectiveTokenBudget:
+          type: ["integer", "null"]
+        effectiveCostBudgetMicroUsd:
+          type: ["integer", "null"]
+        source:
+          type: object
+          required: [tokens, cost]
+          properties:
+            tokens:
+              type: string
+              enum: [tenant, plan, none]
+            cost:
+              type: string
+              enum: [tenant, plan, none]
 
 
     PlatformPlanLimitsInput:
@@ -13652,7 +13806,7 @@ components:
 
     PlatformPlanFeatureMatrix:
       type: object
-      description: The fixed feature catalog (U2); informational until feature gating (PB-3) is approved
+      description: The fixed feature catalog (U2); enforced server-side when the version's featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`
       additionalProperties:
         type: boolean
 
@@ -13730,6 +13884,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlatformPlanVersionPrice"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+          description: Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowances"
 
     PlatformPlanVersionSummary:
       type: object
@@ -13753,7 +13913,7 @@ components:
 
     PlatformPlanVersion:
       type: object
-      required: [id, planId, version, state, isCurrent, snapshot, trialPolicy, subscribers, publishedAt, publishedBy, retiredAt, createdAt, updatedAt]
+      required: [id, planId, version, state, isCurrent, snapshot, trialPolicy, subscribers, publishedAt, publishedBy, retiredAt, createdAt, updatedAt, featureEnforcement, effectiveFeatures, allowances]
       properties:
         id:
           type: integer
@@ -13771,6 +13931,15 @@ components:
           $ref: "#/components/schemas/PlatformPlanVersionSnapshot"
         trialPolicy:
           $ref: "#/components/schemas/PlatformPlanTrialPolicySpec"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+          description: Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants
+        effectiveFeatures:
+          $ref: "#/components/schemas/PlatformPlanFeatureMatrix"
+          description: What a tenant pinned to this version is actually allowed (all true under legacy)
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowances"
         subscribers:
           type: integer
         publishedAt:
@@ -13891,7 +14060,7 @@ components:
       properties:
         group:
           type: string
-          enum: [display, limits, features, trialPolicy]
+          enum: [display, limits, features, trialPolicy, enforcement, allowances]
         field:
           type: string
         left:
@@ -14080,6 +14249,11 @@ components:
           $ref: "#/components/schemas/PlatformPlanLimitsInput"
         features:
           $ref: "#/components/schemas/PlatformPlanFeatureMatrix"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowancesInput"
         trialPolicy:
           $ref: "#/components/schemas/PlatformPlanTrialPolicyInput"
 
@@ -14122,6 +14296,11 @@ components:
           $ref: "#/components/schemas/PlatformPlanLimitsInput"
         features:
           $ref: "#/components/schemas/PlatformPlanFeatureMatrix"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowancesInput"
         trialPolicy:
           $ref: "#/components/schemas/PlatformPlanTrialPolicyInput"
 
@@ -14869,6 +15048,8 @@ components:
           workflowRules,
           hasCustomSettings,
           availableProviders,
+          budgetSource,
+          planAllowance,
         ]
       properties:
         companyId:
@@ -14884,9 +15065,32 @@ components:
         monthlyTokenBudget:
           type: integer
           nullable: true
+          description: The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited)
         monthlyCostBudgetUsd:
           type: number
           nullable: true
+          description: The EFFECTIVE monthly cost budget in USD (same precedence)
+        budgetSource:
+          type: object
+          description: Batch 41 (U4) — where each effective budget comes from
+          required: [tokens, cost]
+          properties:
+            tokens:
+              type: string
+              enum: [tenant, plan, none]
+            cost:
+              type: string
+              enum: [tenant, plan, none]
+        planAllowance:
+          type: object
+          required: [planVersionId, aiTokensPerMonth, aiCostBudgetUsd]
+          properties:
+            planVersionId:
+              type: ["integer", "null"]
+            aiTokensPerMonth:
+              type: ["integer", "null"]
+            aiCostBudgetUsd:
+              type: ["number", "null"]
         workflowRules:
           $ref: "#/components/schemas/WorkflowRules"
         hasCustomSettings:

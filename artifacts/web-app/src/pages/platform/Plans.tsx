@@ -34,7 +34,9 @@ import { PageHeader, MetricCard, StatusBadge, TableSkeleton, EmptyState, ErrorSt
 import { useToast } from "@/hooks/use-toast";
 import { Layers, CreditCard, SlidersHorizontal, Building2, Search, Lock, Plus, Copy, Archive } from "lucide-react";
 import { STATUS_LABEL, LIMIT_RESOURCES, statusTone, fmt, errMessage } from "@/components/platform/SubscriptionManager";
-import { PlanVersions, invalidatePlanQueries, versionLabel, stateLabel } from "@/components/platform/PlanVersions";
+import { PlanVersions, invalidatePlanQueries, versionLabel, stateLabel, ENFORCEMENT_LABEL, enforcementTone, microToUsdText, tokensText } from "@/components/platform/PlanVersions";
+
+const BUDGET_SOURCE_LABEL: Record<string, string> = { tenant: "tenant override", plan: "plan allowance", none: "none (unlimited)" };
 
 // Batch 39 laid the read-only foundation (catalog, detail, effective-limit
 // preview over the SAME resolver the product enforces with). Batch 40 turns it
@@ -574,6 +576,81 @@ export default function PlatformPlans() {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+              {/* Batch 41 (PB-3): feature entitlements, trial policy and AI allowances — preview vs current, from the SAME server decision path the API enforces with. */}
+              <div className="grid gap-4 lg:grid-cols-2" data-testid="preview-entitlements">
+                <div>
+                  <h4 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold">
+                    Feature entitlements
+                    <span data-testid="preview-enforcement-preview"><StatusBadge tone={enforcementTone(preview.data.featureEnforcement.preview)}>preview: {ENFORCEMENT_LABEL[preview.data.featureEnforcement.preview] ?? preview.data.featureEnforcement.preview}</StatusBadge></span>
+                    <span data-testid="preview-enforcement-current"><StatusBadge tone={enforcementTone(preview.data.featureEnforcement.current)}>current: {ENFORCEMENT_LABEL[preview.data.featureEnforcement.current] ?? preview.data.featureEnforcement.current}</StatusBadge></span>
+                  </h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Feature</TableHead>
+                        <TableHead>Recorded</TableHead>
+                        <TableHead>Previewed access</TableHead>
+                        <TableHead>Current access</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {preview.data.features.map((f) => (
+                        <TableRow key={f.feature} data-testid={`preview-feature-${f.feature}`} data-preview-allowed={f.previewAllowed ? "true" : "false"} data-current-allowed={f.currentAllowed ? "true" : "false"}>
+                          <TableCell>{f.label}</TableCell>
+                          <TableCell className="text-muted-foreground">{f.recorded ? "on" : "off"}</TableCell>
+                          <TableCell className="font-medium">{f.previewAllowed ? (f.recorded ? "allowed" : "allowed (grandfathered)") : "denied"}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span>{f.currentAllowed ? "allowed" : "denied"}</span>
+                              {f.changes && <StatusBadge tone="warning">changes</StatusBadge>}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <p className="mt-1 text-xs text-muted-foreground" data-testid="preview-features-note">
+                    {preview.data.changedFeatures.length === 0 ? "No feature access would change for this tenant." : `Would change: ${preview.data.changedFeatures.join(", ")}.`} Existing subscribers are never moved by a publication; a change applies only when this tenant is assigned the previewed version.
+                  </p>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 text-sm font-semibold">Trial end policy</h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm" data-testid="preview-trial">
+                      <div className="rounded-md border p-2"><div className="text-muted-foreground">Previewed</div><div className="font-medium" data-testid="preview-trial-preview">{preview.data.trialPolicy.preview.endOutcome === "blocked" ? "Blocked immediately" : `Read-only for ${preview.data.trialPolicy.preview.readOnlyGraceDays} d, then blocked`}</div></div>
+                      <div className="rounded-md border p-2"><div className="text-muted-foreground">Current</div><div className="font-medium" data-testid="preview-trial-current">{preview.data.trialPolicy.current.endOutcome === "blocked" ? "Blocked immediately" : `Read-only for ${preview.data.trialPolicy.current.readOnlyGraceDays} d, then blocked`}{preview.data.trialPolicy.current.graceEndsAt ? ` · grace ends ${new Date(preview.data.trialPolicy.current.graceEndsAt).toLocaleString()}` : ""}</div></div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="mb-2 text-sm font-semibold">AI / OCR allowances</h4>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Budget</TableHead>
+                          <TableHead>Tenant override</TableHead>
+                          <TableHead>Previewed</TableHead>
+                          <TableHead>Current</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow data-testid="preview-allowance-tokens">
+                          <TableCell>AI tokens / month</TableCell>
+                          <TableCell className="tabular-nums">{tokensText(preview.data.aiAllowances.tenantOverride.monthlyTokenBudget)}</TableCell>
+                          <TableCell className="tabular-nums">{tokensText(preview.data.aiAllowances.preview.effectiveTokenBudget)} <span className="text-xs text-muted-foreground">({BUDGET_SOURCE_LABEL[preview.data.aiAllowances.preview.source.tokens]}; plan {tokensText(preview.data.aiAllowances.preview.allowance.aiTokensPerMonth)})</span></TableCell>
+                          <TableCell className="tabular-nums">{tokensText(preview.data.aiAllowances.current.effectiveTokenBudget)} <span className="text-xs text-muted-foreground">({BUDGET_SOURCE_LABEL[preview.data.aiAllowances.current.source.tokens]})</span></TableCell>
+                        </TableRow>
+                        <TableRow data-testid="preview-allowance-cost">
+                          <TableCell>AI cost / month</TableCell>
+                          <TableCell className="tabular-nums">{microToUsdText(preview.data.aiAllowances.tenantOverride.monthlyCostBudgetMicroUsd)}</TableCell>
+                          <TableCell className="tabular-nums">{microToUsdText(preview.data.aiAllowances.preview.effectiveCostBudgetMicroUsd)} <span className="text-xs text-muted-foreground">({BUDGET_SOURCE_LABEL[preview.data.aiAllowances.preview.source.cost]}; plan {microToUsdText(preview.data.aiAllowances.preview.allowance.aiCostMicroUsdPerMonth)})</span></TableCell>
+                          <TableCell className="tabular-nums">{microToUsdText(preview.data.aiAllowances.current.effectiveCostBudgetMicroUsd)} <span className="text-xs text-muted-foreground">({BUDGET_SOURCE_LABEL[preview.data.aiAllowances.current.source.cost]})</span></TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                    <p className="mt-1 text-xs text-muted-foreground">Precedence: a tenant's own AI budget override, else the pinned version's allowance, else unlimited. Budgets are enforced by the Enterprise AI Layer.</p>
+                  </div>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground" data-testid="preview-footnote">
                 {preview.data.changedResources.length === 0 ? "No effective limit would change." : `Would change: ${preview.data.changedResources.join(", ")}.`}{" "}

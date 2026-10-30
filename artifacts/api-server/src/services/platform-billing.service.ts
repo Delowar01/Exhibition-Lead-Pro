@@ -8,6 +8,7 @@ import { resolveEntitlement, normalizeLegacyStatus, allowedActions, SUBSCRIPTION
 import { findPlanRow } from "../lib/billing/plan-catalog.js";
 import { getBillingProvider, BillingProviderError } from "../lib/billing/provider.js";
 import { projectSubscription, priceView } from "./subscriptions.service.js";
+import { resolveSubscriptionContext } from "../lib/company-access.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { auditLogsTable } from "@workspace/db";
 import type { AuditActor } from "../lib/billing/audit.js";
@@ -36,9 +37,13 @@ export async function listSubscriptions(params: ListParams) {
   const plan = params.plan && /^[a-z_]{1,32}$/.test(params.plan) ? params.plan : undefined;
   const { rows, total } = await repo.listWithCompanies({ status, plan, billingSource, search: params.search?.trim() || undefined, limit, offset });
   const now = new Date();
+  // Batch 41: accessMode must reflect the version's trial policy (read-only
+  // grace) — the same decision path as the per-request gate.
+  const contexts = new Map<number, Awaited<ReturnType<typeof resolveSubscriptionContext>>>();
+  for (const r of rows) contexts.set(r.id, await resolveSubscriptionContext(r, now));
   return {
     subscriptions: rows.map((r) => {
-      const e = resolveEntitlement(r, now);
+      const e = contexts.get(r.id)?.entitlement ?? resolveEntitlement(r, now);
       return {
         id: r.id,
         companyId: r.companyId,

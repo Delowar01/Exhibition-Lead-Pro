@@ -43,11 +43,30 @@ export interface EntitlementInput {
   cancelAtPeriodEnd?: boolean;
 }
 
+// Batch 41 (U5): the end-of-trial policy of the subscriber's PUBLISHED plan
+// version. The default (and the legacy / NULL-reference behaviour) is blocked at
+// the trial end with no grace; a version may configure a read-only grace of
+// 1..90 days. The caller (lib/company-access.ts) resolves the policy from the
+// pinned version — this module stays pure.
+export interface TrialEndPolicy {
+  endOutcome: "blocked" | "read_only";
+  readOnlyGraceDays: number;
+}
+export const DEFAULT_TRIAL_END_POLICY: TrialEndPolicy = { endOutcome: "blocked", readOnlyGraceDays: 0 };
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The instant a trial's read-only grace ends (= the trial end when there is no grace).
+export function trialGraceEndsAt(trialExpiresAt: Date, policy: TrialEndPolicy = DEFAULT_TRIAL_END_POLICY): Date {
+  if (policy.endOutcome !== "read_only" || !(policy.readOnlyGraceDays > 0)) return trialExpiresAt;
+  return new Date(trialExpiresAt.getTime() + policy.readOnlyGraceDays * DAY_MS);
+}
+
 export type EntitlementReason =
   | "SUBSCRIPTION_MISSING"
   | "SUBSCRIPTION_SUSPENDED"
   | "SUBSCRIPTION_EXPIRED"
   | "TRIAL_ENDED"
+  | "TRIAL_ENDED_GRACE"
   | "PAST_DUE"
   | "SUBSCRIPTION_CANCELLED"
   | "UNKNOWN_STATUS";
@@ -64,6 +83,7 @@ const MESSAGES: Record<EntitlementReason, string> = {
   SUBSCRIPTION_SUSPENDED: "Your company account has been suspended. Please contact support.",
   SUBSCRIPTION_EXPIRED: "Your subscription has expired. Please contact support to renew.",
   TRIAL_ENDED: "Your free trial has ended. Please contact support to activate your subscription.",
+  TRIAL_ENDED_GRACE: "Your free trial has ended. Access is read-only during the grace period; contact support to activate your subscription.",
   PAST_DUE: "Your subscription payment is past due. Access is read-only until billing is updated.",
   SUBSCRIPTION_CANCELLED: "Your subscription is cancelled. Access is read-only until it is reactivated.",
   UNKNOWN_STATUS: "Your subscription is in an unrecognized state. Please contact support.",
@@ -75,13 +95,15 @@ export function entitlementMessage(code: EntitlementReason): string {
 
 // The single access policy (see docs/B20_SUBSCRIPTION_LIFECYCLE.md):
 //   trialing (before trial end) → full     trialing (after)  → blocked (TRIAL_ENDED)
+//     Batch 41: with a read-only grace policy, trialing after the end and before
+//     end + grace → read_only (TRIAL_ENDED_GRACE); after end + grace → blocked
 //   active                      → full     past_due          → read_only
 //   cancelled                   → read_only expired/suspended → blocked
 //   missing row                 → blocked (fail closed; the repair command
 //                                 guarantees a row before the new API serves)
 // A Stripe cancellation scheduled for period end keeps `active` until the
 // provider reports the cancellation, so cancelAtPeriodEnd never blocks on its own.
-export function resolveEntitlement(sub: EntitlementInput | null | undefined, now: Date = new Date()): Entitlement {
+export function resolveEntitlement(sub: EntitlementInput | null | undefined, now: Date = new Date(), trialPolicy: TrialEndPolicy = DEFAULT_TRIAL_END_POLICY): Entitlement {
   if (!sub) return { accessMode: "blocked", reasonCode: "SUBSCRIPTION_MISSING", message: MESSAGES.SUBSCRIPTION_MISSING };
   const status = normalizeLegacyStatus(sub.status);
   switch (status) {
@@ -91,6 +113,9 @@ export function resolveEntitlement(sub: EntitlementInput | null | undefined, now
       return { accessMode: "blocked", reasonCode: "SUBSCRIPTION_EXPIRED", message: MESSAGES.SUBSCRIPTION_EXPIRED };
     case "trialing":
       if (sub.trialExpiresAt && sub.trialExpiresAt.getTime() <= now.getTime()) {
+        if (now.getTime() < trialGraceEndsAt(sub.trialExpiresAt, trialPolicy).getTime()) {
+          return { accessMode: "read_only", reasonCode: "TRIAL_ENDED_GRACE", message: MESSAGES.TRIAL_ENDED_GRACE };
+        }
         return { accessMode: "blocked", reasonCode: "TRIAL_ENDED", message: MESSAGES.TRIAL_ENDED };
       }
       return { accessMode: "full", reasonCode: null, message: null };

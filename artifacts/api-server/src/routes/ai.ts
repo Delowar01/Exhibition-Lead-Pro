@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requireRole, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireFeature } from "../lib/feature-entitlements.js";
 import { auditMutations } from "../lib/audit.js";
 import { microCache } from "../middlewares/microCache.js";
 import * as ai from "../services/ai.service.js";
@@ -218,6 +219,8 @@ router.get("/ai/copilot/:entityType/:id", requirePermission("ai_copilot", "view"
 // every non-GET audited. Permission matrix: view (read), generate (analyze/batch), accept
 // (accept/dismiss a recommendation).
 router.use("/ai/workflow", requireTenantUser);
+// Batch 41 (PB-3): plan-version feature gate (legacy versions allow everything).
+router.use("/ai/workflow", requireFeature("workflow.intelligence"));
 router.use("/ai/workflow", blockReadOnlyMutations);
 router.use("/ai/workflow", auditMutations("ai_workflow"));
 
@@ -318,6 +321,12 @@ router.get("/ai/workflow/:entityType/:id", requirePermission("ai_workflow", "vie
 // each underlying module's permission is re-checked inside the service.
 // Reads gate on ai_assistant.view; conversation/message writes gate on ai_assistant.use.
 router.use("/ai/assistant", requireTenantUser);
+// Batch 41 (PB-3): the AI Assistant (mobile + web) and the web AI Command
+// Center both run on the assistant conversation routes; the Command Center is
+// the web surface of the same capability, so a version that denies EITHER
+// `ai.assistant` or `ai.command_center` gates these routes (deny wins).
+router.use("/ai/assistant", requireFeature("ai.assistant"));
+router.use("/ai/assistant", requireFeature("ai.command_center"));
 router.use("/ai/assistant", blockReadOnlyMutations);
 router.use("/ai/assistant", auditMutations("ai_assistant"));
 

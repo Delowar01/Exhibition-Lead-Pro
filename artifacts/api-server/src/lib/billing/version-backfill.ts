@@ -3,9 +3,10 @@ import type { Executor } from "../../repositories/base.js";
 import * as repo from "../../repositories/subscriptions.repository.js";
 import type { PlanRow, PlanVersionRow, SubscriptionRow } from "../../repositories/subscriptions.repository.js";
 import { effectiveLimitsFor } from "../../services/entitlements.service.js";
-import { resolveEntitlement, LIMIT_RESOURCES } from "./lifecycle.js";
+import { LIMIT_RESOURCES } from "./lifecycle.js";
 import { writeSubscriptionAudit, type AuditActor } from "./audit.js";
-import { defaultTrialPolicy, snapshotFromPlanRow } from "./plan-versions.js";
+import { defaultTrialPolicy, snapshotFromPlanRow, PLAN_FEATURE_KEYS } from "./plan-versions.js";
+import { resolveSubscriptionContext } from "../company-access.js";
 
 // Batch 40 — VERSION-1 COMPATIBILITY BACKFILL (idempotent, dry-run first).
 //
@@ -22,6 +23,18 @@ import { defaultTrialPolicy, snapshotFromPlanRow } from "./plan-versions.js";
 // Nothing here is scheduled or run at start-up: it is invoked explicitly by
 // artifacts/api-server/scripts/backfill-plan-versions.ts (or by tests). It must
 // never run against production without the owner's separate authorization.
+//
+// Batch 41 — SAFETY HARDENING (the Batch 40 defects corrected here):
+//   • an UNPINNABLE subscription (plan missing / not published / no published
+//     version) can never yield a COMPLETE or APPLIED verdict: the run is rolled
+//     back with verdict INCOMPLETE and every diagnostic kept (nothing partial
+//     is ever committed);
+//   • an INTEGRITY ERROR in a BEFORE or AFTER entitlement snapshot (the limits
+//     resolver failed closed for a row) is never counted as parity: such a row
+//     is a mismatch by definition and the run is rolled back with verdict
+//     INTEGRITY_ERROR;
+//   • the report says explicitly `complete`, `verdict`, `integrityErrors` and
+//     the evaluation instant; dry-run-first and idempotency are unchanged.
 
 export const BACKFILL_ACTOR: AuditActor = { userId: null, userName: "system:plan-version-backfill", ipAddress: null };
 
@@ -43,6 +56,16 @@ export interface EntitlementSnapshotRow {
   effective: Array<{ resource: string; limit: number | null; source: string }> | { error: string };
   stripePriceId: string | null;
   stripeSubscriptionBound: boolean;
+  // Batch 41 (PB-3): the feature entitlements and trial policy the gate applies
+  // (a legacy NULL reference and its version-1 pin must agree: all allowed,
+  // blocked at the trial end).
+  featureEnforcement: string;
+  features: Record<string, boolean>;
+  trialPolicy: { endOutcome: string; readOnlyGraceDays: number };
+}
+
+export function snapshotHasIntegrityError(row: Pick<EntitlementSnapshotRow, "effective">): boolean {
+  return !Array.isArray(row.effective);
 }
 
 // Fields compared BEFORE vs AFTER (everything except the version reference itself).
@@ -62,6 +85,9 @@ const COMPARED: Array<keyof EntitlementSnapshotRow> = [
   "effective",
   "stripePriceId",
   "stripeSubscriptionBound",
+  "featureEnforcement",
+  "features",
+  "trialPolicy",
 ];
 
 export async function snapshotSubscription(sub: SubscriptionRow, now: Date, tx?: Executor): Promise<EntitlementSnapshotRow> {
@@ -75,7 +101,8 @@ export async function snapshotSubscription(sub: SubscriptionRow, now: Date, tx?:
   } catch (err) {
     effective = { error: (err as { code?: string }).code ?? "ERROR" };
   }
-  const ent = resolveEntitlement(sub, now);
+  const ctx = await resolveSubscriptionContext(sub, now, tx);
+  const ent = ctx.entitlement;
   return {
     companyId: sub.companyId,
     subscriptionId: sub.id,
@@ -94,6 +121,9 @@ export async function snapshotSubscription(sub: SubscriptionRow, now: Date, tx?:
     effective,
     stripePriceId: sub.stripePriceId,
     stripeSubscriptionBound: !!sub.stripeSubscriptionId,
+    featureEnforcement: ctx.features.enforcement,
+    features: Object.fromEntries(PLAN_FEATURE_KEYS.map((k) => [k, ctx.features.allowed[k]])),
+    trialPolicy: { endOutcome: ctx.trialPolicy.endOutcome, readOnlyGraceDays: ctx.trialPolicy.readOnlyGraceDays },
   };
 }
 
@@ -112,6 +142,9 @@ export interface SnapshotMismatch {
 }
 
 // Field-by-field comparison; the version reference is the only field allowed to change.
+// Batch 41: an integrity error on EITHER side is a mismatch by definition — two
+// failed resolutions are never "equal" entitlements (the Batch 40 comparison
+// treated `{ error }` == `{ error }` as parity).
 export function compareSnapshots(before: EntitlementSnapshotRow[], after: EntitlementSnapshotRow[]): SnapshotMismatch[] {
   const out: SnapshotMismatch[] = [];
   const byCompany = new Map(after.map((r) => [r.companyId, r]));
@@ -120,6 +153,9 @@ export function compareSnapshots(before: EntitlementSnapshotRow[], after: Entitl
     if (!a) {
       out.push({ companyId: b.companyId, field: "row", before: "present", after: "missing" });
       continue;
+    }
+    if (snapshotHasIntegrityError(b) || snapshotHasIntegrityError(a)) {
+      out.push({ companyId: b.companyId, field: "effective.integrity", before: b.effective, after: a.effective });
     }
     for (const f of COMPARED) {
       const bv = JSON.stringify(b[f] ?? null);
@@ -151,10 +187,27 @@ export interface BackfillUnpinnable {
   planId: string;
   reason: "plan_not_published" | "plan_has_no_published_version" | "plan_missing";
 }
+export interface BackfillIntegrityError {
+  phase: "before" | "after";
+  companyId: number;
+  subscriptionId: number;
+  code: string;
+}
+
+// Batch 41 verdicts:
+//   APPLIED             every reference resolved, parity proven, committed
+//   DRY_RUN_OK          same as APPLIED but rolled back on purpose (nothing written)
+//   INCOMPLETE          at least one subscription could not be pinned — rolled back
+//   INTEGRITY_ERROR     a BEFORE/AFTER snapshot failed to resolve — rolled back
+//   VERIFICATION_FAILED BEFORE != AFTER for a tenant — rolled back
+export type BackfillVerdict = "APPLIED" | "DRY_RUN_OK" | "INCOMPLETE" | "INTEGRITY_ERROR" | "VERIFICATION_FAILED";
+
 export interface BackfillReport {
   mode: "dry-run" | "apply";
   startedAt: string;
   finishedAt: string;
+  // The instant every entitlement was evaluated at (the caller's `now`).
+  evaluationInstant: string;
   plans: BackfillPlanEntry[];
   subscriptions: {
     total: number;
@@ -163,6 +216,12 @@ export interface BackfillReport {
     unpinnable: BackfillUnpinnable[];
   };
   verification: { compared: number; mismatches: SnapshotMismatch[] };
+  integrityErrors: BackfillIntegrityError[];
+  // true only when EVERY NULL reference was (or, in a dry run, would be)
+  // resolved and parity was proven for every tenant. Never true with an
+  // unpinnable subscription or an integrity error.
+  complete: boolean;
+  verdict: BackfillVerdict;
   applied: boolean;
   rolledBack: boolean;
   reason: string | null;
@@ -188,19 +247,35 @@ export async function runVersionBackfill(opts: BackfillOptions): Promise<Backfil
     mode: opts.apply ? "apply" : "dry-run",
     startedAt,
     finishedAt: new Date().toISOString(),
+    evaluationInstant: now.toISOString(),
     plans: [],
     subscriptions: { total: 0, alreadyPinned: 0, pinned: [], unpinnable: [] },
     verification: { compared: 0, mismatches: [] },
+    integrityErrors: [],
+    complete: false,
+    verdict: "INCOMPLETE",
     applied: false,
     rolledBack: false,
     reason: null,
   });
+  const integrityErrorsOf = (phase: "before" | "after", rows: EntitlementSnapshotRow[]): BackfillIntegrityError[] =>
+    rows.filter(snapshotHasIntegrityError).map((r) => ({ phase, companyId: r.companyId, subscriptionId: r.subscriptionId, code: (r.effective as { error: string }).error }));
   try {
     return await db.transaction(async (tx) => {
       const report = base();
-      // 1. BEFORE — every subscription's entitlement as it is today.
+      // 1. BEFORE — every subscription's entitlement as it is today. A row whose
+      //    entitlement cannot be resolved is an integrity fault: refuse before
+      //    touching anything (no version, no pin), with the diagnostics kept.
       const before = await entitlementSnapshot(now, tx);
       report.subscriptions.total = before.length;
+      report.integrityErrors.push(...integrityErrorsOf("before", before));
+      if (report.integrityErrors.length > 0) {
+        report.finishedAt = new Date().toISOString();
+        report.verdict = "INTEGRITY_ERROR";
+        report.rolledBack = true;
+        report.reason = `${report.integrityErrors.length} subscription(s) could not resolve their entitlement before the backfill; nothing was changed`;
+        throw new RollbackSignal(report);
+      }
       // 2. Plans: lock every row; create version 1 where no version exists.
       const plans = await repo.lockAllPlans(tx);
       const currentByPlan = new Map<string, PlanVersionRow>();
@@ -251,21 +326,43 @@ export async function runVersionBackfill(opts: BackfillOptions): Promise<Backfil
         await writeSubscriptionAudit(tx, { action: "subscription.pin_version", companyId: sub.companyId, subscriptionId: sub.id, before: sub, after, actor, extra: { backfill: true, planVersionId: version.id, version: version.version } });
         report.subscriptions.pinned.push({ companyId: sub.companyId, subscriptionId: sub.id, planId: sub.plan, versionId: version.id, version: version.version });
       }
-      // 4. AFTER — identical entitlement required for every subscription.
+      // 4. AFTER — identical entitlement required for every subscription. An
+      //    integrity error here (a pin that made a row unresolvable) is never
+      //    parity: it is reported and the whole run rolls back.
       const after = await entitlementSnapshot(now, tx);
       report.verification.compared = before.length;
       report.verification.mismatches = compareSnapshots(before, after);
+      report.integrityErrors.push(...integrityErrorsOf("after", after));
       report.finishedAt = new Date().toISOString();
+      if (report.integrityErrors.length > 0) {
+        report.verdict = "INTEGRITY_ERROR";
+        report.rolledBack = true;
+        report.reason = `${report.integrityErrors.length} subscription(s) could not resolve their entitlement after the pins; nothing was changed`;
+        throw new RollbackSignal(report);
+      }
       if (report.verification.mismatches.length > 0) {
+        report.verdict = "VERIFICATION_FAILED";
         report.rolledBack = true;
         report.reason = `verification found ${report.verification.mismatches.length} difference(s); nothing was changed`;
         throw new RollbackSignal(report);
       }
+      // 5. Completeness — an unpinnable subscription means the backfill cannot
+      //    deliver what it promises (every reference resolved). Nothing partial
+      //    is ever committed: roll back and say so, keeping the diagnostics.
+      if (report.subscriptions.unpinnable.length > 0) {
+        report.verdict = "INCOMPLETE";
+        report.rolledBack = true;
+        report.reason = `${report.subscriptions.unpinnable.length} subscription(s) cannot be pinned (${Array.from(new Set(report.subscriptions.unpinnable.map((u) => u.reason))).join(", ")}); the backfill is incomplete and nothing was changed`;
+        throw new RollbackSignal(report);
+      }
+      report.complete = true;
       if (!opts.apply) {
+        report.verdict = "DRY_RUN_OK";
         report.rolledBack = true;
         report.reason = "dry run: the transaction was rolled back on purpose";
         throw new RollbackSignal(report);
       }
+      report.verdict = "APPLIED";
       report.applied = true;
       return report;
     });

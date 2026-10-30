@@ -11,17 +11,24 @@ import { LIMIT_RESOURCES, SUBSCRIPTION_STATUSES, normalizeLegacyStatus, resolveE
 import { usageReport } from "./entitlements.service.js";
 import {
   MAX_NAME,
+  allowancesOf,
   compareVersions,
   defaultTrialPolicy,
+  effectiveFeatureMatrix,
   emptyFeatureMatrix,
+  featureEnforcementOf,
   isFixedPlanId,
   isPlanSlug,
   limitTightens,
   limitsAsPlanDefaults,
+  noAllowances,
+  parseAllowancesInput,
   parseDisplayInput,
+  parseFeatureEnforcementInput,
   parseFeaturesInput,
   parseLimitsInput,
   parseTrialPolicyInput,
+  resolveFeatureEntitlements,
   planRowMirrorFromSnapshot,
   priceSummary,
   snapshotFromPlanRow,
@@ -32,7 +39,8 @@ import {
   type PlanTrialPolicy,
   type PlanVersionSnapshot,
   type VersionContent,
-  normalizeSnapshot
+  normalizeSnapshot,
+  PLAN_FEATURE_KEYS,
 } from "../lib/billing/plan-versions.js";
 
 // Batch 40 — PB-2 plan lifecycle (platform owner only; every route is behind
@@ -59,6 +67,7 @@ import {
 //   • every action appends an audit row (plan.* / plan_version.*).
 
 type Actor = AuditActor;
+const PLAN_FEATURE_KEYS_LIST = PLAN_FEATURE_KEYS;
 
 function conflict(code: string, message: string, details?: Record<string, unknown>): AppError {
   return new AppError(409, message, { code, ...(details ? { details } : {}) });
@@ -95,6 +104,11 @@ export interface PlanVersionView {
   isCurrent: boolean;
   snapshot: PlanVersionSnapshot;
   trialPolicy: PlanTrialPolicy;
+  // Batch 41 (PB-3): how the matrix applies to subscribers — "legacy" (recorded
+  // only, grandfathered) or "enforced" — plus the EFFECTIVE entitlement.
+  featureEnforcement: "legacy" | "enforced";
+  effectiveFeatures: Record<string, boolean>;
+  allowances: { aiTokensPerMonth: number | null; aiCostMicroUsdPerMonth: number | null };
   subscribers: number;
   publishedAt: string | null;
   publishedBy: number | null;
@@ -112,6 +126,9 @@ export function versionView(v: PlanVersionRow, extra: { isCurrent: boolean; subs
     isCurrent: extra.isCurrent,
     snapshot: normalizeSnapshot(v.snapshot),
     trialPolicy: v.trialPolicy,
+    featureEnforcement: featureEnforcementOf(v.snapshot),
+    effectiveFeatures: resolveFeatureEntitlements(v.snapshot).allowed,
+    allowances: allowancesOf(v.snapshot),
     subscribers: extra.subscribers,
     publishedAt: v.publishedAt?.toISOString() ?? null,
     publishedBy: v.publishedBy ?? null,
@@ -160,6 +177,9 @@ export interface VersionInput {
   limits?: unknown;
   features?: unknown;
   trialPolicy?: unknown;
+  // Batch 41 (PB-3)
+  featureEnforcement?: unknown;
+  allowances?: unknown;
 }
 
 function applyInput(base: VersionContent, input: VersionInput): VersionContent & { changed: string[] } {
@@ -167,9 +187,14 @@ function applyInput(base: VersionContent, input: VersionInput): VersionContent &
   const limits = parseLimitsInput(input.limits, base.snapshot.limits);
   const features = parseFeaturesInput(input.features, base.snapshot.features);
   const trial = parseTrialPolicyInput(input.trialPolicy, base.trialPolicy);
-  const issues: FieldIssue[] = [...display.issues, ...limits.issues, ...features.issues, ...trial.issues];
+  const enforcement = parseFeatureEnforcementInput(input.featureEnforcement, featureEnforcementOf(base.snapshot));
+  const allowances = parseAllowancesInput(input.allowances, allowancesOf(base.snapshot));
+  const issues: FieldIssue[] = [...display.issues, ...limits.issues, ...features.issues, ...trial.issues, ...enforcement.issues, ...allowances.issues];
   if (issues.length > 0) throw new AppError(400, "Invalid plan version input", { code: "VERSION_INPUT_INVALID", details: { issues } });
-  const snapshot: PlanVersionSnapshot = { ...base.snapshot, name: display.value.name, description: display.value.description, sortOrder: display.value.sortOrder, limits: limits.value, features: features.value };
+  // A DRAFT always carries the Batch 41 fields explicitly (an absent field is the
+  // legacy meaning reserved for pre-Batch-41 PUBLISHED snapshots, which are never
+  // rewritten).
+  const snapshot: PlanVersionSnapshot = { ...base.snapshot, name: display.value.name, description: display.value.description, sortOrder: display.value.sortOrder, limits: limits.value, features: features.value, featureEnforcement: enforcement.value, allowances: allowances.value };
   const next = { snapshot, trialPolicy: trial.value };
   const changed = compareVersions(base, next)
     .filter((r) => r.changed)
@@ -186,6 +211,18 @@ async function legacyContent(plan: PlanRow, tx?: Executor): Promise<VersionConte
   return { snapshot: snapshotFromPlanRow(plan, prices), trialPolicy: defaultTrialPolicy(plan.trialDays) };
 }
 
+// Batch 41 — what a NEW draft seeded from `source` carries: the source's
+// EFFECTIVE feature matrix (a legacy source grants everything, so the draft
+// records all-true and switching it to "enforced" denies nothing the source
+// granted), the source's enforcement mode and allowances made explicit. The
+// source itself is never rewritten.
+function seededContent(source: VersionContent): VersionContent {
+  return {
+    snapshot: { ...source.snapshot, features: effectiveFeatureMatrix(source.snapshot), featureEnforcement: featureEnforcementOf(source.snapshot), allowances: allowancesOf(source.snapshot) },
+    trialPolicy: source.trialPolicy,
+  };
+}
+
 // ── PB-2.1 Create a draft plan ───────────────────────────────────────────────
 
 export async function createPlan(actor: Actor, input: { id?: unknown } & VersionInput): Promise<{ plan: PlanRow; draft: PlanVersionView }> {
@@ -193,8 +230,10 @@ export async function createPlan(actor: Actor, input: { id?: unknown } & Version
   if (!isPlanSlug(id)) throw new AppError(400, "id must be a lowercase slug of 2–40 characters (a-z, 0-9, '-') starting with a letter", { code: "INVALID_PLAN_ID" });
   if (isFixedPlanId(id)) throw conflict("PLAN_ID_RESERVED", "This id belongs to the fixed plan catalog");
   if (input.name === undefined) throw new AppError(400, "name is required", { code: "NAME_INVALID" });
+  // A brand-new plan starts LEGACY (nothing gated) with every feature recorded as
+  // granted and no AI allowance; the owner opts into enforcement explicitly.
   const base: VersionContent = {
-    snapshot: { name: "", description: null, sortOrder: 100, limits: unlimitedLimits(), features: emptyFeatureMatrix(), prices: [] },
+    snapshot: { name: "", description: null, sortOrder: 100, limits: unlimitedLimits(), features: effectiveFeatureMatrix(null), prices: [], featureEnforcement: "legacy", allowances: noAllowances() },
     trialPolicy: defaultTrialPolicy(DEFAULT_TRIAL_DAYS),
   };
   const content = applyInput(base, input);
@@ -217,7 +256,7 @@ export async function duplicatePlan(actor: Actor, sourcePlanId: string, input: {
   return db.transaction(async (tx) => {
     const source = await requirePlan(sourcePlanId, tx);
     const sourceVersion = (await repo.findCurrentPublishedVersion(source.id, tx)) ?? (await repo.findDraftVersion(source.id, tx));
-    const base = sourceVersion ? contentOf(sourceVersion) : await legacyContent(source, tx);
+    const base = sourceVersion ? seededContent(contentOf(sourceVersion)) : seededContent(await legacyContent(source, tx));
     const fallbackName = `${base.snapshot.name} (copy)`.slice(0, MAX_NAME);
     const content = applyInput({ snapshot: { ...base.snapshot, name: fallbackName, prices: [] }, trialPolicy: base.trialPolicy }, input.name !== undefined ? { name: input.name } : {});
     const plan = await repo.insertPlan({ id, ...planRowMirrorFromSnapshot(content.snapshot, content.trialPolicy), isActive: false, status: "draft" }, tx);
@@ -253,10 +292,10 @@ export async function createDraft(actor: Actor, planId: string, input: { sourceV
     } else {
       source = await repo.findCurrentPublishedVersion(plan.id, tx);
     }
-    const base = source ? contentOf(source) : await legacyContent(plan, tx);
+    const base = seededContent(source ? contentOf(source) : await legacyContent(plan, tx));
     const version = (await repo.maxVersionNumber(plan.id, tx)) + 1;
     const draft = await repo.insertPlanVersion({ planId: plan.id, version, snapshot: { ...base.snapshot, prices: [] }, trialPolicy: base.trialPolicy }, tx);
-    await writePlanAudit(tx, actor, "plan_version.create", "plan_version", String(draft.id), { planId: plan.id, versionId: draft.id, version, sourceVersionId: source?.id ?? null, sourceVersion: source?.version ?? null, source: source ? "version" : "plan_row" });
+    await writePlanAudit(tx, actor, "plan_version.create", "plan_version", String(draft.id), { planId: plan.id, versionId: draft.id, version, sourceVersionId: source?.id ?? null, sourceVersion: source?.version ?? null, source: source ? "version" : "plan_row", featureEnforcement: featureEnforcementOf(base.snapshot) });
     return versionView(draft, { isCurrent: false, subscribers: 0 });
   });
 }
@@ -351,6 +390,12 @@ export async function publishVersion(actor: Actor, planId: string, versionId: nu
       limits: snapshot.limits,
       trialDays: v.trialPolicy.trialDays,
       activePrices: snapshot.prices.length,
+      // Batch 41 (PB-3): what this version enforces on its subscribers.
+      featureEnforcement: featureEnforcementOf(snapshot),
+      deniedFeatures: PLAN_FEATURE_KEYS_LIST.filter((k) => resolveFeatureEntitlements(snapshot).allowed[k] === false),
+      trialEndOutcome: v.trialPolicy.endOutcome,
+      readOnlyGraceDays: v.trialPolicy.readOnlyGraceDays,
+      allowances: allowancesOf(snapshot),
     });
     logger.info({ planId: plan.id, versionId: v.id, version: v.version, previousVersionId: previous?.id ?? null, actorUserId: actor.userId }, "Plan version published");
     return versionView(published!, { isCurrent: true, subscribers: 0 });

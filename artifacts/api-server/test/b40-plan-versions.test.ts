@@ -214,12 +214,12 @@ describe("PB-2.2 / PB-2.4 edit a draft, validate and publish an immutable versio
     const edited = await api("PATCH", `/platform/plans/${SLUG}/versions/${v1}`, platformToken, {
       limits: { events: 5 },
       features: { "nfc.capture": true },
-      trialPolicy: { endOutcome: "read_only", readOnlyGraceDays: 3 },
+      trialPolicy: { endOutcome: "read_only", readOnlyGraceDays: 0 },
     });
     expect(edited.status, edited.text).toBe(200);
     expect(edited.body.snapshot.limits).toMatchObject({ contacts: 1000, events: 5, admins: 3 });
     expect(edited.body.snapshot.features["nfc.capture"]).toBe(true);
-    expect(edited.body.trialPolicy).toMatchObject({ endOutcome: "read_only", readOnlyGraceDays: 3 });
+    expect(edited.body.trialPolicy).toMatchObject({ endOutcome: "read_only", readOnlyGraceDays: 0 });
 
     expect((await api("PATCH", `/platform/plans/${SLUG}/versions/${v1}`, platformToken, { limits: { contacts: -5 } })).status).toBe(400);
     const tooBig = await api("PATCH", `/platform/plans/${SLUG}/versions/${v1}`, platformToken, { limits: { contacts: 1e12 } });
@@ -233,11 +233,11 @@ describe("PB-2.2 / PB-2.4 edit a draft, validate and publish an immutable versio
     const invalid = (await api("POST", `/platform/plans/${SLUG}/versions/${v1}/validate`, platformToken)).body;
     expect(invalid.ok).toBe(false);
     expect(invalid.publishable).toBe(false);
-    expect(invalid.errors.map((e: any) => e.code)).toContain("TRIAL_END_OUTCOME_UNSUPPORTED");
+    expect(invalid.errors.map((e: any) => e.code)).toContain("TRIAL_GRACE_REQUIRED");
     const refused = await api("POST", `/platform/plans/${SLUG}/versions/${v1}/publish`, platformToken);
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("VERSION_INVALID");
-    expect(refused.body.context.errors.map((e: any) => e.code)).toContain("TRIAL_END_OUTCOME_UNSUPPORTED");
+    expect(refused.body.context.errors.map((e: any) => e.code)).toContain("TRIAL_GRACE_REQUIRED");
 
     expect((await api("PATCH", `/platform/plans/${SLUG}/versions/${v1}`, platformToken, { trialPolicy: { endOutcome: "blocked", readOnlyGraceDays: 0 } })).status).toBe(200);
     const valid = (await api("POST", `/platform/plans/${SLUG}/versions/${v1}/validate`, platformToken)).body;

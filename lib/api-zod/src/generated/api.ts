@@ -188,7 +188,17 @@ export const LoginResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
   "mfaEnrollmentRequired": zod.boolean().optional(),
@@ -249,7 +259,17 @@ export const GetMeResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -384,7 +404,17 @@ export const MfaVerifyLoginResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
   "mfaEnrollmentRequired": zod.boolean().optional(),
@@ -914,6 +944,17 @@ export const PlatformGetSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1031,6 +1072,17 @@ export const PlatformSetSubscriptionPlanResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1125,6 +1177,17 @@ export const PlatformStartTrialResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1210,6 +1273,17 @@ export const PlatformActivateSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1295,6 +1369,17 @@ export const PlatformMarkSubscriptionPastDueResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1380,6 +1465,17 @@ export const PlatformCancelSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1465,6 +1561,17 @@ export const PlatformExpireSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1558,6 +1665,17 @@ export const PlatformSuspendSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1643,6 +1761,17 @@ export const PlatformReactivateSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1753,6 +1882,17 @@ export const PlatformSetSubscriptionLimitsResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1838,6 +1978,17 @@ export const PlatformConvertSubscriptionToManualResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1925,6 +2076,17 @@ export const PlatformSyncSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -2060,8 +2222,8 @@ export const PlatformListPlansResponse = zod.object({
   "trialPolicy": zod.object({
   "defaultTrialDays": zod.number(),
   "configuredTrialDays": zod.number(),
-  "endOfTrialOutcome": zod.enum(['blocked']),
-  "readOnlyGraceDays": zod.number(),
+  "endOfTrialOutcome": zod.enum(['blocked']).describe('The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace'),
+  "readOnlyGraceDays": zod.number().describe('The platform default grace (0); per-version grace is shown on the version'),
   "manualTrialExpirySweep": zod.boolean(),
   "rule": zod.string().describe('The resolver rule of record, stated for display only')
 }),
@@ -2103,6 +2265,12 @@ export const platformCreatePlanBodyLimitsScansMin = 0;
 
 export const platformCreatePlanBodyLimitsStorageMbMin = 0;
 
+export const platformCreatePlanBodyAllowancesAiTokensPerMonthMin = 0;
+export const platformCreatePlanBodyAllowancesAiTokensPerMonthMax = 1000000000000;
+
+export const platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMin = 0;
+export const platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMax = 1000000000000;
+
 export const platformCreatePlanBodyTrialPolicyTrialDaysMin = 0;
 export const platformCreatePlanBodyTrialPolicyTrialDaysMax = 365;
 
@@ -2124,7 +2292,12 @@ export const PlatformCreatePlanBody = zod.object({
   "scans": zod.number().min(platformCreatePlanBodyLimitsScansMin).nullish(),
   "storageMb": zod.number().min(platformCreatePlanBodyLimitsStorageMbMin).nullish()
 }).optional().describe('Partial limits; null = unlimited'),
-  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional(),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().min(platformCreatePlanBodyAllowancesAiTokensPerMonthMin).max(platformCreatePlanBodyAllowancesAiTokensPerMonthMax).nullish(),
+  "aiCostMicroUsdPerMonth": zod.number().min(platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMin).max(platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMax).nullish()
+}).optional().describe('Partial allowances; null = no plan allowance for that budget'),
   "trialPolicy": zod.object({
   "trialDays": zod.number().min(platformCreatePlanBodyTrialPolicyTrialDaysMin).max(platformCreatePlanBodyTrialPolicyTrialDaysMax).optional(),
   "eligible": zod.boolean().optional(),
@@ -2268,6 +2441,61 @@ export const PlatformPreviewPlanLimitsResponse = zod.object({
 })),
   "changedResources": zod.array(zod.string()),
   "blockingResources": zod.array(zod.string()),
+  "featureEnforcement": zod.object({
+  "preview": zod.enum(['legacy', 'enforced']),
+  "current": zod.enum(['legacy', 'enforced', 'invalid'])
+}).describe('Batch 41 — the previewed version\'s enforcement mode vs the tenant\'s current mode'),
+  "features": zod.array(zod.object({
+  "feature": zod.string(),
+  "label": zod.string(),
+  "recorded": zod.boolean().describe('The flag recorded in the previewed snapshot'),
+  "previewAllowed": zod.boolean().describe('What the previewed version would entitle (all true under legacy enforcement)'),
+  "currentAllowed": zod.boolean().describe('What the tenant is entitled to today'),
+  "changes": zod.boolean()
+})),
+  "changedFeatures": zod.array(zod.string()),
+  "trialPolicy": zod.object({
+  "preview": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+}),
+  "current": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}),
+  "aiAllowances": zod.object({
+  "tenantOverride": zod.object({
+  "monthlyTokenBudget": zod.number().nullable(),
+  "monthlyCostBudgetMicroUsd": zod.number().nullable()
+}),
+  "preview": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+}),
+  "current": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+})
+}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)'),
   "readOnly": zod.boolean(),
   "generatedAt": zod.coerce.date()
 })
@@ -2423,7 +2651,7 @@ export const PlatformListPlanVersionsResponse = zod.object({
   "scans": zod.number().nullable(),
   "storageMb": zod.number().nullable()
 }).describe('Plan default limits (null = unlimited \/ not enforced)'),
-  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "interval": zod.string(),
@@ -2433,7 +2661,12 @@ export const PlatformListPlanVersionsResponse = zod.object({
   "providerMode": zod.string(),
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
-}))
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2442,6 +2675,12 @@ export const PlatformListPlanVersionsResponse = zod.object({
   "endOutcome": zod.enum(['blocked', 'read_only']),
   "readOnlyGraceDays": zod.number()
 }),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -2490,7 +2729,7 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "scans": zod.number().nullable(),
   "storageMb": zod.number().nullable()
 }).describe('Plan default limits (null = unlimited \/ not enforced)'),
-  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "interval": zod.string(),
@@ -2500,7 +2739,12 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "providerMode": zod.string(),
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
-}))
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2509,6 +2753,12 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "endOutcome": zod.enum(['blocked', 'read_only']),
   "readOnlyGraceDays": zod.number()
 }),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -2590,6 +2840,12 @@ export const platformUpdatePlanDraftBodyLimitsScansMin = 0;
 
 export const platformUpdatePlanDraftBodyLimitsStorageMbMin = 0;
 
+export const platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMin = 0;
+export const platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMax = 1000000000000;
+
+export const platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMin = 0;
+export const platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMax = 1000000000000;
+
 export const platformUpdatePlanDraftBodyTrialPolicyTrialDaysMin = 0;
 export const platformUpdatePlanDraftBodyTrialPolicyTrialDaysMax = 365;
 
@@ -2610,7 +2866,12 @@ export const PlatformUpdatePlanDraftBody = zod.object({
   "scans": zod.number().min(platformUpdatePlanDraftBodyLimitsScansMin).nullish(),
   "storageMb": zod.number().min(platformUpdatePlanDraftBodyLimitsStorageMbMin).nullish()
 }).optional().describe('Partial limits; null = unlimited'),
-  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional(),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().min(platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMin).max(platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMax).nullish(),
+  "aiCostMicroUsdPerMonth": zod.number().min(platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMin).max(platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMax).nullish()
+}).optional().describe('Partial allowances; null = no plan allowance for that budget'),
   "trialPolicy": zod.object({
   "trialDays": zod.number().min(platformUpdatePlanDraftBodyTrialPolicyTrialDaysMin).max(platformUpdatePlanDraftBodyTrialPolicyTrialDaysMax).optional(),
   "eligible": zod.boolean().optional(),
@@ -2638,7 +2899,7 @@ export const PlatformUpdatePlanDraftResponse = zod.object({
   "scans": zod.number().nullable(),
   "storageMb": zod.number().nullable()
 }).describe('Plan default limits (null = unlimited \/ not enforced)'),
-  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "interval": zod.string(),
@@ -2648,7 +2909,12 @@ export const PlatformUpdatePlanDraftResponse = zod.object({
   "providerMode": zod.string(),
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
-}))
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2657,6 +2923,12 @@ export const PlatformUpdatePlanDraftResponse = zod.object({
   "endOutcome": zod.enum(['blocked', 'read_only']),
   "readOnlyGraceDays": zod.number()
 }),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -2751,7 +3023,7 @@ export const PlatformPublishPlanVersionResponse = zod.object({
   "scans": zod.number().nullable(),
   "storageMb": zod.number().nullable()
 }).describe('Plan default limits (null = unlimited \/ not enforced)'),
-  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "interval": zod.string(),
@@ -2761,7 +3033,12 @@ export const PlatformPublishPlanVersionResponse = zod.object({
   "providerMode": zod.string(),
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
-}))
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2770,6 +3047,12 @@ export const PlatformPublishPlanVersionResponse = zod.object({
   "endOutcome": zod.enum(['blocked', 'read_only']),
   "readOnlyGraceDays": zod.number()
 }),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -2805,7 +3088,7 @@ export const PlatformRetirePlanVersionResponse = zod.object({
   "scans": zod.number().nullable(),
   "storageMb": zod.number().nullable()
 }).describe('Plan default limits (null = unlimited \/ not enforced)'),
-  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "interval": zod.string(),
@@ -2815,7 +3098,12 @@ export const PlatformRetirePlanVersionResponse = zod.object({
   "providerMode": zod.string(),
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
-}))
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2824,6 +3112,12 @@ export const PlatformRetirePlanVersionResponse = zod.object({
   "endOutcome": zod.enum(['blocked', 'read_only']),
   "readOnlyGraceDays": zod.number()
 }),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -2870,7 +3164,7 @@ export const PlatformPlanVersionImpactResponse = zod.object({
   "wouldBecomeCurrent": zod.boolean(),
   "newTenantsGetThisVersion": zod.boolean(),
   "diffVsCurrent": zod.array(zod.object({
-  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy']),
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances']),
   "field": zod.string(),
   "left": zod.unknown().describe('string | number | boolean | null'),
   "right": zod.unknown().describe('string | number | boolean | null'),
@@ -2943,7 +3237,7 @@ export const PlatformComparePlanVersionsResponse = zod.object({
   "subscribers": zod.number()
 }),
   "rows": zod.array(zod.object({
-  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy']),
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances']),
   "field": zod.string(),
   "left": zod.unknown().describe('string | number | boolean | null'),
   "right": zod.unknown().describe('string | number | boolean | null'),
@@ -2992,6 +3286,61 @@ export const PlatformPreviewPlanVersionLimitsResponse = zod.object({
 })),
   "changedResources": zod.array(zod.string()),
   "blockingResources": zod.array(zod.string()),
+  "featureEnforcement": zod.object({
+  "preview": zod.enum(['legacy', 'enforced']),
+  "current": zod.enum(['legacy', 'enforced', 'invalid'])
+}).describe('Batch 41 — the previewed version\'s enforcement mode vs the tenant\'s current mode'),
+  "features": zod.array(zod.object({
+  "feature": zod.string(),
+  "label": zod.string(),
+  "recorded": zod.boolean().describe('The flag recorded in the previewed snapshot'),
+  "previewAllowed": zod.boolean().describe('What the previewed version would entitle (all true under legacy enforcement)'),
+  "currentAllowed": zod.boolean().describe('What the tenant is entitled to today'),
+  "changes": zod.boolean()
+})),
+  "changedFeatures": zod.array(zod.string()),
+  "trialPolicy": zod.object({
+  "preview": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+}),
+  "current": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}),
+  "aiAllowances": zod.object({
+  "tenantOverride": zod.object({
+  "monthlyTokenBudget": zod.number().nullable(),
+  "monthlyCostBudgetMicroUsd": zod.number().nullable()
+}),
+  "preview": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+}),
+  "current": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+})
+}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)'),
   "readOnly": zod.boolean(),
   "generatedAt": zod.coerce.date()
 })
@@ -3675,7 +4024,17 @@ export const ListUsersResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -3751,7 +4110,17 @@ export const UpdateOwnProfileResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -3855,7 +4224,17 @@ export const UpdateUserResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -6703,7 +7082,17 @@ export const ListTeamMembersResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -6785,7 +7174,17 @@ export const ListEmployeeDirectoryResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -7371,6 +7770,17 @@ export const GetCurrentSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -8159,8 +8569,17 @@ export const GetAiSettingsResponse = zod.object({
   "contact_enrichment": zod.boolean(),
   "assignee_recommendation": zod.boolean()
 }),
-  "monthlyTokenBudget": zod.number().nullish(),
-  "monthlyCostBudgetUsd": zod.number().nullish(),
+  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget (tenant override, else the pinned plan version\'s allowance, else unlimited)'),
+  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same precedence)'),
+  "budgetSource": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+}).describe('Batch 41 (U4) — where each effective budget comes from'),
+  "planAllowance": zod.object({
+  "planVersionId": zod.number().nullable(),
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostBudgetUsd": zod.number().nullable()
+}),
   "workflowRules": zod.object({
   "stalledDays": zod.number(),
   "stalledHighDays": zod.number(),
@@ -8213,8 +8632,17 @@ export const UpdateAiSettingsResponse = zod.object({
   "contact_enrichment": zod.boolean(),
   "assignee_recommendation": zod.boolean()
 }),
-  "monthlyTokenBudget": zod.number().nullish(),
-  "monthlyCostBudgetUsd": zod.number().nullish(),
+  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget (tenant override, else the pinned plan version\'s allowance, else unlimited)'),
+  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same precedence)'),
+  "budgetSource": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+}).describe('Batch 41 (U4) — where each effective budget comes from'),
+  "planAllowance": zod.object({
+  "planVersionId": zod.number().nullable(),
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostBudgetUsd": zod.number().nullable()
+}),
   "workflowRules": zod.object({
   "stalledDays": zod.number(),
   "stalledHighDays": zod.number(),
@@ -10615,7 +11043,17 @@ export const EnableUserResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -10663,7 +11101,17 @@ export const DisableUserResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 

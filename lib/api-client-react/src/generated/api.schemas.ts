@@ -465,6 +465,57 @@ export interface SubscriptionSummary {
   cancelAtPeriodEnd: boolean;
 }
 
+/**
+ * legacy = grandfathered (every catalog feature allowed); enforced = the published version's feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)
+ */
+export type TenantEntitlementsFeatureEnforcement = typeof TenantEntitlementsFeatureEnforcement[keyof typeof TenantEntitlementsFeatureEnforcement];
+
+
+export const TenantEntitlementsFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+  invalid: 'invalid',
+} as const;
+
+export type TrialEndPolicyViewEndOutcome = typeof TrialEndPolicyViewEndOutcome[keyof typeof TrialEndPolicyViewEndOutcome];
+
+
+export const TrialEndPolicyViewEndOutcome = {
+  blocked: 'blocked',
+  read_only: 'read_only',
+} as const;
+
+export interface TrialEndPolicyView {
+  endOutcome: TrialEndPolicyViewEndOutcome;
+  readOnlyGraceDays: number;
+  /**
+     * trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise
+     * @nullable
+     */
+  graceEndsAt: string | null;
+}
+
+/**
+ * Effective allow/deny per catalog feature key
+ */
+export type TenantEntitlementsFeatures = {[key: string]: boolean};
+
+/**
+ * Batch 41 (PB-3) — the tenant's resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata
+ */
+export interface TenantEntitlements {
+  /**
+     * The pinned plan version (null = legacy NULL reference)
+     * @nullable
+     */
+  planVersionId: number | null;
+  /** legacy = grandfathered (every catalog feature allowed); enforced = the published version's feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed) */
+  featureEnforcement: TenantEntitlementsFeatureEnforcement;
+  /** Effective allow/deny per catalog feature key */
+  features: TenantEntitlementsFeatures;
+  trialPolicy: TrialEndPolicyView;
+}
+
 export type UserPermissions = {[key: string]: string[]};
 
 export interface User {
@@ -509,6 +560,8 @@ export interface User {
   teamName?: string | null;
   createdAt: string;
   subscription?: SubscriptionSummary | null;
+  /** Batch 41 — null for platform operators and users without a tenant subscription */
+  entitlements?: TenantEntitlements | null;
 }
 
 /**
@@ -3434,6 +3487,34 @@ export interface CalendarInviteResult {
   communication: LeadActivity;
 }
 
+/**
+ * Batch 41 (U4) — per-version AI/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)
+ */
+export interface PlatformPlanAllowances {
+  /** @nullable */
+  aiTokensPerMonth: number | null;
+  /** @nullable */
+  aiCostMicroUsdPerMonth: number | null;
+}
+
+/**
+ * Partial allowances; null = no plan allowance for that budget
+ */
+export interface PlatformPlanAllowancesInput {
+  /**
+     * @minimum 0
+     * @maximum 1000000000000
+     * @nullable
+     */
+  aiTokensPerMonth?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 1000000000000
+     * @nullable
+     */
+  aiCostMicroUsdPerMonth?: number | null;
+}
+
 export type EffectiveLimitResource = typeof EffectiveLimitResource[keyof typeof EffectiveLimitResource];
 
 
@@ -3566,6 +3647,12 @@ export interface Subscription {
   id: number;
   companyId: number;
   plan: string;
+  /**
+     * The pinned plan version (null = legacy NULL reference)
+     * @nullable
+     */
+  planVersionId: number | null;
+  entitlements: TenantEntitlements;
   status: SubscriptionStatus;
   billingSource: SubscriptionBillingSource;
   accessMode: SubscriptionAccessMode;
@@ -4058,6 +4145,9 @@ export interface PlatformPlanOverview {
   updatedAt: string;
 }
 
+/**
+ * The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace
+ */
 export type PlatformPlanTrialPolicyEndOfTrialOutcome = typeof PlatformPlanTrialPolicyEndOfTrialOutcome[keyof typeof PlatformPlanTrialPolicyEndOfTrialOutcome];
 
 
@@ -4068,7 +4158,9 @@ export const PlatformPlanTrialPolicyEndOfTrialOutcome = {
 export interface PlatformPlanTrialPolicy {
   defaultTrialDays: number;
   configuredTrialDays: number;
+  /** The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace */
   endOfTrialOutcome: PlatformPlanTrialPolicyEndOfTrialOutcome;
+  /** The platform default grace (0); per-version grace is shown on the version */
   readOnlyGraceDays: number;
   manualTrialExpirySweep: boolean;
   /** The resolver rule of record, stated for display only */
@@ -4187,6 +4279,96 @@ export const PlatformEffectiveLimitPreviewAccessMode = {
   blocked: 'blocked',
 } as const;
 
+export type PlatformEffectiveLimitPreviewFeatureEnforcementPreview = typeof PlatformEffectiveLimitPreviewFeatureEnforcementPreview[keyof typeof PlatformEffectiveLimitPreviewFeatureEnforcementPreview];
+
+
+export const PlatformEffectiveLimitPreviewFeatureEnforcementPreview = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
+export type PlatformEffectiveLimitPreviewFeatureEnforcementCurrent = typeof PlatformEffectiveLimitPreviewFeatureEnforcementCurrent[keyof typeof PlatformEffectiveLimitPreviewFeatureEnforcementCurrent];
+
+
+export const PlatformEffectiveLimitPreviewFeatureEnforcementCurrent = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+  invalid: 'invalid',
+} as const;
+
+/**
+ * Batch 41 — the previewed version's enforcement mode vs the tenant's current mode
+ */
+export type PlatformEffectiveLimitPreviewFeatureEnforcement = {
+  preview: PlatformEffectiveLimitPreviewFeatureEnforcementPreview;
+  current: PlatformEffectiveLimitPreviewFeatureEnforcementCurrent;
+};
+
+export type PlatformEffectiveLimitPreviewTrialPolicy = {
+  preview: TrialEndPolicyView;
+  current: TrialEndPolicyView;
+};
+
+export type PlatformEffectiveLimitPreviewAiAllowancesTenantOverride = {
+  /** @nullable */
+  monthlyTokenBudget: number | null;
+  /** @nullable */
+  monthlyCostBudgetMicroUsd: number | null;
+};
+
+export type PlatformAiAllowancePreviewSourceTokens = typeof PlatformAiAllowancePreviewSourceTokens[keyof typeof PlatformAiAllowancePreviewSourceTokens];
+
+
+export const PlatformAiAllowancePreviewSourceTokens = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+export type PlatformAiAllowancePreviewSourceCost = typeof PlatformAiAllowancePreviewSourceCost[keyof typeof PlatformAiAllowancePreviewSourceCost];
+
+
+export const PlatformAiAllowancePreviewSourceCost = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+export type PlatformAiAllowancePreviewSource = {
+  tokens: PlatformAiAllowancePreviewSourceTokens;
+  cost: PlatformAiAllowancePreviewSourceCost;
+};
+
+export interface PlatformAiAllowancePreview {
+  allowance: PlatformPlanAllowances;
+  /** @nullable */
+  effectiveTokenBudget: number | null;
+  /** @nullable */
+  effectiveCostBudgetMicroUsd: number | null;
+  source: PlatformAiAllowancePreviewSource;
+}
+
+/**
+ * Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)
+ */
+export type PlatformEffectiveLimitPreviewAiAllowances = {
+  tenantOverride: PlatformEffectiveLimitPreviewAiAllowancesTenantOverride;
+  preview: PlatformAiAllowancePreview;
+  current: PlatformAiAllowancePreview;
+};
+
+export interface PlatformEffectiveFeaturePreviewRow {
+  feature: string;
+  label: string;
+  /** The flag recorded in the previewed snapshot */
+  recorded: boolean;
+  /** What the previewed version would entitle (all true under legacy enforcement) */
+  previewAllowed: boolean;
+  /** What the tenant is entitled to today */
+  currentAllowed: boolean;
+  changes: boolean;
+}
+
 export interface PlatformEffectiveLimitPreview {
   companyId: number;
   /** @nullable */
@@ -4214,6 +4396,13 @@ export interface PlatformEffectiveLimitPreview {
   rows: PlatformEffectiveLimitPreviewRow[];
   changedResources: string[];
   blockingResources: string[];
+  /** Batch 41 — the previewed version's enforcement mode vs the tenant's current mode */
+  featureEnforcement: PlatformEffectiveLimitPreviewFeatureEnforcement;
+  features: PlatformEffectiveFeaturePreviewRow[];
+  changedFeatures: string[];
+  trialPolicy: PlatformEffectiveLimitPreviewTrialPolicy;
+  /** Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none) */
+  aiAllowances: PlatformEffectiveLimitPreviewAiAllowances;
   readOnly: boolean;
   generatedAt: string;
 }
@@ -4255,7 +4444,7 @@ export interface PlatformPlanLimitsInput {
 }
 
 /**
- * The fixed feature catalog (U2); informational until feature gating (PB-3) is approved
+ * The fixed feature catalog (U2); enforced server-side when the version's featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`
  */
 export interface PlatformPlanFeatureMatrix {[key: string]: boolean}
 
@@ -4311,6 +4500,17 @@ export interface PlatformPlanVersionPrice {
   active: boolean;
 }
 
+/**
+ * Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)
+ */
+export type PlatformPlanVersionSnapshotFeatureEnforcement = typeof PlatformPlanVersionSnapshotFeatureEnforcement[keyof typeof PlatformPlanVersionSnapshotFeatureEnforcement];
+
+
+export const PlatformPlanVersionSnapshotFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
 export interface PlatformPlanVersionSnapshot {
   name: string;
   /** @nullable */
@@ -4319,6 +4519,9 @@ export interface PlatformPlanVersionSnapshot {
   limits: PlatformPlanLimits;
   features: PlatformPlanFeatureMatrix;
   prices: PlatformPlanVersionPrice[];
+  /** Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered) */
+  featureEnforcement?: PlatformPlanVersionSnapshotFeatureEnforcement;
+  allowances?: PlatformPlanAllowances;
 }
 
 export type PlatformPlanVersionState = typeof PlatformPlanVersionState[keyof typeof PlatformPlanVersionState];
@@ -4330,6 +4533,17 @@ export const PlatformPlanVersionState = {
   retired: 'retired',
 } as const;
 
+/**
+ * Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants
+ */
+export type PlatformPlanVersionFeatureEnforcement = typeof PlatformPlanVersionFeatureEnforcement[keyof typeof PlatformPlanVersionFeatureEnforcement];
+
+
+export const PlatformPlanVersionFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
 export interface PlatformPlanVersion {
   id: number;
   planId: string;
@@ -4339,6 +4553,11 @@ export interface PlatformPlanVersion {
   isCurrent: boolean;
   snapshot: PlatformPlanVersionSnapshot;
   trialPolicy: PlatformPlanTrialPolicySpec;
+  /** Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants */
+  featureEnforcement: PlatformPlanVersionFeatureEnforcement;
+  /** What a tenant pinned to this version is actually allowed (all true under legacy) */
+  effectiveFeatures: PlatformPlanFeatureMatrix;
+  allowances: PlatformPlanAllowances;
   subscribers: number;
   /** @nullable */
   publishedAt: string | null;
@@ -4438,6 +4657,8 @@ export const PlatformCompareRowGroup = {
   limits: 'limits',
   features: 'features',
   trialPolicy: 'trialPolicy',
+  enforcement: 'enforcement',
+  allowances: 'allowances',
 } as const;
 
 export interface PlatformCompareRow {
@@ -4548,6 +4769,14 @@ export interface PlatformPlanVersionImpact {
   retire: PlatformPlanVersionImpactRetire;
 }
 
+export type PlatformCreatePlanInputFeatureEnforcement = typeof PlatformCreatePlanInputFeatureEnforcement[keyof typeof PlatformCreatePlanInputFeatureEnforcement];
+
+
+export const PlatformCreatePlanInputFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
 export interface PlatformCreatePlanInput {
   /**
      * New plan slug; the five fixed ids are reserved
@@ -4573,6 +4802,8 @@ export interface PlatformCreatePlanInput {
   sortOrder?: number;
   limits?: PlatformPlanLimitsInput;
   features?: PlatformPlanFeatureMatrix;
+  featureEnforcement?: PlatformCreatePlanInputFeatureEnforcement;
+  allowances?: PlatformPlanAllowancesInput;
   trialPolicy?: PlatformPlanTrialPolicyInput;
 }
 
@@ -4595,6 +4826,14 @@ export interface PlatformCreateDraftInput {
   sourceVersionId?: number;
 }
 
+export type PlatformUpdateDraftInputFeatureEnforcement = typeof PlatformUpdateDraftInputFeatureEnforcement[keyof typeof PlatformUpdateDraftInputFeatureEnforcement];
+
+
+export const PlatformUpdateDraftInputFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
 export interface PlatformUpdateDraftInput {
   /**
      * @minLength 1
@@ -4613,6 +4852,8 @@ export interface PlatformUpdateDraftInput {
   sortOrder?: number;
   limits?: PlatformPlanLimitsInput;
   features?: PlatformPlanFeatureMatrix;
+  featureEnforcement?: PlatformUpdateDraftInputFeatureEnforcement;
+  allowances?: PlatformPlanAllowancesInput;
   trialPolicy?: PlatformPlanTrialPolicyInput;
 }
 
@@ -5029,6 +5270,41 @@ export interface AiFeatureFlags {
   assignee_recommendation: boolean;
 }
 
+export type AiSettingsResponseBudgetSourceTokens = typeof AiSettingsResponseBudgetSourceTokens[keyof typeof AiSettingsResponseBudgetSourceTokens];
+
+
+export const AiSettingsResponseBudgetSourceTokens = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+export type AiSettingsResponseBudgetSourceCost = typeof AiSettingsResponseBudgetSourceCost[keyof typeof AiSettingsResponseBudgetSourceCost];
+
+
+export const AiSettingsResponseBudgetSourceCost = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+/**
+ * Batch 41 (U4) — where each effective budget comes from
+ */
+export type AiSettingsResponseBudgetSource = {
+  tokens: AiSettingsResponseBudgetSourceTokens;
+  cost: AiSettingsResponseBudgetSourceCost;
+};
+
+export type AiSettingsResponsePlanAllowance = {
+  /** @nullable */
+  planVersionId: number | null;
+  /** @nullable */
+  aiTokensPerMonth: number | null;
+  /** @nullable */
+  aiCostBudgetUsd: number | null;
+};
+
 /**
  * Effective tenant workflow-intelligence thresholds (Stage 5F). All fields are integers; day thresholds are 1-365.
  */
@@ -5048,8 +5324,13 @@ export interface AiSettingsResponse {
   model: string;
   enabled: boolean;
   featureFlags: AiFeatureFlags;
+  /** The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited) */
   monthlyTokenBudget?: number | null;
+  /** The EFFECTIVE monthly cost budget in USD (same precedence) */
   monthlyCostBudgetUsd?: number | null;
+  /** Batch 41 (U4) — where each effective budget comes from */
+  budgetSource: AiSettingsResponseBudgetSource;
+  planAllowance: AiSettingsResponsePlanAllowance;
   workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   availableProviders: string[];

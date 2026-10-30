@@ -6,13 +6,14 @@ import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, PlanPriceRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
-import { resolveEntitlement, resolveBillingCapabilities, normalizeLegacyStatus, allowedActions } from "../lib/billing/lifecycle.js";
+import { resolveBillingCapabilities, normalizeLegacyStatus, allowedActions } from "../lib/billing/lifecycle.js";
 import { getBillingProvider, BillingProviderError, type ProviderCheckoutSession } from "../lib/billing/provider.js";
 import { billingFault } from "../lib/billing/test-faults.js";
 import { applyProviderState, ProviderModeMismatchError, ProviderPriceUnmappedError } from "./subscription-lifecycle.service.js";
 import { writeSubscriptionAudit, type AuditActor } from "../lib/billing/audit.js";
 import { resolvePlanAssignment } from "../lib/billing/plan-catalog.js";
 import { effectiveLimitsFor, usageReport } from "./entitlements.service.js";
+import { resolveSubscriptionContext, tenantEntitlementsOf } from "../lib/company-access.js";
 
 // Batch 20 — tenant-facing subscription service. READS never write (no lazy
 // insert); the only mutations are provider-side session creation (Checkout,
@@ -58,7 +59,11 @@ export function priceView(p: PlanPriceRow) {
 
 // Stable projection returned to tenants (and reused by the platform detail view).
 export async function projectSubscription(sub: SubscriptionRow, now = new Date()) {
-  const entitlement = resolveEntitlement(sub, now);
+  // Batch 41: the SAME version-aware decision path as the per-request gate
+  // (trial grace + feature entitlements), so what the client shows is what the
+  // server enforces.
+  const ctx = await resolveSubscriptionContext(sub, now);
+  const entitlement = ctx.entitlement;
   const activePrices = await repo.listPlanPrices({ activeOnly: true });
   const caps = resolveBillingCapabilities(sub, providerContext(activePrices.length), sub.providerStatus);
   const limits = await effectiveLimitsFor(sub);
@@ -95,6 +100,8 @@ export async function projectSubscription(sub: SubscriptionRow, now = new Date()
     },
     limits: limits.map((l) => ({ resource: l.resource, limit: l.limit, source: l.source })),
     usage,
+    planVersionId: sub.planVersionId ?? null,
+    entitlements: tenantEntitlementsOf(ctx),
   };
 }
 

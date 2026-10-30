@@ -15,7 +15,11 @@ import {
   type PlanLimitDefaults,
 } from "../lib/billing/lifecycle.js";
 import { getBillingProvider } from "../lib/billing/provider.js";
-import { PLAN_FEATURE_KEYS, isPlanSlug, limitsAsPlanDefaults } from "../lib/billing/plan-versions.js";
+import { FEATURE_LABEL, PLAN_FEATURE_KEYS, allowancesOf, defaultTrialPolicy, featureEnforcementOf, isPlanSlug, limitsAsPlanDefaults, resolveFeatureEntitlements, snapshotFromPlanRow, trialEndPolicyOf, type PlanVersionSnapshot } from "../lib/billing/plan-versions.js";
+import { resolveSubscriptionContext, tenantEntitlementsOf } from "../lib/company-access.js";
+import { trialGraceEndsAt } from "../lib/billing/lifecycle.js";
+import * as aiRepo from "../repositories/ai.repository.js";
+import { applyPlanAllowance } from "./ai.service.js";
 import { effectiveLimitsFor, usageReport } from "./entitlements.service.js";
 import { listPrices } from "./platform-billing.service.js";
 import { versionState, versionSummary, type VersionSummary } from "./plan-builder.service.js";
@@ -74,7 +78,7 @@ export function trialPolicy() {
     endOfTrialOutcome: "blocked" as const,
     readOnlyGraceDays: 0,
     manualTrialExpirySweep: true,
-    rule: "A trialing subscription whose trial_expires_at has passed resolves to blocked (TRIAL_ENDED); no read-only grace exists today. Manual trials are expired by the system sweep with audit evidence.",
+    rule: "Default (U5): a trialing subscription whose trial_expires_at has passed resolves to blocked (TRIAL_ENDED). A published plan version configured with endOutcome read_only and a 1–90 day grace resolves to read-only (TRIAL_ENDED_GRACE) until the grace ends, then blocked. Manual trials are expired by the system sweep only after any grace, with audit evidence.",
   };
 }
 
@@ -241,6 +245,20 @@ export async function previewEffectiveLimits(planId: string, companyId: number, 
   const company = await repo.findCompany(companyId);
   const current = await effectiveLimitsFor(sub); // fails closed on integrity faults, like every enforcement path
   const preview = resolveEffectiveLimits(source, sub.limitOverrides);
+  // Batch 41 (PB-3): the tenant's CURRENT entitlements (the same decision path
+  // as the per-request gate) and what the previewed version would entitle.
+  const currentCtx = await resolveSubscriptionContext(sub, now);
+  const currentEntitlements = tenantEntitlementsOf(currentCtx);
+  const previewSnapshot: PlanVersionSnapshot = version ? version.snapshot : snapshotFromPlanRow(plan, []);
+  const previewTrial = version ? version.trialPolicy : defaultTrialPolicy(plan.trialDays);
+  const previewFeatures = resolveFeatureEntitlements(previewSnapshot);
+  const previewTrialPolicy = trialEndPolicyOf(previewTrial);
+  const previewAllowance = allowancesOf(previewSnapshot);
+  const aiRow = await aiRepo.getSettingsByCompany(companyId);
+  const tenantBudgets = { monthlyTokenBudget: aiRow?.monthlyTokenBudget ?? null, monthlyCostBudgetMicroUsd: aiRow?.monthlyCostBudgetMicroUsd ?? null };
+  const previewBudget = applyPlanAllowance(tenantBudgets, { planVersionId: version?.id ?? null, ...previewAllowance });
+  const currentAllowance = currentCtx.version ? allowancesOf(currentCtx.version.snapshot) : { aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null };
+  const currentBudget = applyPlanAllowance(tenantBudgets, { planVersionId: currentCtx.version?.id ?? null, ...currentAllowance });
   const usage = await usageReport(companyId, sub, now);
   const defaults = versionId != null && version ? version.snapshot.limits : planLimits(plan);
   const rows = LIMIT_RESOURCES.map((resource) => {
@@ -275,11 +293,32 @@ export async function previewEffectiveLimits(planId: string, companyId: number, 
     previewVersionState: version ? versionState(version) : null,
     isCurrentPlan: plan.id === sub.plan,
     status: normalizeLegacyStatus(sub.status) ?? sub.status,
-    accessMode: resolveEntitlement(sub, now).accessMode,
+    accessMode: currentCtx.entitlement.accessMode,
     billingSource: sub.billingSource,
     rows,
     changedResources: rows.filter((r) => r.changes).map((r) => r.resource),
     blockingResources: rows.filter((r) => r.exceeds).map((r) => r.resource),
+    // Batch 41 (PB-3): feature entitlements, trial policy and AI allowances —
+    // preview vs current, with the source of every effective value.
+    featureEnforcement: { preview: version ? featureEnforcementOf(previewSnapshot) : "legacy", current: currentEntitlements.featureEnforcement },
+    features: PLAN_FEATURE_KEYS.map((feature) => ({
+      feature,
+      label: FEATURE_LABEL[feature],
+      recorded: previewSnapshot.features?.[feature] === true,
+      previewAllowed: previewFeatures.allowed[feature],
+      currentAllowed: currentEntitlements.features[feature],
+      changes: previewFeatures.allowed[feature] !== currentEntitlements.features[feature],
+    })),
+    changedFeatures: PLAN_FEATURE_KEYS.filter((f) => previewFeatures.allowed[f] !== currentEntitlements.features[f]),
+    trialPolicy: {
+      preview: { endOutcome: previewTrialPolicy.endOutcome, readOnlyGraceDays: previewTrialPolicy.readOnlyGraceDays, graceEndsAt: sub.trialExpiresAt && previewTrialPolicy.endOutcome === "read_only" ? trialGraceEndsAt(sub.trialExpiresAt, previewTrialPolicy).toISOString() : null },
+      current: currentEntitlements.trialPolicy,
+    },
+    aiAllowances: {
+      tenantOverride: { monthlyTokenBudget: tenantBudgets.monthlyTokenBudget, monthlyCostBudgetMicroUsd: tenantBudgets.monthlyCostBudgetMicroUsd },
+      preview: { allowance: previewAllowance, effectiveTokenBudget: previewBudget.monthlyTokenBudget, effectiveCostBudgetMicroUsd: previewBudget.monthlyCostBudgetMicroUsd, source: previewBudget.budgetSource },
+      current: { allowance: currentAllowance, effectiveTokenBudget: currentBudget.monthlyTokenBudget, effectiveCostBudgetMicroUsd: currentBudget.monthlyCostBudgetMicroUsd, source: currentBudget.budgetSource },
+    },
     readOnly: true as const,
     generatedAt: now.toISOString(),
   };

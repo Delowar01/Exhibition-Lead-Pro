@@ -1,4 +1,5 @@
 import { AppError } from "../middlewares/errorHandler.js";
+import { assertFeatureEntitled } from "../lib/feature-entitlements.js";
 import { type AuthUser } from "../middlewares/requireAuth.js";
 import { refInCompany } from "../lib/tenant.js";
 import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "../lib/ai.js";
@@ -90,12 +91,16 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   const companyId = user.companyId;
   if (!companyId) throw new AppError(400, "No company context");
   const { appLanguage } = body;
+  const captureSource = typeof body.captureSource === "string" && body.captureSource.length > 0 ? body.captureSource : "camera";
+  // Batch 41 (PB-3): NFC capture is a plan feature; every other capture mode of
+  // the same route stays available (legacy versions allow everything). Decided
+  // BEFORE the payload is inspected: an unentitled capture is refused outright.
+  if (captureSource === "nfc") assertFeatureEntitled(user, "nfc.capture");
   // Batch 7: validate the actual image bytes (magic numbers, size, emptiness) BEFORE
   // creating a scan row, incrementing usage, or touching the AI provider. Bad input
   // is a 400 with a machine code and never records provider token usage.
   const image = validateScanImage(body.imageData);
   const lang = appLanguage === "ar" ? "ar" : "en";
-  const captureSource = typeof body.captureSource === "string" && body.captureSource.length > 0 ? body.captureSource : "camera";
   const qualityScore = typeof body.qualityScore === "number" ? body.qualityScore : null;
   const qualityMeta = body.qualityMeta != null ? JSON.stringify(body.qualityMeta) : null;
   // Interaction context: event + GPS + notes captured at scan time are persisted

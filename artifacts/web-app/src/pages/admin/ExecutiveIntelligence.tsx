@@ -56,6 +56,9 @@ import {
   X,
 } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
+import { useAuth } from "@/contexts/AuthContext";
+import { featureAllowed } from "@/lib/entitlements";
+import { FeatureUnavailable } from "@/components/FeatureUnavailable";
 import { ListSkeleton } from "@/components/ds";
 
 // Stage 5C — Enterprise AI Executive Intelligence Center (manager-gated).
@@ -180,7 +183,21 @@ function TeamRow({ m }: { m: ExecutiveTeamMember }) {
   );
 }
 
+// Batch 41 (PB-3): Executive Intelligence follows the plan version's
+// `executive.intelligence` entitlement (the API refuses /ai/executive too).
 export default function AdminExecutiveIntelligence() {
+  const { user } = useAuth();
+  if (!featureAllowed(user, "executive.intelligence")) {
+    return (
+      <AiWorkspaceLayout activeTab="executive">
+        <FeatureUnavailable feature="executive.intelligence" />
+      </AiWorkspaceLayout>
+    );
+  }
+  return <AdminExecutiveIntelligenceWorkspace />;
+}
+
+function AdminExecutiveIntelligenceWorkspace() {
   const qc = useQueryClient();
   const [reportType, setReportType] = React.useState("executive_summary");
   const [reportPeriodType, setReportPeriodType] = React.useState("monthly");

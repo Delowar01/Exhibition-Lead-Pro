@@ -16,7 +16,8 @@ import { plansTable } from "./plans";
 // `snapshot` holds what the single entitlement resolver reads for a pinned
 // tenant (limits), plus the fixed feature matrix, the display fields and the
 // price summary captured at publication. `trial_policy` is the structured trial
-// representation (U5: blocked at the end of the trial, no read-only grace).
+// representation (U5: blocked at the end of the trial by default; a published
+// version may configure a read-only grace — Batch 41).
 
 export const PLAN_FEATURE_KEYS = [
   "ai.assistant",
@@ -46,6 +47,29 @@ export interface PlanVersionPriceSummary {
   active: boolean;
 }
 
+// Batch 41 (PB-3) — how a version's feature matrix is applied to its subscribers.
+//   "legacy"   : the matrix is RECORDED ONLY. Every catalog feature stays
+//                available (U2: "none gated until a version says so"). This is
+//                the meaning of every version-1 backfill snapshot (whose flags
+//                were normalized to false from the free-form plan row) and of
+//                every snapshot published before feature enforcement existed —
+//                an ABSENT field reads as "legacy", so stored snapshots are never
+//                rewritten.
+//   "enforced" : the matrix is ENFORCED server-side for subscribers pinned to
+//                this version: a feature set to false is denied.
+export const FEATURE_ENFORCEMENT_MODES = ["legacy", "enforced"] as const;
+export type FeatureEnforcementMode = (typeof FEATURE_ENFORCEMENT_MODES)[number];
+
+// Batch 41 (PB-3.3 / U4) — per-version AI allowances. They SEED the existing
+// Enterprise AI Layer monthly budget of every subscriber pinned to the version;
+// an explicit per-tenant budget in ai_settings keeps precedence. null = no
+// allowance (unlimited unless the tenant has its own budget). An ABSENT object
+// (every pre-Batch-41 snapshot) means "no allowances" — nothing changes.
+export interface PlanVersionAllowances {
+  aiTokensPerMonth: number | null;
+  aiCostMicroUsdPerMonth: number | null;
+}
+
 export interface PlanVersionSnapshot {
   name: string;
   description: string | null;
@@ -55,6 +79,10 @@ export interface PlanVersionSnapshot {
   // Verified provider prices that applied to the version when it was published
   // (informational; the price mappings themselves live in plan_prices).
   prices: PlanVersionPriceSummary[];
+  // Optional (Batch 41): absent = "legacy" (grandfathered, nothing enforced).
+  featureEnforcement?: FeatureEnforcementMode;
+  // Optional (Batch 41): absent = no AI allowance seeded by the version.
+  allowances?: PlanVersionAllowances;
 }
 
 export const TRIAL_END_OUTCOMES = ["blocked", "read_only"] as const;

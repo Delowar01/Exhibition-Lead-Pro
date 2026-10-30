@@ -5,9 +5,11 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlatformPlanAllowancesInput } from './platformPlanAllowancesInput';
 import type { PlatformPlanFeatureMatrix } from './platformPlanFeatureMatrix';
 import type { PlatformPlanLimitsInput } from './platformPlanLimitsInput';
 import type { PlatformPlanTrialPolicyInput } from './platformPlanTrialPolicyInput';
+import type { PlatformUpdateDraftInputFeatureEnforcement } from './platformUpdateDraftInputFeatureEnforcement';
 
 export interface PlatformUpdateDraftInput {
   /**
@@ -27,5 +29,7 @@ export interface PlatformUpdateDraftInput {
   sortOrder?: number;
   limits?: PlatformPlanLimitsInput;
   features?: PlatformPlanFeatureMatrix;
+  featureEnforcement?: PlatformUpdateDraftInputFeatureEnforcement;
+  allowances?: PlatformPlanAllowancesInput;
   trialPolicy?: PlatformPlanTrialPolicyInput;
 }

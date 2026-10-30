@@ -36,5 +36,8 @@ export async function buildPrincipal(companyId: number, actorUserId: number | nu
     readOnly: false,
     accessibleCompanies: [companyId],
     sessionId: null,
+    // Batch 41: a workflow principal carries no tenant feature entitlements
+    // (the feature gate is a request-path concern; nothing here widens access).
+    entitlements: null,
   };
 }

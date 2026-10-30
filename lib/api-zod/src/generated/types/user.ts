@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { SubscriptionSummary } from './subscriptionSummary';
+import type { TenantEntitlements } from './tenantEntitlements';
 import type { UserCompanyVisibility } from './userCompanyVisibility';
 import type { UserContactVisibility } from './userContactVisibility';
 import type { UserEmploymentStatus } from './userEmploymentStatus';
@@ -54,4 +55,6 @@ export interface User {
   teamName?: string | null;
   createdAt: Date;
   subscription?: SubscriptionSummary | null;
+  /** Batch 41 — null for platform operators and users without a tenant subscription */
+  entitlements?: TenantEntitlements | null;
 }

@@ -5,7 +5,10 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlatformPlanAllowances } from './platformPlanAllowances';
+import type { PlatformPlanFeatureMatrix } from './platformPlanFeatureMatrix';
 import type { PlatformPlanTrialPolicySpec } from './platformPlanTrialPolicySpec';
+import type { PlatformPlanVersionFeatureEnforcement } from './platformPlanVersionFeatureEnforcement';
 import type { PlatformPlanVersionSnapshot } from './platformPlanVersionSnapshot';
 import type { PlatformPlanVersionState } from './platformPlanVersionState';
 
@@ -18,6 +21,11 @@ export interface PlatformPlanVersion {
   isCurrent: boolean;
   snapshot: PlatformPlanVersionSnapshot;
   trialPolicy: PlatformPlanTrialPolicySpec;
+  /** Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants */
+  featureEnforcement: PlatformPlanVersionFeatureEnforcement;
+  /** What a tenant pinned to this version is actually allowed (all true under legacy) */
+  effectiveFeatures: PlatformPlanFeatureMatrix;
+  allowances: PlatformPlanAllowances;
   subscribers: number;
   /** @nullable */
   publishedAt: Date | null;

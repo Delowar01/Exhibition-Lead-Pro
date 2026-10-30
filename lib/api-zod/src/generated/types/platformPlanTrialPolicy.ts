@@ -10,7 +10,9 @@ import type { PlatformPlanTrialPolicyEndOfTrialOutcome } from './platformPlanTri
 export interface PlatformPlanTrialPolicy {
   defaultTrialDays: number;
   configuredTrialDays: number;
+  /** The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace */
   endOfTrialOutcome: PlatformPlanTrialPolicyEndOfTrialOutcome;
+  /** The platform default grace (0); per-version grace is shown on the version */
   readOnlyGraceDays: number;
   manualTrialExpirySweep: boolean;
   /** The resolver rule of record, stated for display only */

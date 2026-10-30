@@ -5,8 +5,12 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlatformEffectiveFeaturePreviewRow } from './platformEffectiveFeaturePreviewRow';
 import type { PlatformEffectiveLimitPreviewAccessMode } from './platformEffectiveLimitPreviewAccessMode';
+import type { PlatformEffectiveLimitPreviewAiAllowances } from './platformEffectiveLimitPreviewAiAllowances';
+import type { PlatformEffectiveLimitPreviewFeatureEnforcement } from './platformEffectiveLimitPreviewFeatureEnforcement';
 import type { PlatformEffectiveLimitPreviewRow } from './platformEffectiveLimitPreviewRow';
+import type { PlatformEffectiveLimitPreviewTrialPolicy } from './platformEffectiveLimitPreviewTrialPolicy';
 
 export interface PlatformEffectiveLimitPreview {
   companyId: number;
@@ -35,6 +39,13 @@ export interface PlatformEffectiveLimitPreview {
   rows: PlatformEffectiveLimitPreviewRow[];
   changedResources: string[];
   blockingResources: string[];
+  /** Batch 41 — the previewed version's enforcement mode vs the tenant's current mode */
+  featureEnforcement: PlatformEffectiveLimitPreviewFeatureEnforcement;
+  features: PlatformEffectiveFeaturePreviewRow[];
+  changedFeatures: string[];
+  trialPolicy: PlatformEffectiveLimitPreviewTrialPolicy;
+  /** Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none) */
+  aiAllowances: PlatformEffectiveLimitPreviewAiAllowances;
   readOnly: boolean;
   generatedAt: Date;
 }

@@ -7,6 +7,6 @@
  */
 
 /**
- * The fixed feature catalog (U2); informational until feature gating (PB-3) is approved
+ * The fixed feature catalog (U2); enforced server-side when the version's featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`
  */
 export interface PlatformPlanFeatureMatrix {[key: string]: boolean}

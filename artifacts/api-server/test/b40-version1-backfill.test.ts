@@ -248,6 +248,8 @@ describe("apply, verify, idempotency", () => {
       expect(report.plans.find((p) => p.planId === LEGACY4)!.action).toBe("blocked_draft_only");
       expect(report.subscriptions.unpinnable).toEqual([{ companyId: companyI, subscriptionId: expect.any(Number), planId: LEGACY4, reason: "plan_has_no_published_version" }]);
       expect(report.verification.mismatches).toEqual([]);
+      // Batch 41: an unpinnable subscription can never yield a complete / applied run.
+      expect(report).toMatchObject({ verdict: "INCOMPLETE", complete: false, applied: false, rolledBack: true });
       const afterI = await detail(companyI);
       expect(afterI.planVersionId).toBeNull();
       expect(observable(afterI)).toEqual(beforeI);

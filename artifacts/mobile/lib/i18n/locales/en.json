@@ -196,7 +196,8 @@
     "sendFailedPermission": "You don't have permission to use the AI assistant.",
     "sendFailedRateLimited": "You're sending requests too quickly. Wait a moment and try again.",
     "sendFailedBudget": "Your organization's monthly AI budget is used up. Ask an admin to raise it in AI Settings.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "notEntitled": "The AI Assistant is not included in your organisation's plan."
   },
   "companies": {
     "title": "Companies",
@@ -848,7 +849,9 @@
       "Drawing": "Drawing",
       "Delivery Note": "Delivery Note",
       "Brochure": "Brochure"
-    }
+    },
+    "notEntitledTitle": "Documents are not included in your plan",
+    "notEntitled": "Your organisation's current plan does not include the Documents module."
   },
   "pipeline": {
     "title": "Sales Pipeline",
@@ -1371,7 +1374,9 @@
     "tipSteady": "Keep card\nsteady",
     "tipHold": "Hold 1–2\nseconds",
     "tipRemove": "Remove once\ndetected",
-    "contactFallback": "NFC contact"
+    "contactFallback": "NFC contact",
+    "notEntitledTitle": "NFC capture is not included in your plan",
+    "notEntitledSub": "Your organisation's current plan does not include NFC capture. Use camera, QR or manual capture instead."
   },
   "eventReport": {
     "contacts": "Contacts",

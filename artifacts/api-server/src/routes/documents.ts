@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireFeature } from "../lib/feature-entitlements.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import {
@@ -16,6 +17,8 @@ router.use(requireAuth);
 // from all customer document data by requireTenantUser (403). A path-less
 // router.use would leak onto every request flowing through the shared parent.
 router.use("/documents", requireTenantUser);
+// Batch 41 (PB-3): plan-version feature gate (legacy versions allow everything).
+router.use("/documents", requireFeature("documents"));
 router.use("/documents", blockReadOnlyMutations);
 router.use("/documents", auditMutations("documents"));
 

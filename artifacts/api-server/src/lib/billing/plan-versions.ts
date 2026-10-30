@@ -1,11 +1,14 @@
 import {
+  FEATURE_ENFORCEMENT_MODES,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
   TRIAL_END_OUTCOMES,
+  type FeatureEnforcementMode,
   type PlanFeatureKey,
   type PlanFeatureMatrix,
   type PlanLimitKey,
   type PlanTrialPolicy,
+  type PlanVersionAllowances,
   type PlanVersionLimits,
   type PlanVersionPriceSummary,
   type PlanVersionSnapshot,
@@ -13,6 +16,8 @@ import {
 import { PLAN_IDS, type PlanLimitDefaults } from "./lifecycle.js";
 
 // Batch 40 — PURE plan-version rules (no database access; unit-tested directly).
+// Batch 41 (PB-3) adds the feature-enforcement mode, the AI allowances, the
+// feature-entitlement resolution and the read-only trial grace rules.
 //
 //   • the fixed feature catalog (U2) — every snapshot carries all eight keys;
 //   • limits (null = unlimited; integers 0..MAX_LIMIT);
@@ -26,8 +31,8 @@ import { PLAN_IDS, type PlanLimitDefaults } from "./lifecycle.js";
 // in lifecycle.ts) keeps that role; `limitsAsPlanDefaults` only adapts a snapshot
 // to the resolver's input shape.
 
-export { PLAN_FEATURE_KEYS, PLAN_LIMIT_KEYS, TRIAL_END_OUTCOMES };
-export type { PlanFeatureKey, PlanFeatureMatrix, PlanLimitKey, PlanTrialPolicy, PlanVersionLimits, PlanVersionPriceSummary, PlanVersionSnapshot };
+export { FEATURE_ENFORCEMENT_MODES, PLAN_FEATURE_KEYS, PLAN_LIMIT_KEYS, TRIAL_END_OUTCOMES };
+export type { FeatureEnforcementMode, PlanFeatureKey, PlanFeatureMatrix, PlanLimitKey, PlanTrialPolicy, PlanVersionAllowances, PlanVersionLimits, PlanVersionPriceSummary, PlanVersionSnapshot };
 
 // New plan identities: lowercase slug, never one of the five fixed ids.
 export const PLAN_SLUG_RE = /^[a-z][a-z0-9-]{1,39}$/;
@@ -75,6 +80,84 @@ export function unlimitedLimits(): PlanVersionLimits {
 }
 export function defaultTrialPolicy(trialDays: number): PlanTrialPolicy {
   return { trialDays, eligible: true, oncePerCompany: true, endOutcome: "blocked", readOnlyGraceDays: 0 };
+}
+export function noAllowances(): PlanVersionAllowances {
+  return { aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null };
+}
+export const MAX_AI_TOKENS_PER_MONTH = 1_000_000_000_000;
+export const MAX_AI_COST_MICRO_USD_PER_MONTH = 1_000_000 * 1_000_000; // 1,000,000 USD
+
+// ── Batch 41: feature enforcement (legacy / grandfathered vs explicitly enforced) ──
+//
+// THE legacy-compatibility rule (PB-3 / U2 "none gated until a version says so"):
+//   • a snapshot WITHOUT `featureEnforcement` (every version-1 backfill snapshot
+//     and every version published before Batch 41) is "legacy": its recorded
+//     matrix — whose flags were normalized to false from the free-form plan row —
+//     is NEVER interpreted as a denial. Every catalog feature stays allowed;
+//   • a snapshot with `featureEnforcement: "enforced"` denies exactly the
+//     features set to false in its matrix;
+//   • a NULL version reference (pre-backfill subscription) is "legacy" too;
+//   • the service layer maps an INVALID reference to `enforcement: "invalid"`
+//     with every feature denied (fail closed, never widened) — see
+//     lib/company-access.ts.
+// A published snapshot is never rewritten to add the field: absence is meaning.
+
+export type FeatureEnforcement = FeatureEnforcementMode | "invalid";
+
+export interface FeatureEntitlements {
+  enforcement: FeatureEnforcement;
+  allowed: PlanFeatureMatrix;
+  // The features the matrix would deny if (or because) it is enforced — the
+  // owner UI shows these as "recorded only" for a legacy version.
+  recordedDenials: PlanFeatureKey[];
+}
+
+export function featureEnforcementOf(snapshot: Pick<PlanVersionSnapshot, "featureEnforcement"> | null | undefined): FeatureEnforcementMode {
+  return snapshot?.featureEnforcement === "enforced" ? "enforced" : "legacy";
+}
+
+export function allAllowedFeatures(): PlanFeatureMatrix {
+  return Object.fromEntries(PLAN_FEATURE_KEYS.map((k) => [k, true])) as PlanFeatureMatrix;
+}
+export function allDeniedFeatures(): PlanFeatureMatrix {
+  return emptyFeatureMatrix();
+}
+
+export function resolveFeatureEntitlements(snapshot: PlanVersionSnapshot | null | undefined): FeatureEntitlements {
+  const matrix = featureMatrixFromRecord(snapshot?.features);
+  const recordedDenials = PLAN_FEATURE_KEYS.filter((k) => matrix[k] === false);
+  if (featureEnforcementOf(snapshot) === "enforced") return { enforcement: "enforced", allowed: matrix, recordedDenials };
+  return { enforcement: "legacy", allowed: allAllowedFeatures(), recordedDenials };
+}
+
+export function invalidFeatureEntitlements(): FeatureEntitlements {
+  return { enforcement: "invalid", allowed: allDeniedFeatures(), recordedDenials: [...PLAN_FEATURE_KEYS] };
+}
+
+// What a NEW draft seeded from `source` should carry so that switching the draft
+// to "enforced" never silently denies what the source actually grants: a legacy
+// source's EFFECTIVE matrix is all-true; an enforced source keeps its matrix.
+export function effectiveFeatureMatrix(snapshot: PlanVersionSnapshot | null | undefined): PlanFeatureMatrix {
+  return resolveFeatureEntitlements(snapshot).allowed;
+}
+
+export function allowancesOf(snapshot: Pick<PlanVersionSnapshot, "allowances"> | null | undefined): PlanVersionAllowances {
+  const a = snapshot?.allowances;
+  const int = (v: unknown, max: number): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : null);
+  return { aiTokensPerMonth: int(a?.aiTokensPerMonth, MAX_AI_TOKENS_PER_MONTH), aiCostMicroUsdPerMonth: int(a?.aiCostMicroUsdPerMonth, MAX_AI_COST_MICRO_USD_PER_MONTH) };
+}
+
+// ── Batch 41: trial grace (U5) ───────────────────────────────────────────────
+// A published version may configure `endOutcome: "read_only"` with a grace of
+// 1..90 days: after the trial end the tenant is READ-ONLY until end + grace, then
+// BLOCKED. The default (and every legacy / pre-Batch-41 policy) is blocked at the
+// trial end with no grace. The entitlement decision itself lives in lifecycle.ts
+// (`resolveEntitlement` takes the policy); this adapter is the only translation.
+export function trialEndPolicyOf(policy: Pick<PlanTrialPolicy, "endOutcome" | "readOnlyGraceDays"> | null | undefined): { endOutcome: "blocked" | "read_only"; readOnlyGraceDays: number } {
+  if (!policy || policy.endOutcome !== "read_only") return { endOutcome: "blocked", readOnlyGraceDays: 0 };
+  const days = typeof policy.readOnlyGraceDays === "number" && Number.isInteger(policy.readOnlyGraceDays) && policy.readOnlyGraceDays >= 1 && policy.readOnlyGraceDays <= MAX_GRACE_DAYS ? policy.readOnlyGraceDays : 0;
+  // read_only without a positive grace is meaningless → blocked (fail closed).
+  return days > 0 ? { endOutcome: "read_only", readOnlyGraceDays: days } : { endOutcome: "blocked", readOnlyGraceDays: 0 };
 }
 
 // Tolerant conversion of the legacy `plans.features` jsonb (free-form flags; `{}`
@@ -126,6 +209,32 @@ export function parseFeaturesInput(input: unknown, base: PlanFeatureMatrix): Par
     }
     if (typeof v === "boolean") value[k as PlanFeatureKey] = v;
     else issues.push({ code: "FEATURE_INVALID", field: `features.${k}`, message: `feature "${k}" must be true or false` });
+  }
+  return { value, issues };
+}
+
+export function parseFeatureEnforcementInput(input: unknown, base: FeatureEnforcementMode): ParseResult<FeatureEnforcementMode> {
+  if (input === undefined) return { value: base, issues: [] };
+  if (typeof input === "string" && (FEATURE_ENFORCEMENT_MODES as readonly string[]).includes(input)) return { value: input as FeatureEnforcementMode, issues: [] };
+  return { value: base, issues: [{ code: "FEATURE_ENFORCEMENT_INVALID", field: "featureEnforcement", message: `featureEnforcement must be one of ${FEATURE_ENFORCEMENT_MODES.join(", ")}` }] };
+}
+
+export function parseAllowancesInput(input: unknown, base: PlanVersionAllowances): ParseResult<PlanVersionAllowances> {
+  const value: PlanVersionAllowances = { ...base };
+  const issues: FieldIssue[] = [];
+  if (input === undefined) return { value, issues };
+  if (!input || typeof input !== "object" || Array.isArray(input)) return { value, issues: [{ code: "ALLOWANCES_INVALID", field: "allowances", message: "allowances must be an object" }] };
+  const o = input as Record<string, unknown>;
+  for (const k of Object.keys(o)) {
+    if (k !== "aiTokensPerMonth" && k !== "aiCostMicroUsdPerMonth") issues.push({ code: "ALLOWANCE_UNKNOWN", field: `allowances.${k}`, message: `unknown allowance "${k}"` });
+  }
+  if (o.aiTokensPerMonth !== undefined) {
+    if (o.aiTokensPerMonth === null || isIntInRange(o.aiTokensPerMonth, 0, MAX_AI_TOKENS_PER_MONTH)) value.aiTokensPerMonth = o.aiTokensPerMonth as number | null;
+    else issues.push({ code: "ALLOWANCE_INVALID", field: "allowances.aiTokensPerMonth", message: `aiTokensPerMonth must be null (no allowance) or an integer between 0 and ${MAX_AI_TOKENS_PER_MONTH}` });
+  }
+  if (o.aiCostMicroUsdPerMonth !== undefined) {
+    if (o.aiCostMicroUsdPerMonth === null || isIntInRange(o.aiCostMicroUsdPerMonth, 0, MAX_AI_COST_MICRO_USD_PER_MONTH)) value.aiCostMicroUsdPerMonth = o.aiCostMicroUsdPerMonth as number | null;
+    else issues.push({ code: "ALLOWANCE_INVALID", field: "allowances.aiCostMicroUsdPerMonth", message: `aiCostMicroUsdPerMonth must be null (no allowance) or an integer between 0 and ${MAX_AI_COST_MICRO_USD_PER_MONTH}` });
   }
   return { value, issues };
 }
@@ -235,7 +344,7 @@ export function priceSummary(p: PriceLike): PlanVersionPriceSummary {
 export function normalizeSnapshot(snapshot: PlanVersionSnapshot): PlanVersionSnapshot {
   const limits = {} as PlanVersionLimits;
   for (const k of PLAN_LIMIT_KEYS) limits[k] = snapshot.limits?.[k] ?? null;
-  return {
+  const out: PlanVersionSnapshot = {
     name: snapshot.name,
     description: snapshot.description ?? null,
     sortOrder: snapshot.sortOrder,
@@ -243,6 +352,11 @@ export function normalizeSnapshot(snapshot: PlanVersionSnapshot): PlanVersionSna
     features: featureMatrixFromRecord(snapshot.features),
     prices: Array.isArray(snapshot.prices) ? snapshot.prices : [],
   };
+  // Batch 41: the optional fields are carried ONLY when present and valid; an
+  // absent field stays absent (legacy meaning preserved, nothing invented).
+  if (snapshot.featureEnforcement === "enforced" || snapshot.featureEnforcement === "legacy") out.featureEnforcement = snapshot.featureEnforcement;
+  if (snapshot.allowances && typeof snapshot.allowances === "object") out.allowances = allowancesOf(snapshot);
+  return out;
 }
 
 export function snapshotFromPlanRow(p: PlanRowLike, prices: PriceLike[]): PlanVersionSnapshot {
@@ -315,7 +429,22 @@ export function validateVersionForPublish(snapshot: PlanVersionSnapshot, trial: 
     if (typeof snapshot.features?.[k] !== "boolean") errors.push({ code: "FEATURE_MISSING", field: `features.${k}`, message: `feature "${k}" must be set to true or false` });
   }
   for (const k of featureKeys) if (!(PLAN_FEATURE_KEYS as readonly string[]).includes(k)) errors.push({ code: "FEATURE_UNKNOWN", field: `features.${k}`, message: `"${k}" is not in the fixed feature catalog` });
-  if (PLAN_FEATURE_KEYS.some((k) => snapshot.features?.[k] === false)) warnings.push({ code: "FEATURES_NOT_ENFORCED", field: "features", message: "feature gating (PB-3) is not enabled; disabled features are recorded but not enforced against tenants" });
+  // Batch 41: enforcement mode + what it means for the recorded denials.
+  if (snapshot.featureEnforcement !== undefined && !(FEATURE_ENFORCEMENT_MODES as readonly string[]).includes(snapshot.featureEnforcement)) errors.push({ code: "FEATURE_ENFORCEMENT_INVALID", field: "featureEnforcement", message: "featureEnforcement must be legacy or enforced" });
+  const denied = PLAN_FEATURE_KEYS.filter((k) => snapshot.features?.[k] === false);
+  if (denied.length > 0) {
+    if (featureEnforcementOf(snapshot) === "enforced") warnings.push({ code: "FEATURES_ENFORCED_DENIALS", field: "features", message: `subscribers of this version will be DENIED: ${denied.join(", ")}` });
+    else warnings.push({ code: "FEATURES_NOT_ENFORCED", field: "features", message: "feature enforcement is legacy (grandfathered): the disabled features are recorded only and every subscriber keeps access; set featureEnforcement to enforced to gate them" });
+  }
+  // Batch 41: AI allowances (null = none; integers within bounds).
+  if (snapshot.allowances !== undefined) {
+    const a = snapshot.allowances as unknown as Record<string, unknown> | null;
+    if (!a || typeof a !== "object") errors.push({ code: "ALLOWANCES_INVALID", field: "allowances", message: "allowances must be an object" });
+    else {
+      if (!(a.aiTokensPerMonth === null || isIntInRange(a.aiTokensPerMonth, 0, MAX_AI_TOKENS_PER_MONTH))) errors.push({ code: "ALLOWANCE_INVALID", field: "allowances.aiTokensPerMonth", message: "aiTokensPerMonth must be null or a bounded non-negative integer" });
+      if (!(a.aiCostMicroUsdPerMonth === null || isIntInRange(a.aiCostMicroUsdPerMonth, 0, MAX_AI_COST_MICRO_USD_PER_MONTH))) errors.push({ code: "ALLOWANCE_INVALID", field: "allowances.aiCostMicroUsdPerMonth", message: "aiCostMicroUsdPerMonth must be null or a bounded non-negative integer" });
+    }
+  }
   // Trial policy: complete and consistent with the approved end-of-trial rule.
   if (!isIntInRange(trial?.trialDays, 0, MAX_TRIAL_DAYS)) errors.push({ code: "TRIAL_DAYS_INVALID", field: "trialPolicy.trialDays", message: "trialDays must be an integer between 0 and 365" });
   if (typeof trial?.eligible !== "boolean") errors.push({ code: "TRIAL_ELIGIBLE_INVALID", field: "trialPolicy.eligible", message: "eligible must be set" });
@@ -323,7 +452,10 @@ export function validateVersionForPublish(snapshot: PlanVersionSnapshot, trial: 
   if (!(TRIAL_END_OUTCOMES as readonly string[]).includes(trial?.endOutcome)) errors.push({ code: "TRIAL_END_OUTCOME_INVALID", field: "trialPolicy.endOutcome", message: "endOutcome must be set" });
   if (!isIntInRange(trial?.readOnlyGraceDays, 0, MAX_GRACE_DAYS)) errors.push({ code: "TRIAL_GRACE_INVALID", field: "trialPolicy.readOnlyGraceDays", message: "readOnlyGraceDays must be an integer between 0 and 90" });
   if (trial?.endOutcome === "blocked" && trial?.readOnlyGraceDays > 0) errors.push({ code: "TRIAL_GRACE_INCONSISTENT", field: "trialPolicy.readOnlyGraceDays", message: "a blocked end-of-trial outcome cannot carry a read-only grace period" });
-  if (trial?.endOutcome === "read_only") errors.push({ code: "TRIAL_END_OUTCOME_UNSUPPORTED", field: "trialPolicy.endOutcome", message: "only the approved end-of-trial outcome 'blocked' (U5) can be published today; read-only grace is not enforceable yet" });
+  // Batch 41 (U5): a read-only outcome needs a positive grace (1..90 days); the
+  // default stays blocked with 0 days.
+  if (trial?.endOutcome === "read_only" && !(isIntInRange(trial?.readOnlyGraceDays, 1, MAX_GRACE_DAYS))) errors.push({ code: "TRIAL_GRACE_REQUIRED", field: "trialPolicy.readOnlyGraceDays", message: "a read-only end-of-trial outcome needs a grace period of 1 to 90 days" });
+  if (trial?.endOutcome === "read_only" && isIntInRange(trial?.readOnlyGraceDays, 1, MAX_GRACE_DAYS)) warnings.push({ code: "TRIAL_READ_ONLY_GRACE", field: "trialPolicy.endOutcome", message: `subscribers of this version get ${trial.readOnlyGraceDays} read-only day(s) after the trial ends before they are blocked` });
   if (trial?.eligible && trial?.trialDays === 0) warnings.push({ code: "TRIAL_ZERO_DAYS", field: "trialPolicy.trialDays", message: "trials are eligible but 0 days long" });
   // Prices: every ACTIVE price applying to this version must be verified in the
   // provider mode the platform is configured for.
@@ -340,7 +472,7 @@ export function validateVersionForPublish(snapshot: PlanVersionSnapshot, trial: 
 
 export type CompareValue = string | number | boolean | null;
 export interface CompareRow {
-  group: "display" | "limits" | "features" | "trialPolicy";
+  group: "display" | "limits" | "features" | "trialPolicy" | "enforcement" | "allowances";
   field: string;
   left: CompareValue;
   right: CompareValue;
@@ -360,6 +492,9 @@ export function compareVersions(a: VersionContent, b: VersionContent): CompareRo
   push("display", "sortOrder", a.snapshot.sortOrder, b.snapshot.sortOrder);
   for (const k of PLAN_LIMIT_KEYS) push("limits", k, a.snapshot.limits?.[k] ?? null, b.snapshot.limits?.[k] ?? null);
   for (const k of PLAN_FEATURE_KEYS) push("features", k, a.snapshot.features?.[k] ?? false, b.snapshot.features?.[k] ?? false);
+  push("enforcement", "featureEnforcement", featureEnforcementOf(a.snapshot), featureEnforcementOf(b.snapshot));
+  push("allowances", "aiTokensPerMonth", allowancesOf(a.snapshot).aiTokensPerMonth, allowancesOf(b.snapshot).aiTokensPerMonth);
+  push("allowances", "aiCostMicroUsdPerMonth", allowancesOf(a.snapshot).aiCostMicroUsdPerMonth, allowancesOf(b.snapshot).aiCostMicroUsdPerMonth);
   push("trialPolicy", "trialDays", a.trialPolicy.trialDays, b.trialPolicy.trialDays);
   push("trialPolicy", "eligible", a.trialPolicy.eligible, b.trialPolicy.eligible);
   push("trialPolicy", "oncePerCompany", a.trialPolicy.oncePerCompany, b.trialPolicy.oncePerCompany);

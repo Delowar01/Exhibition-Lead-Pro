@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AiFeatureFlags } from './aiFeatureFlags';
+import type { AiSettingsResponseBudgetSource } from './aiSettingsResponseBudgetSource';
+import type { AiSettingsResponsePlanAllowance } from './aiSettingsResponsePlanAllowance';
 import type { WorkflowRules } from './workflowRules';
 
 export interface AiSettingsResponse {
@@ -14,8 +16,13 @@ export interface AiSettingsResponse {
   model: string;
   enabled: boolean;
   featureFlags: AiFeatureFlags;
+  /** The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited) */
   monthlyTokenBudget?: number | null;
+  /** The EFFECTIVE monthly cost budget in USD (same precedence) */
   monthlyCostBudgetUsd?: number | null;
+  /** Batch 41 (U4) — where each effective budget comes from */
+  budgetSource: AiSettingsResponseBudgetSource;
+  planAllowance: AiSettingsResponsePlanAllowance;
   workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   availableProviders: string[];

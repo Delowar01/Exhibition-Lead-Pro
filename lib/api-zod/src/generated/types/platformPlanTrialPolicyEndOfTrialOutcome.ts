@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace
+ */
 export type PlatformPlanTrialPolicyEndOfTrialOutcome = typeof PlatformPlanTrialPolicyEndOfTrialOutcome[keyof typeof PlatformPlanTrialPolicyEndOfTrialOutcome];
 
 

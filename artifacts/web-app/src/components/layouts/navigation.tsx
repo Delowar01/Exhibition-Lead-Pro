@@ -9,6 +9,7 @@ import { workflowAccess } from "@/components/automations/permissions";
 import { subscriptionAccess } from "@/components/billing/permissions";
 import type { LucideIcon } from "lucide-react";
 import type { User } from "@workspace/api-client-react";
+import { featureAllowed } from "@/lib/entitlements";
 
 export interface NavItem {
   name: string;
@@ -25,13 +26,18 @@ export interface NavGroup {
 export function buildAdminNav(user: User | null): NavGroup[] {
   const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
   const docPerms = (user?.permissions?.documents as string[] | undefined) ?? [];
-  const canViewDocuments = isFullAccess || docPerms.includes("view");
+  // Batch 41 (PB-3): RBAC first, then the plan version's feature entitlement
+  // (resolved by the server; a denied feature is hidden, never derived here).
+  const canViewDocuments = (isFullAccess || docPerms.includes("view")) && featureAllowed(user, "documents");
   const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
   const canViewExecutive =
-    user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
+    user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view")) && featureAllowed(user, "executive.intelligence");
   const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
   const canViewAssistant =
-    user?.role !== "platform_owner" && (isFullAccess || assistantPerms.includes("view"));
+    user?.role !== "platform_owner" &&
+    (isFullAccess || assistantPerms.includes("view")) &&
+    featureAllowed(user, "ai.assistant") &&
+    featureAllowed(user, "ai.command_center");
 
   const groups: NavGroup[] = [
     {
