@@ -1948,6 +1948,195 @@ export const PlatformSyncSubscriptionResponse = zod.object({
 
 
 /**
+ * @summary Read-only plan catalog overview — the five fixed plans with their limits, features, trial policy, price mappings and subscription counts (Plan Builder foundation; no mutation endpoint exists)
+ */
+export const PlatformListPlansResponse = zod.object({
+  "plans": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "isActive": zod.boolean(),
+  "seeded": zod.boolean().describe('One of the five fixed catalog identities'),
+  "trialDays": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan\'s feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+}))),
+  "activePriceCount": zod.number(),
+  "subscriptions": zod.object({
+  "total": zod.number(),
+  "byStatus": zod.object({
+  "trialing": zod.number(),
+  "active": zod.number(),
+  "past_due": zod.number(),
+  "cancelled": zod.number(),
+  "expired": zod.number(),
+  "suspended": zod.number()
+}),
+  "byBillingSource": zod.object({
+  "manual": zod.number(),
+  "stripe": zod.number()
+}),
+  "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
+}),
+  "versioning": zod.enum(['not_versioned']).describe('The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner\'s data-model approval'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
+  "limitResources": zod.array(zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb'])),
+  "trialPolicy": zod.object({
+  "defaultTrialDays": zod.number(),
+  "configuredTrialDays": zod.number(),
+  "endOfTrialOutcome": zod.enum(['blocked']),
+  "readOnlyGraceDays": zod.number(),
+  "manualTrialExpirySweep": zod.boolean(),
+  "rule": zod.string().describe('The resolver rule of record, stated for display only')
+}),
+  "provider": zod.object({
+  "kind": zod.string(),
+  "available": zod.boolean(),
+  "stripeMode": zod.string().nullable()
+}),
+  "readOnly": zod.boolean().describe('Always true — the foundation exposes no plan mutation'),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Read-only detail of one fixed plan including per-resource override counts
+ */
+export const PlatformGetPlanParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const PlatformGetPlanResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "isActive": zod.boolean(),
+  "seeded": zod.boolean().describe('One of the five fixed catalog identities'),
+  "trialDays": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan\'s feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+}))),
+  "activePriceCount": zod.number(),
+  "subscriptions": zod.object({
+  "total": zod.number(),
+  "byStatus": zod.object({
+  "trialing": zod.number(),
+  "active": zod.number(),
+  "past_due": zod.number(),
+  "cancelled": zod.number(),
+  "expired": zod.number(),
+  "suspended": zod.number()
+}),
+  "byBillingSource": zod.object({
+  "manual": zod.number(),
+  "stripe": zod.number()
+}),
+  "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
+}),
+  "versioning": zod.enum(['not_versioned']).describe('The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner\'s data-model approval'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "overrides": zod.object({
+  "tenantsWithAnyOverride": zod.number(),
+  "byResource": zod.object({
+  "contacts": zod.number(),
+  "events": zod.number(),
+  "admins": zod.number(),
+  "employees": zod.number(),
+  "scans": zod.number(),
+  "storageMb": zod.number()
+})
+})
+}))
+
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a plan (the single entitlement resolver with the tenant's own overrides; nothing is changed)
+ */
+export const PlatformPreviewPlanLimitsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformPreviewPlanLimitsResponse = zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "currentPlan": zod.string(),
+  "previewPlan": zod.string(),
+  "isCurrentPlan": zod.boolean(),
+  "status": zod.string(),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "billingSource": zod.string(),
+  "rows": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "planDefault": zod.number().nullable().describe('The previewed plan\'s default (null = unlimited)'),
+  "override": zod.number().nullable().describe('The tenant\'s own numeric override (null = none)'),
+  "effective": zod.number().nullable().describe('override ?? plan default ?? unlimited, from the single resolver'),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "currentEffective": zod.number().nullable().describe('The tenant\'s effective limit on its current plan'),
+  "changes": zod.boolean().describe('effective differs from currentEffective'),
+  "used": zod.number(),
+  "measurable": zod.boolean(),
+  "remaining": zod.number().nullable(),
+  "exceeds": zod.boolean().describe('Measured usage already exceeds the previewed effective limit (informational)')
+})),
+  "changedResources": zod.array(zod.string()),
+  "blockingResources": zod.array(zod.string()),
+  "readOnly": zod.boolean(),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Provider configuration state (no secret values)
  */
 export const PlatformBillingStatusResponse = zod.object({

@@ -1371,6 +1371,62 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlatformSyncResult"
 
+  /platform/plans:
+    get:
+      operationId: platformListPlans
+      tags: [platform]
+      summary: Read-only plan catalog overview — the five fixed plans with their limits, features, trial policy, price mappings and subscription counts (Plan Builder foundation; no mutation endpoint exists)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanCatalog"
+
+  /platform/plans/{planId}:
+    get:
+      operationId: platformGetPlan
+      tags: [platform]
+      summary: Read-only detail of one fixed plan including per-resource override counts
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanDetail"
+
+  /platform/plans/{planId}/effective-limits/{companyId}:
+    get:
+      operationId: platformPreviewPlanLimits
+      tags: [platform]
+      summary: Read-only preview of a tenant's effective limits under a plan (the single entitlement resolver with the tenant's own overrides; nothing is changed)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformEffectiveLimitPreview"
+
   /platform/billing/status:
     get:
       operationId: platformBillingStatus
@@ -12938,6 +12994,257 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlatformPlanPrice"
+
+    PlatformPlanLimits:
+      type: object
+      description: Plan default limits (null = unlimited / not enforced)
+      required: [contacts, events, admins, employees, scans, storageMb]
+      properties:
+        contacts:
+          type: ["integer", "null"]
+        events:
+          type: ["integer", "null"]
+        admins:
+          type: ["integer", "null"]
+        employees:
+          type: ["integer", "null"]
+        scans:
+          type: ["integer", "null"]
+        storageMb:
+          type: ["integer", "null"]
+
+    PlatformPlanSubscriptionCounts:
+      type: object
+      required: [total, byStatus, byBillingSource, withOverrides]
+      properties:
+        total:
+          type: integer
+        byStatus:
+          type: object
+          required: [trialing, active, past_due, cancelled, expired, suspended]
+          properties:
+            trialing:
+              type: integer
+            active:
+              type: integer
+            past_due:
+              type: integer
+            cancelled:
+              type: integer
+            expired:
+              type: integer
+            suspended:
+              type: integer
+        byBillingSource:
+          type: object
+          required: [manual, stripe]
+          properties:
+            manual:
+              type: integer
+            stripe:
+              type: integer
+        withOverrides:
+          type: integer
+          description: Subscriptions on this plan carrying at least one numeric per-tenant limit override
+
+    PlatformPlanOverview:
+      type: object
+      required: [id, name, description, sortOrder, isActive, seeded, trialDays, limits, features, prices, activePriceCount, subscriptions, versioning, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
+        seeded:
+          type: boolean
+          description: One of the five fixed catalog identities
+        trialDays:
+          type: integer
+        limits:
+          $ref: "#/components/schemas/PlatformPlanLimits"
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
+          description: The plan's feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanPrice"
+        activePriceCount:
+          type: integer
+        subscriptions:
+          $ref: "#/components/schemas/PlatformPlanSubscriptionCounts"
+        versioning:
+          type: string
+          enum: [not_versioned]
+          description: The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner's data-model approval
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PlatformPlanTrialPolicy:
+      type: object
+      required: [defaultTrialDays, configuredTrialDays, endOfTrialOutcome, readOnlyGraceDays, manualTrialExpirySweep, rule]
+      properties:
+        defaultTrialDays:
+          type: integer
+        configuredTrialDays:
+          type: integer
+        endOfTrialOutcome:
+          type: string
+          enum: [blocked]
+        readOnlyGraceDays:
+          type: integer
+        manualTrialExpirySweep:
+          type: boolean
+        rule:
+          type: string
+          description: The resolver rule of record, stated for display only
+
+    PlatformPlanCatalog:
+      type: object
+      required: [plans, limitResources, trialPolicy, provider, readOnly, generatedAt]
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanOverview"
+        limitResources:
+          type: array
+          items:
+            type: string
+            enum: [contacts, events, admins, employees, scans, storageMb]
+        trialPolicy:
+          $ref: "#/components/schemas/PlatformPlanTrialPolicy"
+        provider:
+          type: object
+          required: [kind, available, stripeMode]
+          properties:
+            kind:
+              type: string
+            available:
+              type: boolean
+            stripeMode:
+              type: ["string", "null"]
+        readOnly:
+          type: boolean
+          description: Always true — the foundation exposes no plan mutation
+        generatedAt:
+          type: string
+          format: date-time
+
+    PlatformPlanDetail:
+      allOf:
+        - $ref: "#/components/schemas/PlatformPlanOverview"
+        - type: object
+          required: [overrides]
+          properties:
+            overrides:
+              type: object
+              required: [tenantsWithAnyOverride, byResource]
+              properties:
+                tenantsWithAnyOverride:
+                  type: integer
+                byResource:
+                  type: object
+                  required: [contacts, events, admins, employees, scans, storageMb]
+                  properties:
+                    contacts:
+                      type: integer
+                    events:
+                      type: integer
+                    admins:
+                      type: integer
+                    employees:
+                      type: integer
+                    scans:
+                      type: integer
+                    storageMb:
+                      type: integer
+
+    PlatformEffectiveLimitPreviewRow:
+      type: object
+      required: [resource, planDefault, override, effective, source, currentEffective, changes, used, measurable, remaining, exceeds]
+      properties:
+        resource:
+          type: string
+          enum: [contacts, events, admins, employees, scans, storageMb]
+        planDefault:
+          type: ["integer", "null"]
+          description: The previewed plan's default (null = unlimited)
+        override:
+          type: ["integer", "null"]
+          description: The tenant's own numeric override (null = none)
+        effective:
+          type: ["integer", "null"]
+          description: override ?? plan default ?? unlimited, from the single resolver
+        source:
+          type: string
+          enum: [override, plan, unlimited]
+        currentEffective:
+          type: ["integer", "null"]
+          description: The tenant's effective limit on its current plan
+        changes:
+          type: boolean
+          description: effective differs from currentEffective
+        used:
+          type: integer
+        measurable:
+          type: boolean
+        remaining:
+          type: ["integer", "null"]
+        exceeds:
+          type: boolean
+          description: Measured usage already exceeds the previewed effective limit (informational)
+
+    PlatformEffectiveLimitPreview:
+      type: object
+      required: [companyId, companyName, currentPlan, previewPlan, isCurrentPlan, status, accessMode, billingSource, rows, changedResources, blockingResources, readOnly, generatedAt]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: ["string", "null"]
+        currentPlan:
+          type: string
+        previewPlan:
+          type: string
+        isCurrentPlan:
+          type: boolean
+        status:
+          type: string
+        accessMode:
+          type: string
+          enum: [full, read_only, blocked]
+        billingSource:
+          type: string
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformEffectiveLimitPreviewRow"
+        changedResources:
+          type: array
+          items:
+            type: string
+        blockingResources:
+          type: array
+          items:
+            type: string
+        readOnly:
+          type: boolean
+        generatedAt:
+          type: string
+          format: date-time
 
     PlatformSetSubscriptionPlanInput:
       type: object

@@ -3942,6 +3942,227 @@ export interface PlatformPlanPriceList {
   prices: PlatformPlanPrice[];
 }
 
+/**
+ * Plan default limits (null = unlimited / not enforced)
+ */
+export interface PlatformPlanLimits {
+  /** @nullable */
+  contacts: number | null;
+  /** @nullable */
+  events: number | null;
+  /** @nullable */
+  admins: number | null;
+  /** @nullable */
+  employees: number | null;
+  /** @nullable */
+  scans: number | null;
+  /** @nullable */
+  storageMb: number | null;
+}
+
+export type PlatformPlanSubscriptionCountsByStatus = {
+  trialing: number;
+  active: number;
+  past_due: number;
+  cancelled: number;
+  expired: number;
+  suspended: number;
+};
+
+export type PlatformPlanSubscriptionCountsByBillingSource = {
+  manual: number;
+  stripe: number;
+};
+
+export interface PlatformPlanSubscriptionCounts {
+  total: number;
+  byStatus: PlatformPlanSubscriptionCountsByStatus;
+  byBillingSource: PlatformPlanSubscriptionCountsByBillingSource;
+  /** Subscriptions on this plan carrying at least one numeric per-tenant limit override */
+  withOverrides: number;
+}
+
+/**
+ * The plan's feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)
+ */
+export type PlatformPlanOverviewFeatures = {[key: string]: boolean};
+
+/**
+ * The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner's data-model approval
+ */
+export type PlatformPlanOverviewVersioning = typeof PlatformPlanOverviewVersioning[keyof typeof PlatformPlanOverviewVersioning];
+
+
+export const PlatformPlanOverviewVersioning = {
+  not_versioned: 'not_versioned',
+} as const;
+
+export interface PlatformPlanOverview {
+  id: string;
+  name: string;
+  /** @nullable */
+  description: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  /** One of the five fixed catalog identities */
+  seeded: boolean;
+  trialDays: number;
+  limits: PlatformPlanLimits;
+  /** The plan's feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval) */
+  features: PlatformPlanOverviewFeatures;
+  prices: PlatformPlanPrice[];
+  activePriceCount: number;
+  subscriptions: PlatformPlanSubscriptionCounts;
+  /** The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner's data-model approval */
+  versioning: PlatformPlanOverviewVersioning;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PlatformPlanTrialPolicyEndOfTrialOutcome = typeof PlatformPlanTrialPolicyEndOfTrialOutcome[keyof typeof PlatformPlanTrialPolicyEndOfTrialOutcome];
+
+
+export const PlatformPlanTrialPolicyEndOfTrialOutcome = {
+  blocked: 'blocked',
+} as const;
+
+export interface PlatformPlanTrialPolicy {
+  defaultTrialDays: number;
+  configuredTrialDays: number;
+  endOfTrialOutcome: PlatformPlanTrialPolicyEndOfTrialOutcome;
+  readOnlyGraceDays: number;
+  manualTrialExpirySweep: boolean;
+  /** The resolver rule of record, stated for display only */
+  rule: string;
+}
+
+export type PlatformPlanCatalogLimitResourcesItem = typeof PlatformPlanCatalogLimitResourcesItem[keyof typeof PlatformPlanCatalogLimitResourcesItem];
+
+
+export const PlatformPlanCatalogLimitResourcesItem = {
+  contacts: 'contacts',
+  events: 'events',
+  admins: 'admins',
+  employees: 'employees',
+  scans: 'scans',
+  storageMb: 'storageMb',
+} as const;
+
+export type PlatformPlanCatalogProvider = {
+  kind: string;
+  available: boolean;
+  /** @nullable */
+  stripeMode: string | null;
+};
+
+export interface PlatformPlanCatalog {
+  plans: PlatformPlanOverview[];
+  limitResources: PlatformPlanCatalogLimitResourcesItem[];
+  trialPolicy: PlatformPlanTrialPolicy;
+  provider: PlatformPlanCatalogProvider;
+  /** Always true — the foundation exposes no plan mutation */
+  readOnly: boolean;
+  generatedAt: string;
+}
+
+export type PlatformPlanDetailOverridesByResource = {
+  contacts: number;
+  events: number;
+  admins: number;
+  employees: number;
+  scans: number;
+  storageMb: number;
+};
+
+export type PlatformPlanDetailOverrides = {
+  tenantsWithAnyOverride: number;
+  byResource: PlatformPlanDetailOverridesByResource;
+};
+
+export type PlatformPlanDetail = PlatformPlanOverview & {
+  overrides: PlatformPlanDetailOverrides;
+};
+
+export type PlatformEffectiveLimitPreviewRowResource = typeof PlatformEffectiveLimitPreviewRowResource[keyof typeof PlatformEffectiveLimitPreviewRowResource];
+
+
+export const PlatformEffectiveLimitPreviewRowResource = {
+  contacts: 'contacts',
+  events: 'events',
+  admins: 'admins',
+  employees: 'employees',
+  scans: 'scans',
+  storageMb: 'storageMb',
+} as const;
+
+export type PlatformEffectiveLimitPreviewRowSource = typeof PlatformEffectiveLimitPreviewRowSource[keyof typeof PlatformEffectiveLimitPreviewRowSource];
+
+
+export const PlatformEffectiveLimitPreviewRowSource = {
+  override: 'override',
+  plan: 'plan',
+  unlimited: 'unlimited',
+} as const;
+
+export interface PlatformEffectiveLimitPreviewRow {
+  resource: PlatformEffectiveLimitPreviewRowResource;
+  /**
+     * The previewed plan's default (null = unlimited)
+     * @nullable
+     */
+  planDefault: number | null;
+  /**
+     * The tenant's own numeric override (null = none)
+     * @nullable
+     */
+  override: number | null;
+  /**
+     * override ?? plan default ?? unlimited, from the single resolver
+     * @nullable
+     */
+  effective: number | null;
+  source: PlatformEffectiveLimitPreviewRowSource;
+  /**
+     * The tenant's effective limit on its current plan
+     * @nullable
+     */
+  currentEffective: number | null;
+  /** effective differs from currentEffective */
+  changes: boolean;
+  used: number;
+  measurable: boolean;
+  /** @nullable */
+  remaining: number | null;
+  /** Measured usage already exceeds the previewed effective limit (informational) */
+  exceeds: boolean;
+}
+
+export type PlatformEffectiveLimitPreviewAccessMode = typeof PlatformEffectiveLimitPreviewAccessMode[keyof typeof PlatformEffectiveLimitPreviewAccessMode];
+
+
+export const PlatformEffectiveLimitPreviewAccessMode = {
+  full: 'full',
+  read_only: 'read_only',
+  blocked: 'blocked',
+} as const;
+
+export interface PlatformEffectiveLimitPreview {
+  companyId: number;
+  /** @nullable */
+  companyName: string | null;
+  currentPlan: string;
+  previewPlan: string;
+  isCurrentPlan: boolean;
+  status: string;
+  accessMode: PlatformEffectiveLimitPreviewAccessMode;
+  billingSource: string;
+  rows: PlatformEffectiveLimitPreviewRow[];
+  changedResources: string[];
+  blockingResources: string[];
+  readOnly: boolean;
+  generatedAt: string;
+}
+
 export type PlatformSetSubscriptionPlanInputPlan = typeof PlatformSetSubscriptionPlanInputPlan[keyof typeof PlatformSetSubscriptionPlanInputPlan];
 
 

@@ -266,7 +266,10 @@ import type {
   PipelineView,
   Plan,
   PlatformBillingStatus,
+  PlatformEffectiveLimitPreview,
   PlatformListSubscriptionsParams,
+  PlatformPlanCatalog,
+  PlatformPlanDetail,
   PlatformPlanPrice,
   PlatformPlanPriceList,
   PlatformRegisterPriceInput,
@@ -4573,6 +4576,242 @@ export const usePlatformSyncSubscription = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getPlatformSyncSubscriptionMutationOptions(options));
     }
+
+export const getPlatformListPlansUrl = () => {
+
+
+
+
+  return `/api/platform/plans`
+}
+
+/**
+ * @summary Read-only plan catalog overview — the five fixed plans with their limits, features, trial policy, price mappings and subscription counts (Plan Builder foundation; no mutation endpoint exists)
+ */
+export const platformListPlans = async ( options?: RequestInit): Promise<PlatformPlanCatalog> => {
+
+  return customFetch<PlatformPlanCatalog>(getPlatformListPlansUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformListPlansQueryKey = () => {
+    return [
+    `/api/platform/plans`
+    ] as const;
+    }
+
+
+export const getPlatformListPlansQueryOptions = <TData = Awaited<ReturnType<typeof platformListPlans>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformListPlans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformListPlansQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformListPlans>>> = ({ signal }) => platformListPlans({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformListPlans>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformListPlansQueryResult = NonNullable<Awaited<ReturnType<typeof platformListPlans>>>
+export type PlatformListPlansQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read-only plan catalog overview — the five fixed plans with their limits, features, trial policy, price mappings and subscription counts (Plan Builder foundation; no mutation endpoint exists)
+ */
+
+export function usePlatformListPlans<TData = Awaited<ReturnType<typeof platformListPlans>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformListPlans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformListPlansQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPlatformGetPlanUrl = (planId: string,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}`
+}
+
+/**
+ * @summary Read-only detail of one fixed plan including per-resource override counts
+ */
+export const platformGetPlan = async (planId: string, options?: RequestInit): Promise<PlatformPlanDetail> => {
+
+  return customFetch<PlatformPlanDetail>(getPlatformGetPlanUrl(planId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformGetPlanQueryKey = (planId: string,) => {
+    return [
+    `/api/platform/plans/${planId}`
+    ] as const;
+    }
+
+
+export const getPlatformGetPlanQueryOptions = <TData = Awaited<ReturnType<typeof platformGetPlan>>, TError = ErrorType<unknown>>(planId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformGetPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformGetPlanQueryKey(planId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformGetPlan>>> = ({ signal }) => platformGetPlan(planId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(planId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformGetPlan>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformGetPlanQueryResult = NonNullable<Awaited<ReturnType<typeof platformGetPlan>>>
+export type PlatformGetPlanQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read-only detail of one fixed plan including per-resource override counts
+ */
+
+export function usePlatformGetPlan<TData = Awaited<ReturnType<typeof platformGetPlan>>, TError = ErrorType<unknown>>(
+ planId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformGetPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformGetPlanQueryOptions(planId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPlatformPreviewPlanLimitsUrl = (planId: string,
+    companyId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/effective-limits/${companyId}`
+}
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a plan (the single entitlement resolver with the tenant's own overrides; nothing is changed)
+ */
+export const platformPreviewPlanLimits = async (planId: string,
+    companyId: number, options?: RequestInit): Promise<PlatformEffectiveLimitPreview> => {
+
+  return customFetch<PlatformEffectiveLimitPreview>(getPlatformPreviewPlanLimitsUrl(planId,companyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformPreviewPlanLimitsQueryKey = (planId: string,
+    companyId: number,) => {
+    return [
+    `/api/platform/plans/${planId}/effective-limits/${companyId}`
+    ] as const;
+    }
+
+
+export const getPlatformPreviewPlanLimitsQueryOptions = <TData = Awaited<ReturnType<typeof platformPreviewPlanLimits>>, TError = ErrorType<unknown>>(planId: string,
+    companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformPreviewPlanLimits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformPreviewPlanLimitsQueryKey(planId,companyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformPreviewPlanLimits>>> = ({ signal }) => platformPreviewPlanLimits(planId,companyId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(planId && companyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformPreviewPlanLimits>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformPreviewPlanLimitsQueryResult = NonNullable<Awaited<ReturnType<typeof platformPreviewPlanLimits>>>
+export type PlatformPreviewPlanLimitsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a plan (the single entitlement resolver with the tenant's own overrides; nothing is changed)
+ */
+
+export function usePlatformPreviewPlanLimits<TData = Awaited<ReturnType<typeof platformPreviewPlanLimits>>, TError = ErrorType<unknown>>(
+ planId: string,
+    companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformPreviewPlanLimits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformPreviewPlanLimitsQueryOptions(planId,companyId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getPlatformBillingStatusUrl = () => {
 

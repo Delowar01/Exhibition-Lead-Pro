@@ -540,3 +540,29 @@ export async function dailyScanCounts(days: number, now = new Date()): Promise<A
   }
   return out;
 }
+
+// ── Batch 39 — read-only aggregates for the Plan Builder foundation ──────────
+// Platform-owner catalog counts only (no tenant data beyond the plan / status /
+// billing-source keys and the override map); every function reads, none writes.
+
+export async function countSubscriptionsByPlanAndStatus(tx?: Executor): Promise<Array<{ plan: string; status: string; count: number }>> {
+  const rows = await exec(tx)
+    .select({ plan: subscriptionsTable.plan, status: subscriptionsTable.status, count: count() })
+    .from(subscriptionsTable)
+    .groupBy(subscriptionsTable.plan, subscriptionsTable.status);
+  return rows.map((r) => ({ plan: r.plan, status: r.status, count: Number(r.count) }));
+}
+
+export async function countSubscriptionsByPlanAndSource(tx?: Executor): Promise<Array<{ plan: string; billingSource: string; count: number }>> {
+  const rows = await exec(tx)
+    .select({ plan: subscriptionsTable.plan, billingSource: subscriptionsTable.billingSource, count: count() })
+    .from(subscriptionsTable)
+    .groupBy(subscriptionsTable.plan, subscriptionsTable.billingSource);
+  return rows.map((r) => ({ plan: r.plan, billingSource: r.billingSource, count: Number(r.count) }));
+}
+
+// Plan + override map of every subscription (the service aggregates per resource
+// with the resolver's own "numeric override only" rule).
+export async function listSubscriptionLimitOverrides(tx?: Executor): Promise<Array<{ plan: string; limitOverrides: SubscriptionRow["limitOverrides"] }>> {
+  return exec(tx).select({ plan: subscriptionsTable.plan, limitOverrides: subscriptionsTable.limitOverrides }).from(subscriptionsTable);
+}

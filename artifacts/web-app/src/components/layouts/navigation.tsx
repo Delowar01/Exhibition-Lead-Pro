@@ -128,6 +128,7 @@ export function buildPlatformNav(): NavGroup[] {
         { name: "Companies", href: "/platform/companies", icon: Building2 },
         { name: "Users", href: "/platform/users", icon: Users },
         { name: "Subscriptions", href: "/platform/subscriptions", icon: CreditCard },
+        { name: "Plans", href: "/platform/plans", icon: Layers },
       ],
     },
     {
