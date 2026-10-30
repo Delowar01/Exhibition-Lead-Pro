@@ -6,10 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlatformFieldIssue } from './platformFieldIssue';
+import type { PlatformPlanManualPrice } from './platformPlanManualPrice';
 import type { PlatformPlanVersionPrice } from './platformPlanVersionPrice';
 import type { PlatformPlanVersionValidationProviderMode } from './platformPlanVersionValidationProviderMode';
 import type { PlatformPlanVersionValidationState } from './platformPlanVersionValidationState';
 import type { PlatformPublishBlocker } from './platformPublishBlocker';
+import type { PlatformVersionPriceMapping } from './platformVersionPriceMapping';
 
 export interface PlatformPlanVersionValidation {
   planId: string;
@@ -24,5 +26,8 @@ export interface PlatformPlanVersionValidation {
   /** ok and no blocker */
   publishable: boolean;
   pricesConsidered: PlatformPlanVersionPrice[];
+  /** Batch 42 — every applicable mapping (active or not) with scope + verification state */
+  priceMappings?: PlatformVersionPriceMapping[];
+  manualPrices?: PlatformPlanManualPrice[];
   providerMode: PlatformPlanVersionValidationProviderMode;
 }

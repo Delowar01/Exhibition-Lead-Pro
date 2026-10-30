@@ -21,8 +21,10 @@ import {
   isPlanSlug,
   limitTightens,
   limitsAsPlanDefaults,
+  manualPricesOf,
   noAllowances,
   parseAllowancesInput,
+  parseManualPricesInput,
   parseDisplayInput,
   parseFeatureEnforcementInput,
   parseFeaturesInput,
@@ -85,6 +87,34 @@ async function writePlanAudit(tx: Executor, actor: Actor, action: string, entity
 
 function providerMode(): "test" | "live" {
   return config.billing.stripeMode ?? "test";
+}
+
+function mask(id: string | null): string | null {
+  if (!id) return null;
+  return id.length <= 6 ? "…" : `${id.slice(0, 4)}…${id.slice(-4)}`;
+}
+
+// Batch 42 (PB-4.2) — a provider price mapping as the owner reviews it on a
+// version: its scope (plan-wide vs bound to this version) and its verification
+// state against the configured provider mode. Never the raw provider id.
+export function priceMappingView(p: PlanPriceRow) {
+  return {
+    id: p.id,
+    planId: p.planId,
+    planVersionId: p.planVersionId ?? null,
+    scope: p.planVersionId == null ? ("plan" as const) : ("version" as const),
+    interval: p.interval,
+    intervalCount: p.intervalCount,
+    currency: p.currency,
+    unitAmountMinor: p.unitAmountMinor,
+    nickname: p.nickname,
+    active: p.active,
+    providerMode: p.providerMode,
+    verified: p.verifiedAt != null,
+    modeMatches: p.providerMode === providerMode(),
+    verifiedAt: p.verifiedAt?.toISOString() ?? null,
+    providerPriceRef: mask(p.providerPriceId),
+  };
 }
 
 // ── Projections ──────────────────────────────────────────────────────────────
@@ -180,6 +210,8 @@ export interface VersionInput {
   // Batch 41 (PB-3)
   featureEnforcement?: unknown;
   allowances?: unknown;
+  // Batch 42 (PB-4, D2): platform-managed price summaries (display + audit only).
+  manualPrices?: unknown;
 }
 
 function applyInput(base: VersionContent, input: VersionInput): VersionContent & { changed: string[] } {
@@ -189,12 +221,13 @@ function applyInput(base: VersionContent, input: VersionInput): VersionContent &
   const trial = parseTrialPolicyInput(input.trialPolicy, base.trialPolicy);
   const enforcement = parseFeatureEnforcementInput(input.featureEnforcement, featureEnforcementOf(base.snapshot));
   const allowances = parseAllowancesInput(input.allowances, allowancesOf(base.snapshot));
-  const issues: FieldIssue[] = [...display.issues, ...limits.issues, ...features.issues, ...trial.issues, ...enforcement.issues, ...allowances.issues];
+  const manual = parseManualPricesInput(input.manualPrices, manualPricesOf(base.snapshot));
+  const issues: FieldIssue[] = [...display.issues, ...limits.issues, ...features.issues, ...trial.issues, ...enforcement.issues, ...allowances.issues, ...manual.issues];
   if (issues.length > 0) throw new AppError(400, "Invalid plan version input", { code: "VERSION_INPUT_INVALID", details: { issues } });
   // A DRAFT always carries the Batch 41 fields explicitly (an absent field is the
   // legacy meaning reserved for pre-Batch-41 PUBLISHED snapshots, which are never
   // rewritten).
-  const snapshot: PlanVersionSnapshot = { ...base.snapshot, name: display.value.name, description: display.value.description, sortOrder: display.value.sortOrder, limits: limits.value, features: features.value, featureEnforcement: enforcement.value, allowances: allowances.value };
+  const snapshot: PlanVersionSnapshot = { ...base.snapshot, name: display.value.name, description: display.value.description, sortOrder: display.value.sortOrder, limits: limits.value, features: features.value, featureEnforcement: enforcement.value, allowances: allowances.value, manualPrices: manual.value };
   const next = { snapshot, trialPolicy: trial.value };
   const changed = compareVersions(base, next)
     .filter((r) => r.changed)
@@ -233,7 +266,7 @@ export async function createPlan(actor: Actor, input: { id?: unknown } & Version
   // A brand-new plan starts LEGACY (nothing gated) with every feature recorded as
   // granted and no AI allowance; the owner opts into enforcement explicitly.
   const base: VersionContent = {
-    snapshot: { name: "", description: null, sortOrder: 100, limits: unlimitedLimits(), features: effectiveFeatureMatrix(null), prices: [], featureEnforcement: "legacy", allowances: noAllowances() },
+    snapshot: { name: "", description: null, sortOrder: 100, limits: unlimitedLimits(), features: effectiveFeatureMatrix(null), prices: [], featureEnforcement: "legacy", allowances: noAllowances(), manualPrices: [] },
     trialPolicy: defaultTrialPolicy(DEFAULT_TRIAL_DAYS),
   };
   const content = applyInput(base, input);
@@ -354,6 +387,8 @@ export async function validateVersion(planId: string, versionId: number) {
     blockers,
     publishable: validation.ok && blockers.length === 0,
     pricesConsidered: prices.filter((p) => p.active).map(priceSummary),
+    priceMappings: prices.map(priceMappingView),
+    manualPrices: manualPricesOf(v.snapshot),
     providerMode: providerMode(),
   };
 }
@@ -430,6 +465,11 @@ export async function deleteDraft(actor: Actor, planId: string, versionId: numbe
     if (v.publishedAt) throw conflict("VERSION_PUBLISHED", "A published version is never deleted (retire it instead)", { versionId: v.id, version: v.version });
     const subscribers = await repo.countSubscriptionsOnVersion(v.id, tx);
     if (subscribers > 0) throw conflict("VERSION_HAS_SUBSCRIBERS", "A version with subscribers cannot be deleted", { count: subscribers });
+    // Batch 42: a provider price bound to the draft is a registered identity that is
+    // never deleted or silently re-bound — keep the draft (edit it) or publish and
+    // retire it; deactivate the mapping if it must stop being offered.
+    const boundPrices = await repo.listPlanPricesBoundToVersion(v.id, tx);
+    if (boundPrices.length > 0) throw conflict("VERSION_HAS_PRICES", "This draft carries registered provider prices (never deleted, never re-bound); keep and edit the draft, or deactivate its prices and publish it", { count: boundPrices.length, priceIds: boundPrices.map((p) => p.id) });
     await repo.deletePlanVersion(v.id, tx);
     let planDeleted = false;
     if (plan.status === "draft" && (await repo.listPlanVersions(plan.id, tx)).length === 0) {
@@ -487,7 +527,9 @@ export async function getVersion(planId: string, versionId: number) {
   const [current, subscribers, prices] = await Promise.all([repo.findCurrentPublishedVersion(plan.id), repo.countSubscriptionsOnVersion(v.id), repo.listPlanPricesForVersion(plan.id, v.id)]);
   const view = versionView(v, { isCurrent: current?.id === v.id, subscribers });
   const validation = v.publishedAt ? null : await validateVersion(plan.id, v.id);
-  return { ...view, prices: prices.map(priceSummary), validation };
+  // Batch 42: `prices` keeps the Batch 40 summary shape (applicable mappings);
+  // `priceMappings` adds scope + verification state; `manualPrices` the D2 summaries.
+  return { ...view, prices: prices.map(priceSummary), priceMappings: prices.map(priceMappingView), manualPrices: manualPricesOf(v.snapshot), validation };
 }
 
 export async function compare(planId: string, versionId: number, otherVersionId: number) {

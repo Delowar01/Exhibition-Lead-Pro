@@ -271,9 +271,13 @@ import type {
   PlatformDuplicatePlanInput,
   PlatformEffectiveLimitPreview,
   PlatformListSubscriptionsParams,
+  PlatformMigratePlanVersionTenantsInput,
+  PlatformMigrationResult,
   PlatformPlanCatalog,
+  PlatformPlanChangePreview,
   PlatformPlanCreateResult,
   PlatformPlanDetail,
+  PlatformPlanHistory,
   PlatformPlanPrice,
   PlatformPlanPriceList,
   PlatformPlanVersion,
@@ -283,6 +287,7 @@ import type {
   PlatformPlanVersionImpact,
   PlatformPlanVersionList,
   PlatformPlanVersionValidation,
+  PlatformPreviewSubscriptionPlanChangeInput,
   PlatformRegisterPriceInput,
   PlatformSetSubscriptionLimitsInput,
   PlatformSetSubscriptionPlanInput,
@@ -3883,6 +3888,155 @@ export const usePlatformSetSubscriptionPlan = <TError = ErrorType<ErrorResponse>
       return useMutation(getPlatformSetSubscriptionPlanMutationOptions(options));
     }
 
+export const getPlatformPreviewSubscriptionPlanChangeUrl = (companyId: number,) => {
+
+
+
+
+  return `/api/platform/subscriptions/${companyId}/plan/preview`
+}
+
+/**
+ * @summary Read-only preview of a plan / version change (Batch 42) — the same evaluation the change applies (target limits vs measured usage with the tenant's overrides, U6 blockers, feature gains / losses, trial policy, allowances); nothing is written
+ */
+export const platformPreviewSubscriptionPlanChange = async (companyId: number,
+    platformPreviewSubscriptionPlanChangeInput: PlatformPreviewSubscriptionPlanChangeInput, options?: RequestInit): Promise<PlatformPlanChangePreview> => {
+
+  return customFetch<PlatformPlanChangePreview>(getPlatformPreviewSubscriptionPlanChangeUrl(companyId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      platformPreviewSubscriptionPlanChangeInput,)
+  }
+);}
+
+
+
+
+export const getPlatformPreviewSubscriptionPlanChangeMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformPreviewSubscriptionPlanChange>>, TError,{companyId: number;data: BodyType<PlatformPreviewSubscriptionPlanChangeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformPreviewSubscriptionPlanChange>>, TError,{companyId: number;data: BodyType<PlatformPreviewSubscriptionPlanChangeInput>}, TContext> => {
+
+const mutationKey = ['platformPreviewSubscriptionPlanChange'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformPreviewSubscriptionPlanChange>>, {companyId: number;data: BodyType<PlatformPreviewSubscriptionPlanChangeInput>}> = (props) => {
+          const {companyId,data} = props ?? {};
+
+          return  platformPreviewSubscriptionPlanChange(companyId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformPreviewSubscriptionPlanChangeMutationResult = NonNullable<Awaited<ReturnType<typeof platformPreviewSubscriptionPlanChange>>>
+    export type PlatformPreviewSubscriptionPlanChangeMutationBody = BodyType<PlatformPreviewSubscriptionPlanChangeInput>
+    export type PlatformPreviewSubscriptionPlanChangeMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Read-only preview of a plan / version change (Batch 42) — the same evaluation the change applies (target limits vs measured usage with the tenant's overrides, U6 blockers, feature gains / losses, trial policy, allowances); nothing is written
+ */
+export const usePlatformPreviewSubscriptionPlanChange = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformPreviewSubscriptionPlanChange>>, TError,{companyId: number;data: BodyType<PlatformPreviewSubscriptionPlanChangeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformPreviewSubscriptionPlanChange>>,
+        TError,
+        {companyId: number;data: BodyType<PlatformPreviewSubscriptionPlanChangeInput>},
+        TContext
+      > => {
+      return useMutation(getPlatformPreviewSubscriptionPlanChangeMutationOptions(options));
+    }
+
+export const getPlatformSubscriptionPlanHistoryUrl = (companyId: number,) => {
+
+
+
+
+  return `/api/platform/subscriptions/${companyId}/plan-history`
+}
+
+/**
+ * @summary The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+ */
+export const platformSubscriptionPlanHistory = async (companyId: number, options?: RequestInit): Promise<PlatformPlanHistory> => {
+
+  return customFetch<PlatformPlanHistory>(getPlatformSubscriptionPlanHistoryUrl(companyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformSubscriptionPlanHistoryQueryKey = (companyId: number,) => {
+    return [
+    `/api/platform/subscriptions/${companyId}/plan-history`
+    ] as const;
+    }
+
+
+export const getPlatformSubscriptionPlanHistoryQueryOptions = <TData = Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError = ErrorType<unknown>>(companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformSubscriptionPlanHistoryQueryKey(companyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>> = ({ signal }) => platformSubscriptionPlanHistory(companyId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(companyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformSubscriptionPlanHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>>
+export type PlatformSubscriptionPlanHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+ */
+
+export function usePlatformSubscriptionPlanHistory<TData = Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError = ErrorType<unknown>>(
+ companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformSubscriptionPlanHistoryQueryOptions(companyId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getPlatformStartTrialUrl = (companyId: number,) => {
 
 
@@ -5886,6 +6040,80 @@ export function usePlatformPreviewPlanVersionLimits<TData = Awaited<ReturnType<t
 
 
 
+
+export const getPlatformMigratePlanVersionTenantsUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}/migrate`
+}
+
+/**
+ * @summary Migrate platform-managed tenants to this PUBLISHED version (Batch 42) — dryRun true evaluates every tenant in scope and returns a digest; dryRun false requires confirmDigest of a dry run over the same current data and migrates each eligible tenant in its own transaction with per-tenant audit rows
+ */
+export const platformMigratePlanVersionTenants = async (planId: string,
+    versionId: number,
+    platformMigratePlanVersionTenantsInput: PlatformMigratePlanVersionTenantsInput, options?: RequestInit): Promise<PlatformMigrationResult> => {
+
+  return customFetch<PlatformMigrationResult>(getPlatformMigratePlanVersionTenantsUrl(planId,versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      platformMigratePlanVersionTenantsInput,)
+  }
+);}
+
+
+
+
+export const getPlatformMigratePlanVersionTenantsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformMigratePlanVersionTenants>>, TError,{planId: string;versionId: number;data: BodyType<PlatformMigratePlanVersionTenantsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformMigratePlanVersionTenants>>, TError,{planId: string;versionId: number;data: BodyType<PlatformMigratePlanVersionTenantsInput>}, TContext> => {
+
+const mutationKey = ['platformMigratePlanVersionTenants'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformMigratePlanVersionTenants>>, {planId: string;versionId: number;data: BodyType<PlatformMigratePlanVersionTenantsInput>}> = (props) => {
+          const {planId,versionId,data} = props ?? {};
+
+          return  platformMigratePlanVersionTenants(planId,versionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformMigratePlanVersionTenantsMutationResult = NonNullable<Awaited<ReturnType<typeof platformMigratePlanVersionTenants>>>
+    export type PlatformMigratePlanVersionTenantsMutationBody = BodyType<PlatformMigratePlanVersionTenantsInput>
+    export type PlatformMigratePlanVersionTenantsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Migrate platform-managed tenants to this PUBLISHED version (Batch 42) — dryRun true evaluates every tenant in scope and returns a digest; dryRun false requires confirmDigest of a dry run over the same current data and migrates each eligible tenant in its own transaction with per-tenant audit rows
+ */
+export const usePlatformMigratePlanVersionTenants = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformMigratePlanVersionTenants>>, TError,{planId: string;versionId: number;data: BodyType<PlatformMigratePlanVersionTenantsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformMigratePlanVersionTenants>>,
+        TError,
+        {planId: string;versionId: number;data: BodyType<PlatformMigratePlanVersionTenantsInput>},
+        TContext
+      > => {
+      return useMutation(getPlatformMigratePlanVersionTenantsMutationOptions(options));
+    }
 
 export const getPlatformBillingStatusUrl = () => {
 

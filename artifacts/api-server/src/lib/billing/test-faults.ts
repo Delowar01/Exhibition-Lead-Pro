@@ -15,7 +15,8 @@ export type BillingFaultPoint =
   | "checkout.beforeExpire" // just before asking the provider to expire an open session
   | "checkout.afterExpire" // provider confirmed the expiration; before the local transition
   | "webhook.beforeClaim" // signature verified + provider state fetched; before the durable claim
-  | "webhook.beforeCommit"; // state applied inside the transaction; before commit
+  | "webhook.beforeCommit" // state applied inside the transaction; before commit
+  | "planChange.beforeVerify"; // Batch 42: plan / version change committed in the transaction; before the post-change verification
 
 type Hook = () => void | Promise<void>;
 const hooks = new Map<BillingFaultPoint, Hook>();

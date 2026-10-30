@@ -16,4 +16,5 @@ export const PlatformCompareRowGroup = {
   trialPolicy: 'trialPolicy',
   enforcement: 'enforcement',
   allowances: 'allowances',
+  pricing: 'pricing',
 } as const;

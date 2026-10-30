@@ -1063,9 +1063,15 @@ export const platformSetSubscriptionPlanBodyPlanMax = 40;
 
 export const platformSetSubscriptionPlanBodyPlanRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
 
+export const platformSetSubscriptionPlanBodyReasonMax = 200;
+
+
 
 export const PlatformSetSubscriptionPlanBody = zod.object({
-  "plan": zod.string().min(platformSetSubscriptionPlanBodyPlanMin).max(platformSetSubscriptionPlanBodyPlanMax).regex(platformSetSubscriptionPlanBodyPlanRegExp).describe('A PUBLISHED plan slug; the tenant is pinned to that plan\'s current published version')
+  "plan": zod.string().min(platformSetSubscriptionPlanBodyPlanMin).max(platformSetSubscriptionPlanBodyPlanMax).regex(platformSetSubscriptionPlanBodyPlanRegExp).describe('A PUBLISHED plan slug; without planVersionId the tenant is pinned to that plan\'s current published version'),
+  "planVersionId": zod.number().min(1).optional().describe('Batch 42 — an explicit PUBLISHED version of the plan (a retired version is allowed as the owner\'s deliberate choice; a draft never)'),
+  "confirmFeatureDowngrade": zod.boolean().optional().describe('Batch 42 (D3) — required true when the target version removes features the tenant currently has'),
+  "reason": zod.string().max(platformSetSubscriptionPlanBodyReasonMax).optional()
 })
 
 export const PlatformSetSubscriptionPlanResponse = zod.object({
@@ -1155,6 +1161,173 @@ export const PlatformSetSubscriptionPlanResponse = zod.object({
   "attempts": zod.number().optional()
 })]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
+
+
+/**
+ * @summary Read-only preview of a plan / version change (Batch 42) — the same evaluation the change applies (target limits vs measured usage with the tenant's overrides, U6 blockers, feature gains / losses, trial policy, allowances); nothing is written
+ */
+export const PlatformPreviewSubscriptionPlanChangeParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const platformPreviewSubscriptionPlanChangeBodyPlanMin = 2;
+export const platformPreviewSubscriptionPlanChangeBodyPlanMax = 40;
+
+
+export const platformPreviewSubscriptionPlanChangeBodyPlanRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+
+
+
+export const PlatformPreviewSubscriptionPlanChangeBody = zod.object({
+  "plan": zod.string().min(platformPreviewSubscriptionPlanChangeBodyPlanMin).max(platformPreviewSubscriptionPlanChangeBodyPlanMax).regex(platformPreviewSubscriptionPlanChangeBodyPlanRegExp),
+  "planVersionId": zod.number().min(1).optional()
+})
+
+export const PlatformPreviewSubscriptionPlanChangeResponse = zod.object({
+  "current": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "valid": zod.boolean().describe('false when the current version reference is invalid (fail-closed elsewhere; the change repairs it)'),
+  "legacyReference": zod.boolean(),
+  "billingSource": zod.string(),
+  "status": zod.string()
+}),
+  "target": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "state": zod.enum(['published', 'retired', 'legacy']),
+  "explicit": zod.boolean()
+}),
+  "sameTarget": zod.boolean(),
+  "changeKind": zod.enum(['none', 'plan_change', 'version_change', 'repair']),
+  "transition": zod.object({
+  "ok": zod.boolean(),
+  "code": zod.string().nullable()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.string(),
+  "currentLimit": zod.number().nullable(),
+  "targetLimit": zod.number().nullable(),
+  "targetSource": zod.enum(['override', 'plan', 'unlimited']),
+  "override": zod.number().nullable(),
+  "used": zod.number(),
+  "measurable": zod.boolean(),
+  "exceeds": zod.boolean(),
+  "tightens": zod.boolean(),
+  "loosens": zod.boolean()
+})),
+  "blocking": zod.array(zod.object({
+  "resource": zod.string(),
+  "used": zod.number(),
+  "limit": zod.number()
+})),
+  "unmeasurable": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "loosenedLimits": zod.array(zod.string()),
+  "features": zod.object({
+  "enforcement": zod.object({
+  "current": zod.string(),
+  "target": zod.string()
+}),
+  "current": zod.record(zod.string(), zod.boolean()),
+  "target": zod.record(zod.string(), zod.boolean()),
+  "lost": zod.array(zod.string()),
+  "gained": zod.array(zod.string())
+}),
+  "trialPolicy": zod.object({
+  "current": zod.object({
+  "endOutcome": zod.string(),
+  "readOnlyGraceDays": zod.number()
+}),
+  "target": zod.object({
+  "endOutcome": zod.string(),
+  "readOnlyGraceDays": zod.number()
+})
+}),
+  "allowances": zod.object({
+  "current": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "target": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}),
+  "requiresFeatureConfirmation": zod.boolean(),
+  "eligible": zod.boolean().describe('Transition allowed and nothing blocking (feature confirmation aside)')
+}).and(zod.object({
+  "companyId": zod.number(),
+  "implicitLegacyKept": zod.boolean().describe('Same plan, legacy NULL reference, no explicit version — the change would move nothing'),
+  "wouldChange": zod.boolean(),
+  "readOnly": zod.boolean(),
+  "generatedAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+ */
+export const PlatformSubscriptionPlanHistoryParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformSubscriptionPlanHistoryResponse = zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "original": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "at": zod.coerce.date().nullable()
+}),
+  "current": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "versionState": zod.string().nullable(),
+  "billingSource": zod.string(),
+  "status": zod.string()
+}),
+  "entries": zod.array(zod.object({
+  "auditId": zod.number(),
+  "at": zod.coerce.date(),
+  "action": zod.string(),
+  "kind": zod.enum(['created', 'direct_change', 'version_change', 'repair', 'migration', 'provider_sync', 'backfill_pin', 'other']),
+  "actor": zod.object({
+  "userId": zod.number().nullable(),
+  "name": zod.string().nullable()
+}),
+  "reason": zod.string().nullable(),
+  "fromPlan": zod.string().nullable(),
+  "toPlan": zod.string().nullable(),
+  "fromVersionId": zod.number().nullable(),
+  "fromVersion": zod.number().nullable(),
+  "toVersionId": zod.number().nullable(),
+  "toVersion": zod.number().nullable(),
+  "billingSource": zod.string().nullable(),
+  "changedFields": zod.array(zod.string()),
+  "source": zod.string().nullable().describe('direct_change | migration | provider_price | null'),
+  "migrationId": zod.string().nullable(),
+  "dryRunDigest": zod.string().nullable(),
+  "limitsBefore": zod.record(zod.string(), zod.number().nullable()).nullable(),
+  "limitsAfter": zod.record(zod.string(), zod.number().nullable()).nullable(),
+  "changedLimits": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "loosenedLimits": zod.array(zod.string()),
+  "lostFeatures": zod.array(zod.string()),
+  "gainedFeatures": zod.array(zod.string()),
+  "featureEnforcementBefore": zod.string().nullable(),
+  "featureEnforcementAfter": zod.string().nullable(),
+  "confirmFeatureDowngrade": zod.boolean().nullable(),
+  "repairedInvalidReference": zod.boolean()
+})),
+  "total": zod.number(),
+  "truncated": zod.boolean(),
+  "generatedAt": zod.coerce.date()
+})
 
 
 /**
@@ -2162,6 +2335,7 @@ export const PlatformListPlansResponse = zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2169,6 +2343,11 @@ export const PlatformListPlansResponse = zod.object({
   "nickname": zod.string().nullish(),
   "active": zod.boolean()
 }).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
   "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
@@ -2277,6 +2456,18 @@ export const platformCreatePlanBodyTrialPolicyTrialDaysMax = 365;
 export const platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMin = 0;
 export const platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMax = 90;
 
+export const platformCreatePlanBodyManualPricesItemIntervalCountMax = 12;
+
+export const platformCreatePlanBodyManualPricesItemCurrencyMin = 3;
+export const platformCreatePlanBodyManualPricesItemCurrencyMax = 3;
+
+export const platformCreatePlanBodyManualPricesItemUnitAmountMinorMin = 0;
+export const platformCreatePlanBodyManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformCreatePlanBodyManualPricesItemLabelMax = 60;
+
+export const platformCreatePlanBodyManualPricesMax = 8;
+
 
 
 export const PlatformCreatePlanBody = zod.object({
@@ -2304,7 +2495,14 @@ export const PlatformCreatePlanBody = zod.object({
   "oncePerCompany": zod.boolean().optional(),
   "endOutcome": zod.enum(['blocked', 'read_only']).optional(),
   "readOnlyGraceDays": zod.number().min(platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMin).max(platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMax).optional()
-}).optional()
+}).optional(),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformCreatePlanBodyManualPricesItemIntervalCountMax).optional(),
+  "currency": zod.string().min(platformCreatePlanBodyManualPricesItemCurrencyMin).max(platformCreatePlanBodyManualPricesItemCurrencyMax),
+  "unitAmountMinor": zod.number().min(platformCreatePlanBodyManualPricesItemUnitAmountMinorMin).max(platformCreatePlanBodyManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformCreatePlanBodyManualPricesItemLabelMax).nullish()
+})).max(platformCreatePlanBodyManualPricesMax).optional()
 })
 
 
@@ -2335,6 +2533,7 @@ export const PlatformGetPlanResponse = zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2342,6 +2541,11 @@ export const PlatformGetPlanResponse = zod.object({
   "nickname": zod.string().nullish(),
   "active": zod.boolean()
 }).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
   "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
@@ -2550,6 +2754,7 @@ export const PlatformArchivePlanResponse = zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2557,6 +2762,11 @@ export const PlatformArchivePlanResponse = zod.object({
   "nickname": zod.string().nullish(),
   "active": zod.boolean()
 }).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
   "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
@@ -2627,6 +2837,16 @@ export const PlatformListPlanVersionsParams = zod.object({
   "planId": zod.coerce.string()
 })
 
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemLabelMax = 60;
+
+
+
 export const PlatformListPlanVersionsResponse = zod.object({
   "planId": zod.string(),
   "planStatus": zod.enum(['draft', 'published', 'archived']),
@@ -2654,6 +2874,7 @@ export const PlatformListPlanVersionsResponse = zod.object({
   "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2666,7 +2887,14 @@ export const PlatformListPlanVersionsResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMin).max(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2711,6 +2939,32 @@ export const PlatformGetPlanVersionParams = zod.object({
   "versionId": zod.coerce.number()
 })
 
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemLabelMax = 60;
+
+export const platformGetPlanVersionResponseTwoManualPricesItemIntervalCountMax = 12;
+
+export const platformGetPlanVersionResponseTwoManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMin = 0;
+export const platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformGetPlanVersionResponseTwoManualPricesItemLabelMax = 60;
+
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemIntervalCountMax = 12;
+
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMin = 0;
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemLabelMax = 60;
+
+
+
 export const PlatformGetPlanVersionResponse = zod.object({
   "id": zod.number(),
   "planId": zod.string(),
@@ -2732,6 +2986,7 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2744,7 +2999,14 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformGetPlanVersionResponseOneSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformGetPlanVersionResponseOneSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMin).max(platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformGetPlanVersionResponseOneSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2768,6 +3030,7 @@ export const PlatformGetPlanVersionResponse = zod.object({
 }).and(zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2776,6 +3039,30 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
 })),
+  "priceMappings": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "scope": zod.enum(['plan', 'version']),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean(),
+  "providerMode": zod.string(),
+  "verified": zod.boolean(),
+  "modeMatches": zod.boolean(),
+  "verifiedAt": zod.coerce.date().nullable(),
+  "providerPriceRef": zod.string().nullable()
+}).describe('Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode')).optional().describe('Batch 42 — applicable provider mappings with scope + verification state'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformGetPlanVersionResponseTwoManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformGetPlanVersionResponseTwoManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMin).max(platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformGetPlanVersionResponseTwoManualPricesItemLabelMax).nullable()
+})).optional(),
   "validation": zod.union([zod.object({
   "planId": zod.string(),
   "versionId": zod.number(),
@@ -2800,6 +3087,7 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "publishable": zod.boolean().describe('ok and no blocker'),
   "pricesConsidered": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2808,6 +3096,30 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
 })),
+  "priceMappings": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "scope": zod.enum(['plan', 'version']),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean(),
+  "providerMode": zod.string(),
+  "verified": zod.boolean(),
+  "modeMatches": zod.boolean(),
+  "verifiedAt": zod.coerce.date().nullable(),
+  "providerPriceRef": zod.string().nullable()
+}).describe('Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode')).optional().describe('Batch 42 — every applicable mapping (active or not) with scope + verification state'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformGetPlanVersionResponseTwoValidationOneManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformGetPlanVersionResponseTwoValidationOneManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMin).max(platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformGetPlanVersionResponseTwoValidationOneManualPricesItemLabelMax).nullable()
+})).optional(),
   "providerMode": zod.enum(['test', 'live'])
 }),zod.null()])
 }))
@@ -2852,6 +3164,18 @@ export const platformUpdatePlanDraftBodyTrialPolicyTrialDaysMax = 365;
 export const platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMin = 0;
 export const platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMax = 90;
 
+export const platformUpdatePlanDraftBodyManualPricesItemIntervalCountMax = 12;
+
+export const platformUpdatePlanDraftBodyManualPricesItemCurrencyMin = 3;
+export const platformUpdatePlanDraftBodyManualPricesItemCurrencyMax = 3;
+
+export const platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMin = 0;
+export const platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformUpdatePlanDraftBodyManualPricesItemLabelMax = 60;
+
+export const platformUpdatePlanDraftBodyManualPricesMax = 8;
+
 
 
 export const PlatformUpdatePlanDraftBody = zod.object({
@@ -2878,8 +3202,25 @@ export const PlatformUpdatePlanDraftBody = zod.object({
   "oncePerCompany": zod.boolean().optional(),
   "endOutcome": zod.enum(['blocked', 'read_only']).optional(),
   "readOnlyGraceDays": zod.number().min(platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMin).max(platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMax).optional()
-}).optional()
+}).optional(),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformUpdatePlanDraftBodyManualPricesItemIntervalCountMax).optional(),
+  "currency": zod.string().min(platformUpdatePlanDraftBodyManualPricesItemCurrencyMin).max(platformUpdatePlanDraftBodyManualPricesItemCurrencyMax),
+  "unitAmountMinor": zod.number().min(platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMin).max(platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformUpdatePlanDraftBodyManualPricesItemLabelMax).nullish()
+})).max(platformUpdatePlanDraftBodyManualPricesMax).optional().describe('Batch 42 (D2) — replaces the draft\'s manual price summaries (unique per currency \/ interval \/ count)')
 })
+
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemLabelMax = 60;
+
+
 
 export const PlatformUpdatePlanDraftResponse = zod.object({
   "id": zod.number(),
@@ -2902,6 +3243,7 @@ export const PlatformUpdatePlanDraftResponse = zod.object({
   "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2914,7 +3256,14 @@ export const PlatformUpdatePlanDraftResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformUpdatePlanDraftResponseSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformUpdatePlanDraftResponseSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMin).max(platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformUpdatePlanDraftResponseSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -2961,6 +3310,16 @@ export const PlatformValidatePlanVersionParams = zod.object({
   "versionId": zod.coerce.number()
 })
 
+export const platformValidatePlanVersionResponseManualPricesItemIntervalCountMax = 12;
+
+export const platformValidatePlanVersionResponseManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMin = 0;
+export const platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformValidatePlanVersionResponseManualPricesItemLabelMax = 60;
+
+
+
 export const PlatformValidatePlanVersionResponse = zod.object({
   "planId": zod.string(),
   "versionId": zod.number(),
@@ -2985,6 +3344,7 @@ export const PlatformValidatePlanVersionResponse = zod.object({
   "publishable": zod.boolean().describe('ok and no blocker'),
   "pricesConsidered": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2993,6 +3353,30 @@ export const PlatformValidatePlanVersionResponse = zod.object({
   "nickname": zod.string().nullable(),
   "active": zod.boolean()
 })),
+  "priceMappings": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "scope": zod.enum(['plan', 'version']),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean(),
+  "providerMode": zod.string(),
+  "verified": zod.boolean(),
+  "modeMatches": zod.boolean(),
+  "verifiedAt": zod.coerce.date().nullable(),
+  "providerPriceRef": zod.string().nullable()
+}).describe('Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode')).optional().describe('Batch 42 — every applicable mapping (active or not) with scope + verification state'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformValidatePlanVersionResponseManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformValidatePlanVersionResponseManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMin).max(platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformValidatePlanVersionResponseManualPricesItemLabelMax).nullable()
+})).optional(),
   "providerMode": zod.enum(['test', 'live'])
 })
 
@@ -3004,6 +3388,16 @@ export const PlatformPublishPlanVersionParams = zod.object({
   "planId": zod.coerce.string(),
   "versionId": zod.coerce.number()
 })
+
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemLabelMax = 60;
+
+
 
 export const PlatformPublishPlanVersionResponse = zod.object({
   "id": zod.number(),
@@ -3026,6 +3420,7 @@ export const PlatformPublishPlanVersionResponse = zod.object({
   "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -3038,7 +3433,14 @@ export const PlatformPublishPlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformPublishPlanVersionResponseSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformPublishPlanVersionResponseSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin).max(platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformPublishPlanVersionResponseSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -3070,6 +3472,16 @@ export const PlatformRetirePlanVersionParams = zod.object({
   "versionId": zod.coerce.number()
 })
 
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemLabelMax = 60;
+
+
+
 export const PlatformRetirePlanVersionResponse = zod.object({
   "id": zod.number(),
   "planId": zod.string(),
@@ -3091,6 +3503,7 @@ export const PlatformRetirePlanVersionResponse = zod.object({
   "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -3103,7 +3516,14 @@ export const PlatformRetirePlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformRetirePlanVersionResponseSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformRetirePlanVersionResponseSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin).max(platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformRetirePlanVersionResponseSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
 }),
   "trialPolicy": zod.object({
   "trialDays": zod.number(),
@@ -3164,7 +3584,7 @@ export const PlatformPlanVersionImpactResponse = zod.object({
   "wouldBecomeCurrent": zod.boolean(),
   "newTenantsGetThisVersion": zod.boolean(),
   "diffVsCurrent": zod.array(zod.object({
-  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances']),
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances', 'pricing']),
   "field": zod.string(),
   "left": zod.unknown().describe('string | number | boolean | null'),
   "right": zod.unknown().describe('string | number | boolean | null'),
@@ -3237,7 +3657,7 @@ export const PlatformComparePlanVersionsResponse = zod.object({
   "subscribers": zod.number()
 }),
   "rows": zod.array(zod.object({
-  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances']),
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances', 'pricing']),
   "field": zod.string(),
   "left": zod.unknown().describe('string | number | boolean | null'),
   "right": zod.unknown().describe('string | number | boolean | null'),
@@ -3347,6 +3767,86 @@ export const PlatformPreviewPlanVersionLimitsResponse = zod.object({
 
 
 /**
+ * @summary Migrate platform-managed tenants to this PUBLISHED version (Batch 42) — dryRun true evaluates every tenant in scope and returns a digest; dryRun false requires confirmDigest of a dry run over the same current data and migrates each eligible tenant in its own transaction with per-tenant audit rows
+ */
+export const PlatformMigratePlanVersionTenantsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+
+
+export const platformMigratePlanVersionTenantsBodyCompanyIdsMax = 200;
+
+export const platformMigratePlanVersionTenantsBodyConfirmDigestMin = 64;
+export const platformMigratePlanVersionTenantsBodyConfirmDigestMax = 64;
+
+export const platformMigratePlanVersionTenantsBodyReasonMax = 200;
+
+
+
+export const PlatformMigratePlanVersionTenantsBody = zod.object({
+  "dryRun": zod.boolean().describe('true = evaluate only (no write) and return the digest; false = execute (requires confirmDigest)'),
+  "sourceVersionId": zod.number().min(1).optional().describe('Scope = every subscription pinned to this PUBLISHED version (any plan)'),
+  "companyIds": zod.array(zod.number().min(1)).min(1).max(platformMigratePlanVersionTenantsBodyCompanyIdsMax).optional().describe('Explicit scope (≤ 200 companies); combined with sourceVersionId every listed company must be on the source'),
+  "confirmDigest": zod.string().min(platformMigratePlanVersionTenantsBodyConfirmDigestMin).max(platformMigratePlanVersionTenantsBodyConfirmDigestMax).optional().describe('The digest of the reviewed dry run; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same digest'),
+  "confirmFeatureDowngrade": zod.boolean().optional().describe('D3 — required true for tenants that would lose features (otherwise they are reported, never migrated)'),
+  "reason": zod.string().max(platformMigratePlanVersionTenantsBodyReasonMax).optional()
+})
+
+export const PlatformMigratePlanVersionTenantsResponse = zod.object({
+  "planId": zod.string(),
+  "target": zod.object({
+  "versionId": zod.number(),
+  "version": zod.number()
+}),
+  "source": zod.object({
+  "versionId": zod.number().optional(),
+  "version": zod.number().optional(),
+  "planId": zod.string().optional()
+}).nullable(),
+  "scope": zod.enum(['companies', 'source_version']),
+  "confirmFeatureDowngrade": zod.boolean(),
+  "digest": zod.string().describe('sha256 over the reviewed rows (target, source, confirmation flag, per-tenant current reference + reason + blockers + lost features)'),
+  "generatedAt": zod.coerce.date(),
+  "dryRun": zod.boolean(),
+  "migrationId": zod.string().nullable(),
+  "rows": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "currentPlan": zod.string().nullable(),
+  "currentPlanVersionId": zod.number().nullable(),
+  "currentVersion": zod.number().nullable(),
+  "currentReferenceValid": zod.boolean(),
+  "billingSource": zod.string().nullable(),
+  "status": zod.string().nullable(),
+  "reason": zod.enum(['ELIGIBLE', 'ALREADY_ON_VERSION', 'PROVIDER_MANAGED', 'TRANSITION_NOT_ALLOWED', 'NOT_ON_SOURCE_VERSION', 'DOWNGRADE_BLOCKED', 'FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED', 'SUBSCRIPTION_MISSING']),
+  "blocking": zod.array(zod.object({
+  "resource": zod.string(),
+  "used": zod.number(),
+  "limit": zod.number()
+})),
+  "unmeasurable": zod.array(zod.string()),
+  "lostFeatures": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "outcome": zod.enum(['migrated', 'skipped', 'failed', 'rolled_back', 'not_attempted']),
+  "outcomeReason": zod.string().nullable()
+})),
+  "summary": zod.object({
+  "total": zod.number(),
+  "eligible": zod.number(),
+  "byReason": zod.record(zod.string(), zod.number()),
+  "migrated": zod.number(),
+  "skipped": zod.number(),
+  "failed": zod.number(),
+  "rolledBack": zod.number(),
+  "notAttempted": zod.number()
+}),
+  "complete": zod.boolean().nullable().describe('null for a dry run; true only when nothing failed or rolled back')
+})
+
+
+/**
  * @summary Provider configuration state (no secret values)
  */
 export const PlatformBillingStatusResponse = zod.object({
@@ -3370,6 +3870,7 @@ export const PlatformListPricesResponse = zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -3377,6 +3878,11 @@ export const PlatformListPricesResponse = zod.object({
   "nickname": zod.string().nullish(),
   "active": zod.boolean()
 }).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
   "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
@@ -3399,9 +3905,11 @@ export const platformRegisterPriceBodyProviderPriceIdMax = 128;
 
 
 
+
 export const PlatformRegisterPriceBody = zod.object({
   "planId": zod.string().min(platformRegisterPriceBodyPlanIdMin).max(platformRegisterPriceBodyPlanIdMax).regex(platformRegisterPriceBodyPlanIdRegExp).describe('Plan slug (draft or published; never archived)'),
-  "providerPriceId": zod.string().min(platformRegisterPriceBodyProviderPriceIdMin).max(platformRegisterPriceBodyProviderPriceIdMax)
+  "providerPriceId": zod.string().min(platformRegisterPriceBodyProviderPriceIdMin).max(platformRegisterPriceBodyProviderPriceIdMax),
+  "planVersionId": zod.number().min(1).optional().describe('Batch 42 — bind the mapping to this DRAFT version of the plan (omit = plan-wide); a published version\'s pricing is immutable (409 VERSION_NOT_DRAFT)')
 })
 
 
@@ -3419,6 +3927,7 @@ export const PlatformUpdatePriceBody = zod.object({
 export const PlatformUpdatePriceResponse = zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -3426,6 +3935,11 @@ export const PlatformUpdatePriceResponse = zod.object({
   "nickname": zod.string().nullish(),
   "active": zod.boolean()
 }).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
   "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
@@ -7873,6 +8387,7 @@ export const ListPlansResponseItem = zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),

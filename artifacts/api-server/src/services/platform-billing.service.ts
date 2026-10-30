@@ -3,7 +3,7 @@ import { AppError } from "../middlewares/errorHandler.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import * as repo from "../repositories/subscriptions.repository.js";
-import type { SubscriptionRow, PlanPriceRow } from "../repositories/subscriptions.repository.js";
+import type { SubscriptionRow, PlanPriceRow, PlanVersionRow } from "../repositories/subscriptions.repository.js";
 import { resolveEntitlement, normalizeLegacyStatus, allowedActions, SUBSCRIPTION_STATUSES, BILLING_SOURCES, LIVE_PROVIDER_STATUSES } from "../lib/billing/lifecycle.js";
 import { findPlanRow } from "../lib/billing/plan-catalog.js";
 import { getBillingProvider, BillingProviderError } from "../lib/billing/provider.js";
@@ -130,23 +130,57 @@ export function providerStatus() {
 }
 
 export async function listPrices() {
-  const rows = await repo.listPlanPrices({});
-  return rows.map(fullPriceView);
+  const [rows, versions] = await Promise.all([repo.listPlanPrices({}), repo.listAllPlanVersions()]);
+  const byId = new Map(versions.map((v) => [v.id, v]));
+  return rows.map((p) => fullPriceView(p, p.planVersionId != null ? byId.get(p.planVersionId) : undefined));
 }
 
-function fullPriceView(p: PlanPriceRow) {
-  return { ...priceView(p), providerMode: p.providerMode, providerPriceRef: mask(p.providerPriceId), providerProductRef: mask(p.providerProductId), verifiedAt: p.verifiedAt.toISOString(), createdAt: p.createdAt.toISOString() };
+// Batch 42 (PB-4.1): the mapping's scope and verification state as the Platform
+// Owner sees them. `planVersionId` null = plan-wide (every published version of
+// the plan); a value = bound to exactly that version (strict identity, immutable).
+export function fullPriceView(p: PlanPriceRow, version?: PlanVersionRow) {
+  const configured = config.billing.stripeMode ?? "test";
+  return {
+    ...priceView(p),
+    scope: p.planVersionId == null ? ("plan" as const) : ("version" as const),
+    planVersion: version?.version ?? null,
+    planVersionState: version ? (version.publishedAt ? (version.retiredAt ? "retired" : "published") : "draft") : null,
+    providerMode: p.providerMode,
+    verified: p.verifiedAt != null,
+    modeMatches: p.providerMode === configured,
+    providerPriceRef: mask(p.providerPriceId),
+    providerProductRef: mask(p.providerProductId),
+    verifiedAt: p.verifiedAt.toISOString(),
+    createdAt: p.createdAt.toISOString(),
+  };
 }
 
-// Registers a provider price for a plan. The browser supplies ONLY the plan and
-// the provider price id; interval, currency, amount and product come from the
-// provider (server-verified) and are persisted as returned.
-export async function registerPrice(actor: AuditActor, input: { planId?: unknown; providerPriceId?: unknown }) {
+// Registers a provider price for a plan. The browser supplies ONLY the plan, the
+// provider price id and (Batch 42) optionally the DRAFT version the mapping is
+// bound to; interval, currency, amount and product come from the provider
+// (server-verified) and are persisted as returned.
+//
+// Batch 42 (PB-4.1/4.2) version binding rules — strict price identity:
+//   • a mapping binds to at most ONE version, chosen at registration, immutable;
+//   • it can only bind to a DRAFT of the same plan: the pricing of a PUBLISHED
+//     version never changes except by deactivation (a new offer = a new draft);
+//   • plan-wide mappings (no version) keep the Batch 20/40 meaning (every
+//     published version of the plan) for compatibility;
+//   • a mapping is never deleted; deactivation keeps subscribers' price identity.
+export async function registerPrice(actor: AuditActor, input: { planId?: unknown; providerPriceId?: unknown; planVersionId?: unknown }) {
   const planId = typeof input.planId === "string" ? input.planId : "";
   const providerPriceId = typeof input.providerPriceId === "string" ? input.providerPriceId.trim() : "";
   const planRow = await findPlanRow(planId);
   if (!planRow || planRow.status === "archived") throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
   if (!/^price_[A-Za-z0-9_]{6,120}$/.test(providerPriceId)) throw new AppError(400, "providerPriceId must be a provider price id", { code: "INVALID_PRICE_ID" });
+  let boundVersion: PlanVersionRow | null = null;
+  if (input.planVersionId !== undefined && input.planVersionId !== null) {
+    if (typeof input.planVersionId !== "number" || !Number.isInteger(input.planVersionId) || input.planVersionId <= 0) throw new AppError(400, "planVersionId must be a positive integer", { code: "INVALID_VERSION_ID" });
+    const v = await repo.findPlanVersionById(input.planVersionId);
+    if (!v || v.planId !== planId) throw new AppError(404, "Plan version not found for this plan", { code: "VERSION_NOT_FOUND" });
+    if (v.publishedAt) throw new AppError(409, "The pricing of a published version is immutable; bind the price to a new draft version instead", { code: "VERSION_NOT_DRAFT", details: { versionId: v.id, version: v.version, state: v.retiredAt ? "retired" : "published" } });
+    boundVersion = v;
+  }
   const provider = getBillingProvider();
   if (!provider.available) throw new AppError(503, "Billing provider unavailable", { code: "PROVIDER_UNAVAILABLE" });
   if (await repo.findPlanPriceByProviderId(providerPriceId)) throw new AppError(409, "This provider price is already registered", { code: "PRICE_ALREADY_REGISTERED" });
@@ -166,9 +200,16 @@ export async function registerPrice(actor: AuditActor, input: { planId?: unknown
   if (remote.unitAmountMinor == null) throw new AppError(400, "Only fixed-amount prices can be mapped to a plan", { code: "PRICE_NOT_FIXED" });
   if (!remote.active) throw new AppError(400, "This provider price is not active", { code: "PRICE_INACTIVE" });
   const row = await db.transaction(async (tx) => {
+    if (boundVersion) {
+      // Serialized with publication: the bound version must STILL be a draft when the row lands.
+      const locked = await repo.lockPlanVersion(boundVersion.id, tx);
+      if (!locked || locked.planId !== planId) throw new AppError(404, "Plan version not found for this plan", { code: "VERSION_NOT_FOUND" });
+      if (locked.publishedAt) throw new AppError(409, "The version was published meanwhile; bind the price to a new draft version instead", { code: "VERSION_NOT_DRAFT", details: { versionId: locked.id, version: locked.version } });
+    }
     const created = await repo.insertPlanPrice(
       {
         planId,
+        planVersionId: boundVersion?.id ?? null,
         provider: "stripe",
         providerPriceId: remote.id,
         providerProductId: remote.productId,
@@ -191,12 +232,12 @@ export async function registerPrice(actor: AuditActor, input: { planId?: unknown
       action: "billing.price_mapping.create",
       entityType: "plan_price",
       entityId: String(created.id),
-      metadata: { planId, interval: created.interval, currency: created.currency, unitAmountMinor: created.unitAmountMinor, providerPriceRef: mask(created.providerPriceId) },
+      metadata: { planId, planVersionId: boundVersion?.id ?? null, planVersion: boundVersion?.version ?? null, scope: boundVersion ? "version" : "plan", interval: created.interval, currency: created.currency, unitAmountMinor: created.unitAmountMinor, providerPriceRef: mask(created.providerPriceId) },
       ipAddress: actor.ipAddress,
     });
     return created;
   });
-  return fullPriceView(row);
+  return fullPriceView(row, boundVersion ?? undefined);
 }
 
 export async function setPriceActive(actor: AuditActor, id: number, active: boolean) {
@@ -211,12 +252,12 @@ export async function setPriceActive(actor: AuditActor, id: number, active: bool
       action: "billing.price_mapping.update",
       entityType: "plan_price",
       entityId: String(id),
-      metadata: { planId: row.planId, before: { active: row.active }, after: { active } },
+      metadata: { planId: row.planId, planVersionId: row.planVersionId ?? null, before: { active: row.active }, after: { active } },
       ipAddress: actor.ipAddress,
     });
     return u!;
   });
-  return fullPriceView(updated);
+  return fullPriceView(updated, updated.planVersionId != null ? await repo.findPlanVersionById(updated.planVersionId) : undefined);
 }
 
 // ── Truthful platform metrics ────────────────────────────────────────────────

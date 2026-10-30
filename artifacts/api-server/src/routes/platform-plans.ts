@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { requireAuth, requireRole, type AuthRequest } from "../middlewares/requireAuth.js";
 import { validateBody } from "../middlewares/validate.js";
-import { PlatformCreatePlanBody, PlatformDuplicatePlanBody, PlatformCreatePlanDraftBody, PlatformUpdatePlanDraftBody } from "@workspace/api-zod";
+import { PlatformCreatePlanBody, PlatformDuplicatePlanBody, PlatformCreatePlanDraftBody, PlatformUpdatePlanDraftBody, PlatformMigratePlanVersionTenantsBody } from "@workspace/api-zod";
 import { AppError } from "../middlewares/errorHandler.js";
 import { getClientIp } from "../lib/security.js";
 import * as platformPlans from "../services/platform-plans.service.js";
 import * as builder from "../services/plan-builder.service.js";
+import { migrateTenants } from "../services/plan-migration.service.js";
 
 // Batch 39 — read-only plan catalog / detail / effective-limit preview.
 // Batch 40 — PB-2 Plan Builder lifecycle (drafts → immutable published versions).
@@ -91,6 +92,11 @@ router.get("/platform/plans/:planId/versions/:versionId/compare/:otherVersionId"
 });
 router.get("/platform/plans/:planId/versions/:versionId/effective-limits/:companyId", async (req: AuthRequest, res) => {
   res.json(await platformPlans.previewEffectiveLimits(planIdParam(req), companyIdParam(req), new Date(), versionIdParam(req)));
+});
+// Batch 42 (PB-4.5): tenant migration to this published version — dry run (read-only) or
+// execution confirmed by the dry-run digest; per-tenant transactions and audit rows.
+router.post("/platform/plans/:planId/versions/:versionId/migrate", validateBody(PlatformMigratePlanVersionTenantsBody), async (req: AuthRequest, res) => {
+  res.json(await migrateTenants(actorOf(req), planIdParam(req), versionIdParam(req), req.body ?? {}));
 });
 
 export default router;

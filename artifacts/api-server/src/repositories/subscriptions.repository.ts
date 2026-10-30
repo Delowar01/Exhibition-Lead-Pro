@@ -13,6 +13,7 @@ import {
   usersTable,
   invitationsTable,
   scansTable,
+  auditLogsTable,
 } from "@workspace/db";
 import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNull, isNotNull, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { exec, type Executor } from "./base.js";
@@ -711,6 +712,26 @@ export async function listPlanPricesForVersion(planId: string, versionId: number
     .from(planPricesTable)
     .where(and(...conds))
     .orderBy(asc(planPricesTable.id));
+}
+// Batch 42 (PB-4): every price row BOUND to exactly this version (active or not) —
+// the strict identity check for draft deletion and the per-version pricing view.
+export async function listPlanPricesBoundToVersion(versionId: number, tx?: Executor): Promise<PlanPriceRow[]> {
+  return exec(tx).select().from(planPricesTable).where(eq(planPricesTable.planVersionId, versionId)).orderBy(asc(planPricesTable.id));
+}
+// Batch 42: explicit tenant scope for a migration (platform owner input; ids deduplicated by the service).
+export async function listSubscriptionsByCompanyIds(ids: number[], tx?: Executor): Promise<SubscriptionRow[]> {
+  if (ids.length === 0) return [];
+  return exec(tx).select().from(subscriptionsTable).where(inArray(subscriptionsTable.companyId, ids)).orderBy(asc(subscriptionsTable.companyId));
+}
+// Batch 42: the subscription audit trail of ONE company (append-only rows, oldest first) for the plan history projection.
+export type AuditRow = typeof auditLogsTable.$inferSelect;
+export async function listSubscriptionAuditRows(companyId: number, limit: number, tx?: Executor): Promise<AuditRow[]> {
+  return exec(tx)
+    .select()
+    .from(auditLogsTable)
+    .where(and(eq(auditLogsTable.companyId, companyId), eq(auditLogsTable.entityType, "subscription")))
+    .orderBy(asc(auditLogsTable.createdAt), asc(auditLogsTable.id))
+    .limit(limit);
 }
 export async function countSubscriptionsByPlanAndVersion(tx?: Executor): Promise<Array<{ plan: string; planVersionId: number | null; count: number }>> {
   const rows = await exec(tx)

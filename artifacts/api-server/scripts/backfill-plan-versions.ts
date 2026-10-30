@@ -25,8 +25,23 @@
 // database: a non-loopback host always requires an explicit, matching
 // --expect-host, and --apply to it additionally requires --confirm-production
 // (owner authorization). Production execution is not authorized by this script.
+//
+// Database identity verification (Batch 42): a loopback URL is NOT proof of a
+// local database (SSH tunnels, forwarded container ports, copied .env files).
+// After the URL guard, and before any application module runs, the script asks
+// the CONNECTED server who it is and verifies that against the operator's
+// stated expectations — fail closed (src/lib/db-target.ts verifyDatabaseIdentity):
+//   … --expect-database <name>      # REQUIRED for --apply; always honoured when given
+//   … --expect-system-id <id>       # optional: pg_control_system().system_identifier
+//   … --expect-environment <name>   # the database's own marker (COMMENT ON DATABASE … IS 'environment=<name>');
+//                                   # REQUIRED for --apply when the database carries a marker
+//   … --allow-forwarded             # acknowledge a forwarded connection (loopback URL, non-loopback server address);
+//                                   # --apply over it still needs --confirm-production
+// A database marked environment=production refuses even a dry run without
+// --confirm-production. Runbook: docs/PLAN_VERSION_BACKFILL_RUNBOOK.md.
 import { parseArgs } from "node:util";
-import { guardDatabaseTarget } from "../src/lib/db-target.js";
+import { guardDatabaseTarget, verifyDatabaseIdentity } from "../src/lib/db-target.js";
+import { collectDatabaseIdentity } from "../src/lib/db-identity.js";
 
 const { values } = parseArgs({
   options: {
@@ -35,6 +50,10 @@ const { values } = parseArgs({
     json: { type: "boolean", default: false },
     "confirm-production": { type: "boolean", default: false },
     "expect-host": { type: "string" },
+    "expect-database": { type: "string" },
+    "expect-system-id": { type: "string" },
+    "expect-environment": { type: "string" },
+    "allow-forwarded": { type: "boolean", default: false },
   },
   strict: true,
   allowPositionals: false,
@@ -59,6 +78,32 @@ async function main(): Promise<number> {
     return 2;
   }
   out(`database target: ${guard.target.display} (${guard.target.class})`);
+  // Identity verification: ask the CONNECTED server who it is (read-only) before
+  // any application module is imported, and verify it against the expectations.
+  const { pool } = await import("@workspace/db");
+  const facts = await collectDatabaseIdentity(async (sql) => (await pool.query(sql)).rows as Array<Record<string, unknown>>);
+  const identity = verifyDatabaseIdentity({
+    target: guard.target,
+    facts,
+    apply: values.apply,
+    confirmProduction: values["confirm-production"],
+    allowForwarded: values["allow-forwarded"],
+    expectDatabase: values["expect-database"],
+    expectSystemId: values["expect-system-id"],
+    expectEnvironment: values["expect-environment"],
+  });
+  out(
+    `database identity: database=${identity.identity.database ?? "(unknown)"} serverAddr=${identity.identity.serverAddr ?? "(unix socket)"}` +
+      ` serverPort=${identity.identity.serverPort ?? "-"} systemId=${identity.identity.systemIdentifier ?? "(not readable)"}` +
+      ` environment=${identity.identity.environmentMarker ?? "(no marker)"} forwarded=${identity.identity.forwarded}` +
+      ` cluster=${identity.identity.clusterName ?? "-"} started=${identity.identity.postmasterStartedAt ?? "-"}`,
+  );
+  for (const w of identity.warnings) out(`identity warning: ${w}`);
+  if (!identity.ok) {
+    out(`refusing to run: ${identity.code} — ${identity.message}`);
+    await pool.end().catch(() => undefined);
+    return 2;
+  }
   const { runVersionBackfill, entitlementSnapshot } = await import("../src/lib/billing/version-backfill.js");
   // The ACTUAL evaluation instant of this run (never a hard-coded date).
   const evaluationInstant = new Date();

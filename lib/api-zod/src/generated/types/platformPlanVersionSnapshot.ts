@@ -8,6 +8,7 @@
 import type { PlatformPlanAllowances } from './platformPlanAllowances';
 import type { PlatformPlanFeatureMatrix } from './platformPlanFeatureMatrix';
 import type { PlatformPlanLimits } from './platformPlanLimits';
+import type { PlatformPlanManualPrice } from './platformPlanManualPrice';
 import type { PlatformPlanVersionPrice } from './platformPlanVersionPrice';
 import type { PlatformPlanVersionSnapshotFeatureEnforcement } from './platformPlanVersionSnapshotFeatureEnforcement';
 
@@ -22,4 +23,6 @@ export interface PlatformPlanVersionSnapshot {
   /** Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered) */
   featureEnforcement?: PlatformPlanVersionSnapshotFeatureEnforcement;
   allowances?: PlatformPlanAllowances;
+  /** Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity) */
+  manualPrices?: PlatformPlanManualPrice[];
 }

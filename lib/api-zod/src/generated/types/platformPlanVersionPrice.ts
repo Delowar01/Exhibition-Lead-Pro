@@ -8,6 +8,11 @@
 
 export interface PlatformPlanVersionPrice {
   id: number;
+  /**
+     * Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)
+     * @nullable
+     */
+  planVersionId?: number | null;
   interval: string;
   intervalCount: number;
   currency: string;

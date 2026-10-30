@@ -19,4 +19,9 @@ export interface PlatformRegisterPriceInput {
      * @maxLength 128
      */
   providerPriceId: string;
+  /**
+     * Batch 42 — bind the mapping to this DRAFT version of the plan (omit = plan-wide); a published version's pricing is immutable (409 VERSION_NOT_DRAFT)
+     * @minimum 1
+     */
+  planVersionId?: number;
 }

@@ -61,7 +61,9 @@ export interface SubscriptionAuditInput {
   before: Partial<SubscriptionRow> | null;
   after: Partial<SubscriptionRow>;
   actor: AuditActor;
-  extra?: Record<string, string | number | boolean | null>;
+  // Safe summaries only (Batch 42 widens the shape to carry structured
+  // before/after limit maps and feature lists for the plan history).
+  extra?: Record<string, unknown>;
 }
 
 export async function writeSubscriptionAudit(tx: Executor, input: SubscriptionAuditInput): Promise<void> {

@@ -87,6 +87,11 @@ beforeAll(async () => {
   roleAdminToken = await login(`roleadmin@${DOMAIN}`);
   employeeToken = await login(`employee@${DOMAIN}`);
   // The fixed catalog becomes version 1 exactly the way the operator procedure does it.
+  // Another test file may already have run that procedure (the suite order is not
+  // fixed), in which case A and B were pinned at creation; they must start as the
+  // legacy NULL references this file reasons about, so the pin proofs below are
+  // order-independent.
+  await db.update(subscriptionsTable).set({ planVersionId: null }).where(inArray(subscriptionsTable.companyId, [companyA, companyB]));
   const report = await runVersionBackfill({ apply: true });
   expect(report.applied, JSON.stringify(report.verification.mismatches)).toBe(true);
   expect(report.verification.mismatches).toEqual([]);

@@ -1191,11 +1191,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlatformSubscriptionDetail"
         "409":
-          description: Transition not allowed (deterministic code)
+          description: Transition not allowed, DOWNGRADE_BLOCKED (U6 — measured usage exceeds a target limit; resources in details.blocking), FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED (D3 — repeat with confirmFeatureDowngrade true) or VERSION_NOT_PUBLISHED (deterministic codes)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/subscriptions/{companyId}/plan/preview:
+    post:
+      operationId: platformPreviewSubscriptionPlanChange
+      tags: [platform]
+      summary: Read-only preview of a plan / version change (Batch 42) — the same evaluation the change applies (target limits vs measured usage with the tenant's overrides, U6 blockers, feature gains / losses, trial policy, allowances); nothing is written
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformPreviewSubscriptionPlanChangeInput"
+      responses:
+        "200":
+          description: Evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanChangePreview"
+        "409":
+          description: VERSION_NOT_PUBLISHED (a draft can never be assigned)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/subscriptions/{companyId}/plan-history:
+    get:
+      operationId: platformSubscriptionPlanHistory
+      tags: [platform]
+      summary: The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanHistory"
 
   /platform/subscriptions/{companyId}/trial:
     post:
@@ -1758,6 +1800,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlatformEffectiveLimitPreview"
+
+  /platform/plans/{planId}/versions/{versionId}/migrate:
+    post:
+      operationId: platformMigratePlanVersionTenants
+      tags: [platform]
+      summary: Migrate platform-managed tenants to this PUBLISHED version (Batch 42) — dryRun true evaluates every tenant in scope and returns a digest; dryRun false requires confirmDigest of a dry run over the same current data and migrates each eligible tenant in its own transaction with per-tenant audit rows
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformMigratePlanVersionTenantsInput"
+      responses:
+        "200":
+          description: Dry run or execution report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformMigrationResult"
+        "409":
+          description: TARGET_NOT_PUBLISHED, TARGET_RETIRED, SOURCE_NOT_PUBLISHED, SOURCE_EQUALS_TARGET, SCOPE_TOO_LARGE, DRY_RUN_STALE (details.expectedDigest + the fresh dry run) or NOTHING_TO_MIGRATE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /platform/billing/status:
     get:
@@ -13032,6 +13110,9 @@ components:
           type: integer
         planId:
           type: string
+        planVersionId:
+          type: ["integer", "null"]
+          description: Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version
         interval:
           type: string
         intervalCount:
@@ -13379,6 +13460,21 @@ components:
         - type: object
           required: [verifiedAt, createdAt, providerMode]
           properties:
+            scope:
+              type: string
+              enum: [plan, version]
+              description: Batch 42 — plan-wide or bound to one version (strict identity, immutable)
+            planVersion:
+              type: ["integer", "null"]
+              description: Version number of the bound version (null when plan-wide)
+            planVersionState:
+              type: ["string", "null"]
+              enum: [draft, published, retired, null]
+            verified:
+              type: boolean
+            modeMatches:
+              type: boolean
+              description: The price was verified in the provider mode the platform is configured for
             providerPriceRef:
               type: ["string", "null"]
             providerProductRef:
@@ -13851,6 +13947,9 @@ components:
       properties:
         id:
           type: integer
+        planVersionId:
+          type: ["integer", "null"]
+          description: Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)
         interval:
           type: string
         intervalCount:
@@ -13890,6 +13989,94 @@ components:
           description: Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)
         allowances:
           $ref: "#/components/schemas/PlatformPlanAllowances"
+        manualPrices:
+          type: array
+          description: Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPrice"
+
+    PlatformPlanManualPrice:
+      type: object
+      required: [interval, intervalCount, currency, unitAmountMinor, label]
+      properties:
+        interval:
+          type: string
+          enum: [day, week, month, year]
+        intervalCount:
+          type: integer
+          minimum: 1
+          maximum: 12
+        currency:
+          type: string
+          pattern: "^[a-z]{3}$"
+        unitAmountMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+        label:
+          type: ["string", "null"]
+          maxLength: 60
+
+    PlatformPlanManualPriceInput:
+      type: object
+      required: [interval, currency, unitAmountMinor]
+      properties:
+        interval:
+          type: string
+          enum: [day, week, month, year]
+        intervalCount:
+          type: integer
+          minimum: 1
+          maximum: 12
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        unitAmountMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+        label:
+          type: ["string", "null"]
+          maxLength: 60
+
+    PlatformVersionPriceMapping:
+      type: object
+      required: [id, planId, planVersionId, scope, interval, intervalCount, currency, unitAmountMinor, nickname, active, providerMode, verified, modeMatches, verifiedAt, providerPriceRef]
+      description: Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode
+      properties:
+        id:
+          type: integer
+        planId:
+          type: string
+        planVersionId:
+          type: ["integer", "null"]
+        scope:
+          type: string
+          enum: [plan, version]
+        interval:
+          type: string
+        intervalCount:
+          type: integer
+        currency:
+          type: string
+        unitAmountMinor:
+          type: integer
+        nickname:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        providerMode:
+          type: string
+        verified:
+          type: boolean
+        modeMatches:
+          type: boolean
+        verifiedAt:
+          type: ["string", "null"]
+          format: date-time
+        providerPriceRef:
+          type: ["string", "null"]
 
     PlatformPlanVersionSummary:
       type: object
@@ -14015,6 +14202,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlatformPlanVersionPrice"
+        priceMappings:
+          type: array
+          description: Batch 42 — every applicable mapping (active or not) with scope + verification state
+          items:
+            $ref: "#/components/schemas/PlatformVersionPriceMapping"
+        manualPrices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPrice"
         providerMode:
           type: string
           enum: [test, live]
@@ -14029,6 +14225,15 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/PlatformPlanVersionPrice"
+            priceMappings:
+              type: array
+              description: Batch 42 — applicable provider mappings with scope + verification state
+              items:
+                $ref: "#/components/schemas/PlatformVersionPriceMapping"
+            manualPrices:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformPlanManualPrice"
             validation:
               oneOf:
                 - $ref: "#/components/schemas/PlatformPlanVersionValidation"
@@ -14060,7 +14265,7 @@ components:
       properties:
         group:
           type: string
-          enum: [display, limits, features, trialPolicy, enforcement, allowances]
+          enum: [display, limits, features, trialPolicy, enforcement, allowances, pricing]
         field:
           type: string
         left:
@@ -14256,6 +14461,11 @@ components:
           $ref: "#/components/schemas/PlatformPlanAllowancesInput"
         trialPolicy:
           $ref: "#/components/schemas/PlatformPlanTrialPolicyInput"
+        manualPrices:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPriceInput"
 
     PlatformDuplicatePlanInput:
       type: object
@@ -14303,6 +14513,12 @@ components:
           $ref: "#/components/schemas/PlatformPlanAllowancesInput"
         trialPolicy:
           $ref: "#/components/schemas/PlatformPlanTrialPolicyInput"
+        manualPrices:
+          type: array
+          description: Batch 42 (D2) — replaces the draft's manual price summaries (unique per currency / interval / count)
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPriceInput"
 
     PlatformPlanCreateResult:
       type: object
@@ -14334,7 +14550,495 @@ components:
           pattern: "^[a-z][a-z0-9-]{1,39}$"
           minLength: 2
           maxLength: 40
-          description: A PUBLISHED plan slug; the tenant is pinned to that plan's current published version
+          description: A PUBLISHED plan slug; without planVersionId the tenant is pinned to that plan's current published version
+        planVersionId:
+          type: integer
+          minimum: 1
+          description: Batch 42 — an explicit PUBLISHED version of the plan (a retired version is allowed as the owner's deliberate choice; a draft never)
+        confirmFeatureDowngrade:
+          type: boolean
+          description: Batch 42 (D3) — required true when the target version removes features the tenant currently has
+        reason:
+          type: string
+          maxLength: 200
+
+    PlatformPreviewSubscriptionPlanChangeInput:
+      type: object
+      required: [plan]
+      properties:
+        plan:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          minLength: 2
+          maxLength: 40
+        planVersionId:
+          type: integer
+          minimum: 1
+
+    PlatformLimitComparisonRow:
+      type: object
+      required: [resource, currentLimit, targetLimit, targetSource, override, used, measurable, exceeds, tightens, loosens]
+      properties:
+        resource:
+          type: string
+        currentLimit:
+          type: ["integer", "null"]
+        targetLimit:
+          type: ["integer", "null"]
+        targetSource:
+          type: string
+          enum: [override, plan, unlimited]
+        override:
+          type: ["integer", "null"]
+        used:
+          type: integer
+        measurable:
+          type: boolean
+        exceeds:
+          type: boolean
+        tightens:
+          type: boolean
+        loosens:
+          type: boolean
+
+    PlatformBlockingResource:
+      type: object
+      required: [resource, used, limit]
+      properties:
+        resource:
+          type: string
+        used:
+          type: integer
+        limit:
+          type: integer
+
+    PlatformPlanChangeEvaluation:
+      type: object
+      required: [current, target, sameTarget, changeKind, transition, limits, blocking, unmeasurable, tightenedLimits, loosenedLimits, features, trialPolicy, allowances, requiresFeatureConfirmation, eligible]
+      properties:
+        current:
+          type: object
+          required: [plan, planVersionId, version, valid, legacyReference, billingSource, status]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            valid:
+              type: boolean
+              description: false when the current version reference is invalid (fail-closed elsewhere; the change repairs it)
+            legacyReference:
+              type: boolean
+            billingSource:
+              type: string
+            status:
+              type: string
+        target:
+          type: object
+          required: [plan, planVersionId, version, state, explicit]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            state:
+              type: string
+              enum: [published, retired, legacy]
+            explicit:
+              type: boolean
+        sameTarget:
+          type: boolean
+        changeKind:
+          type: string
+          enum: [none, plan_change, version_change, repair]
+        transition:
+          type: object
+          required: [ok, code]
+          properties:
+            ok:
+              type: boolean
+            code:
+              type: ["string", "null"]
+        limits:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformLimitComparisonRow"
+        blocking:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformBlockingResource"
+        unmeasurable:
+          type: array
+          items:
+            type: string
+        tightenedLimits:
+          type: array
+          items:
+            type: string
+        loosenedLimits:
+          type: array
+          items:
+            type: string
+        features:
+          type: object
+          required: [enforcement, current, target, lost, gained]
+          properties:
+            enforcement:
+              type: object
+              required: [current, target]
+              properties:
+                current:
+                  type: string
+                target:
+                  type: string
+            current:
+              type: object
+              additionalProperties:
+                type: boolean
+            target:
+              type: object
+              additionalProperties:
+                type: boolean
+            lost:
+              type: array
+              items:
+                type: string
+            gained:
+              type: array
+              items:
+                type: string
+        trialPolicy:
+          type: object
+          required: [current, target]
+          properties:
+            current:
+              $ref: "#/components/schemas/PlatformTrialEndPolicy"
+            target:
+              $ref: "#/components/schemas/PlatformTrialEndPolicy"
+        allowances:
+          type: object
+          required: [current, target]
+          properties:
+            current:
+              $ref: "#/components/schemas/PlatformPlanAllowances"
+            target:
+              $ref: "#/components/schemas/PlatformPlanAllowances"
+        requiresFeatureConfirmation:
+          type: boolean
+        eligible:
+          type: boolean
+          description: Transition allowed and nothing blocking (feature confirmation aside)
+
+    PlatformTrialEndPolicy:
+      type: object
+      required: [endOutcome, readOnlyGraceDays]
+      properties:
+        endOutcome:
+          type: string
+        readOnlyGraceDays:
+          type: integer
+
+    PlatformPlanChangePreview:
+      allOf:
+        - $ref: "#/components/schemas/PlatformPlanChangeEvaluation"
+        - type: object
+          required: [companyId, implicitLegacyKept, wouldChange, readOnly, generatedAt]
+          properties:
+            companyId:
+              type: integer
+            implicitLegacyKept:
+              type: boolean
+              description: Same plan, legacy NULL reference, no explicit version — the change would move nothing
+            wouldChange:
+              type: boolean
+            readOnly:
+              type: boolean
+            generatedAt:
+              type: string
+              format: date-time
+
+    PlatformPlanHistoryEntry:
+      type: object
+      required: [auditId, at, action, kind, actor, reason, fromPlan, toPlan, fromVersionId, fromVersion, toVersionId, toVersion, billingSource, changedFields, source, migrationId, dryRunDigest, limitsBefore, limitsAfter, changedLimits, tightenedLimits, loosenedLimits, lostFeatures, gainedFeatures, featureEnforcementBefore, featureEnforcementAfter, confirmFeatureDowngrade, repairedInvalidReference]
+      properties:
+        auditId:
+          type: integer
+        at:
+          type: string
+          format: date-time
+        action:
+          type: string
+        kind:
+          type: string
+          enum: [created, direct_change, version_change, repair, migration, provider_sync, backfill_pin, other]
+        actor:
+          type: object
+          required: [userId, name]
+          properties:
+            userId:
+              type: ["integer", "null"]
+            name:
+              type: ["string", "null"]
+        reason:
+          type: ["string", "null"]
+        fromPlan:
+          type: ["string", "null"]
+        toPlan:
+          type: ["string", "null"]
+        fromVersionId:
+          type: ["integer", "null"]
+        fromVersion:
+          type: ["integer", "null"]
+        toVersionId:
+          type: ["integer", "null"]
+        toVersion:
+          type: ["integer", "null"]
+        billingSource:
+          type: ["string", "null"]
+        changedFields:
+          type: array
+          items:
+            type: string
+        source:
+          type: ["string", "null"]
+          description: direct_change | migration | provider_price | null
+        migrationId:
+          type: ["string", "null"]
+        dryRunDigest:
+          type: ["string", "null"]
+        limitsBefore:
+          type: ["object", "null"]
+          additionalProperties:
+            type: ["integer", "null"]
+        limitsAfter:
+          type: ["object", "null"]
+          additionalProperties:
+            type: ["integer", "null"]
+        changedLimits:
+          type: array
+          items:
+            type: string
+        tightenedLimits:
+          type: array
+          items:
+            type: string
+        loosenedLimits:
+          type: array
+          items:
+            type: string
+        lostFeatures:
+          type: array
+          items:
+            type: string
+        gainedFeatures:
+          type: array
+          items:
+            type: string
+        featureEnforcementBefore:
+          type: ["string", "null"]
+        featureEnforcementAfter:
+          type: ["string", "null"]
+        confirmFeatureDowngrade:
+          type: ["boolean", "null"]
+        repairedInvalidReference:
+          type: boolean
+
+    PlatformPlanHistory:
+      type: object
+      required: [companyId, companyName, original, current, entries, total, truncated, generatedAt]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: ["string", "null"]
+        original:
+          type: object
+          required: [plan, planVersionId, version, at]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            at:
+              type: ["string", "null"]
+              format: date-time
+        current:
+          type: object
+          required: [plan, planVersionId, version, versionState, billingSource, status]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            versionState:
+              type: ["string", "null"]
+            billingSource:
+              type: string
+            status:
+              type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanHistoryEntry"
+        total:
+          type: integer
+        truncated:
+          type: boolean
+        generatedAt:
+          type: string
+          format: date-time
+
+    PlatformMigratePlanVersionTenantsInput:
+      type: object
+      required: [dryRun]
+      properties:
+        dryRun:
+          type: boolean
+          description: true = evaluate only (no write) and return the digest; false = execute (requires confirmDigest)
+        sourceVersionId:
+          type: integer
+          minimum: 1
+          description: Scope = every subscription pinned to this PUBLISHED version (any plan)
+        companyIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: integer
+            minimum: 1
+          description: Explicit scope (≤ 200 companies); combined with sourceVersionId every listed company must be on the source
+        confirmDigest:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: The digest of the reviewed dry run; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same digest
+        confirmFeatureDowngrade:
+          type: boolean
+          description: D3 — required true for tenants that would lose features (otherwise they are reported, never migrated)
+        reason:
+          type: string
+          maxLength: 200
+
+    PlatformMigrationRow:
+      type: object
+      required: [companyId, companyName, currentPlan, currentPlanVersionId, currentVersion, currentReferenceValid, billingSource, status, reason, blocking, unmeasurable, lostFeatures, tightenedLimits, outcome, outcomeReason]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: ["string", "null"]
+        currentPlan:
+          type: ["string", "null"]
+        currentPlanVersionId:
+          type: ["integer", "null"]
+        currentVersion:
+          type: ["integer", "null"]
+        currentReferenceValid:
+          type: boolean
+        billingSource:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+        reason:
+          type: string
+          enum: [ELIGIBLE, ALREADY_ON_VERSION, PROVIDER_MANAGED, TRANSITION_NOT_ALLOWED, NOT_ON_SOURCE_VERSION, DOWNGRADE_BLOCKED, FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED, SUBSCRIPTION_MISSING]
+        blocking:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformBlockingResource"
+        unmeasurable:
+          type: array
+          items:
+            type: string
+        lostFeatures:
+          type: array
+          items:
+            type: string
+        tightenedLimits:
+          type: array
+          items:
+            type: string
+        outcome:
+          type: string
+          enum: [migrated, skipped, failed, rolled_back, not_attempted]
+        outcomeReason:
+          type: ["string", "null"]
+
+    PlatformMigrationResult:
+      type: object
+      required: [planId, target, source, scope, confirmFeatureDowngrade, digest, generatedAt, dryRun, migrationId, rows, summary, complete]
+      properties:
+        planId:
+          type: string
+        target:
+          type: object
+          required: [versionId, version]
+          properties:
+            versionId:
+              type: integer
+            version:
+              type: integer
+        source:
+          type: ["object", "null"]
+          properties:
+            versionId:
+              type: integer
+            version:
+              type: integer
+            planId:
+              type: string
+        scope:
+          type: string
+          enum: [companies, source_version]
+        confirmFeatureDowngrade:
+          type: boolean
+        digest:
+          type: string
+          description: sha256 over the reviewed rows (target, source, confirmation flag, per-tenant current reference + reason + blockers + lost features)
+        generatedAt:
+          type: string
+          format: date-time
+        dryRun:
+          type: boolean
+        migrationId:
+          type: ["string", "null"]
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformMigrationRow"
+        summary:
+          type: object
+          required: [total, eligible, byReason, migrated, skipped, failed, rolledBack, notAttempted]
+          properties:
+            total:
+              type: integer
+            eligible:
+              type: integer
+            byReason:
+              type: object
+              additionalProperties:
+                type: integer
+            migrated:
+              type: integer
+            skipped:
+              type: integer
+            failed:
+              type: integer
+            rolledBack:
+              type: integer
+            notAttempted:
+              type: integer
+        complete:
+          type: ["boolean", "null"]
+          description: null for a dry run; true only when nothing failed or rolled back
 
     PlatformStartTrialInput:
       type: object
@@ -14394,6 +15098,10 @@ components:
           type: string
           minLength: 6
           maxLength: 128
+        planVersionId:
+          type: integer
+          minimum: 1
+          description: Batch 42 — bind the mapping to this DRAFT version of the plan (omit = plan-wide); a published version's pricing is immutable (409 VERSION_NOT_DRAFT)
 
     PlatformUpdatePriceInput:
       type: object

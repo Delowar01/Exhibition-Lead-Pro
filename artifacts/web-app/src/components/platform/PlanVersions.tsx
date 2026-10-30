@@ -23,6 +23,8 @@ import {
   type PlatformFieldIssue,
   type PlatformCompareRow,
   type PlatformPlanVersionImpact,
+  type PlatformVersionPriceMapping,
+  type PlatformPlanManualPrice,
 } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +38,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { StatusBadge, TableSkeleton, ErrorState } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
 import { LIMIT_RESOURCES, STATUS_LABEL, fmtDateTime, errMessage } from "@/components/platform/SubscriptionManager";
-import { Lock, GitBranch, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Lock, GitBranch, ShieldCheck, AlertTriangle, Users } from "lucide-react";
+import { MigrateTenantsDialog } from "@/components/platform/MigrateTenantsDialog";
 
 // Batch 40 — Plan Builder PB-2: the platform owner's version workspace for ONE plan.
 //
@@ -55,6 +58,13 @@ import { Lock, GitBranch, ShieldCheck, AlertTriangle } from "lucide-react";
 // flags say. AI/OCR allowances seed the Enterprise AI Layer budget (a tenant's
 // own non-null budget wins), and the trial end-of-trial policy may configure a
 // 1–90 day read-only grace instead of the default immediate block.
+//
+// Batch 42 (PB-4): a draft carries platform-managed price summaries (manual
+// billing; recorded in the immutable snapshot, never billed by the product) and
+// shows the provider price mappings that apply to it (plan-wide or bound to the
+// version) with their verification state; publication refuses unverified or
+// mode-mismatched mappings. A published version offers "Migrate tenants…" — the
+// dry-run → review → confirm → execute flow of MigrateTenantsDialog.
 
 type Resource = (typeof LIMIT_RESOURCES)[number];
 const RESOURCE_LABEL: Record<Resource, string> = { contacts: "Contacts", events: "Events", admins: "Admins", employees: "Employees", scans: "Scans", storageMb: "Storage (MB)" };
@@ -111,7 +121,26 @@ export function invalidatePlanQueries(queryClient: QueryClient): Promise<void> {
 type TrialForm = { trialDays: string; eligible: boolean; oncePerCompany: boolean; endOutcome: "blocked" | "read_only"; readOnlyGraceDays: string };
 type Enforcement = "legacy" | "enforced";
 type AllowanceForm = { aiTokensPerMonth: string; aiCostUsdPerMonth: string };
-type DraftForm = { name: string; description: string; sortOrder: string; limits: Record<Resource, string>; features: Record<string, boolean>; featureEnforcement: Enforcement; allowances: AllowanceForm; trial: TrialForm };
+type ManualPriceForm = { interval: "day" | "week" | "month" | "year"; intervalCount: string; currency: string; unitAmount: string; label: string };
+type DraftForm = { name: string; description: string; sortOrder: string; limits: Record<Resource, string>; features: Record<string, boolean>; featureEnforcement: Enforcement; allowances: AllowanceForm; trial: TrialForm; manualPrices: ManualPriceForm[] };
+
+export const INTERVAL_LABEL: Record<string, string> = { day: "day", week: "week", month: "month", year: "year" };
+export function periodText(interval: string, intervalCount: number): string {
+  return intervalCount > 1 ? `every ${intervalCount} ${INTERVAL_LABEL[interval] ?? interval}s` : `per ${INTERVAL_LABEL[interval] ?? interval}`;
+}
+/** Monthly / annual / other grouping used by the pricing views. */
+export function periodGroup(interval: string, intervalCount: number): "monthly" | "annual" | "other" {
+  if (interval === "month" && intervalCount === 1) return "monthly";
+  if ((interval === "year" && intervalCount === 1) || (interval === "month" && intervalCount === 12)) return "annual";
+  return "other";
+}
+export function moneyText(minor: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(minor / 100);
+  } catch {
+    return `${(minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
+}
 
 export const ENFORCEMENT_LABEL: Record<string, string> = { legacy: "Legacy (grandfathered)", enforced: "Enforced", invalid: "Invalid reference" };
 export function enforcementTone(mode: string): "success" | "warning" | "neutral" | "info" {
@@ -136,6 +165,7 @@ function formFrom(v: PlatformPlanVersionDetail): DraftForm {
     sortOrder: String(v.snapshot.sortOrder),
     limits,
     features: { ...v.snapshot.features },
+    manualPrices: (v.snapshot.manualPrices ?? []).map((p) => ({ interval: p.interval, intervalCount: String(p.intervalCount), currency: p.currency, unitAmount: (p.unitAmountMinor / 100).toFixed(2), label: p.label ?? "" })),
     featureEnforcement: v.featureEnforcement,
     allowances: {
       aiTokensPerMonth: v.allowances.aiTokensPerMonth == null ? "" : String(v.allowances.aiTokensPerMonth),
@@ -175,8 +205,16 @@ function bodyFrom(f: DraftForm): PlatformUpdateDraftInput {
       endOutcome: f.trial.endOutcome,
       readOnlyGraceDays: num(f.trial.readOnlyGraceDays),
     },
+    manualPrices: f.manualPrices.map((p) => ({
+      interval: p.interval,
+      intervalCount: num(p.intervalCount),
+      currency: p.currency.trim().toLowerCase(),
+      unitAmountMinor: Math.round(num(p.unitAmount) * 100),
+      label: p.label.trim() === "" ? null : p.label.trim(),
+    })),
   };
 }
+const EMPTY_MANUAL_PRICE: ManualPriceForm = { interval: "month", intervalCount: "1", currency: "usd", unitAmount: "0.00", label: "" };
 
 export interface PlanVersionsProps {
   planId: string;
@@ -199,6 +237,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
   const [publishOpen, setPublishOpen] = useState(false);
   const [retireOpen, setRetireOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [migrateOpen, setMigrateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const versions: PlatformPlanVersion[] = list.data?.versions ?? [];
@@ -452,6 +491,9 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                         <Button variant="outline" size="sm" onClick={() => void newDraft(v.id)} disabled={busy || hasDraft || archived} data-testid="version-draft-from">New draft from this version</Button>
                       )}
                       {v.state === "published" && (
+                        <Button variant="outline" size="sm" onClick={() => setMigrateOpen(true)} disabled={busy} data-testid="version-migrate-open"><Users className="mr-1 h-3 w-3" aria-hidden="true" />Migrate tenants…</Button>
+                      )}
+                      {v.state === "published" && (
                         <Button variant="outline" size="sm" onClick={() => { void impact.refetch(); setRetireOpen(true); }} disabled={busy} data-testid="version-retire-open">Retire…</Button>
                       )}
                     </>
@@ -588,6 +630,61 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                     </div>
                   </div>
 
+                  <div className="lg:col-span-2" data-testid="version-manual-prices">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="text-sm font-semibold">Platform-managed prices (manual billing)</h4>
+                      <Button variant="outline" size="sm" onClick={() => setForm({ ...form, manualPrices: [...form.manualPrices, { ...EMPTY_MANUAL_PRICE }] })} disabled={form.manualPrices.length >= 8} data-testid="manual-price-add">Add price</Button>
+                    </div>
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Display and audit only: recorded in the immutable snapshot when this version is published; the product never bills them. Provider (Stripe) pricing is registered separately as a verified price mapping — see the mappings below. Max 8; one price per currency and period.
+                    </p>
+                    {form.manualPrices.length === 0 ? (
+                      <p className="text-xs text-muted-foreground" data-testid="manual-prices-empty">No platform-managed price recorded.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {form.manualPrices.map((p, i) => (
+                          <div key={i} className="grid gap-2 rounded-md border p-2 sm:grid-cols-6" data-testid={`manual-price-${i}`}>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Interval</Label>
+                              <Select value={p.interval} onValueChange={(val) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, interval: val as ManualPriceForm["interval"] } : x)) })}>
+                                <SelectTrigger data-testid={`manual-price-interval-${i}`}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="month">Month</SelectItem>
+                                  <SelectItem value="year">Year</SelectItem>
+                                  <SelectItem value="week">Week</SelectItem>
+                                  <SelectItem value="day">Day</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Every</Label>
+                              <Input type="number" min={1} max={12} value={p.intervalCount} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, intervalCount: e.target.value } : x)) })} data-testid={`manual-price-count-${i}`} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Currency</Label>
+                              <Input maxLength={3} value={p.currency} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, currency: e.target.value.toLowerCase() } : x)) })} data-testid={`manual-price-currency-${i}`} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Amount</Label>
+                              <Input type="number" min={0} step="0.01" inputMode="decimal" value={p.unitAmount} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, unitAmount: e.target.value } : x)) })} data-testid={`manual-price-amount-${i}`} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Label</Label>
+                              <Input maxLength={60} placeholder="optional" value={p.label} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} data-testid={`manual-price-label-${i}`} />
+                            </div>
+                            <div className="flex items-end">
+                              <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, manualPrices: form.manualPrices.filter((_, j) => j !== i) })} data-testid={`manual-price-remove-${i}`}>Remove</Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <PriceMappings mappings={v.priceMappings ?? []} providerMode={null} testId="draft-price-mappings" />
+                  </div>
+
                   {saveIssues.length > 0 && (
                     <ul className="text-sm text-destructive lg:col-span-2" data-testid="version-save-errors">
                       {saveIssues.map((i, idx) => <li key={idx}>{issueText(i)}</li>)}
@@ -622,6 +719,11 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                     <ul className="mt-2 list-disc pl-5 text-muted-foreground" data-testid="version-validation-warnings">
                       {validation.warnings.map((i, idx) => <li key={idx}>{issueText(i)}</li>)}
                     </ul>
+                  )}
+                  {(validation.priceMappings?.length ?? 0) > 0 && (
+                    <div className="mt-3" data-testid="validation-price-mappings">
+                      <PriceMappings mappings={validation.priceMappings ?? []} providerMode={validation.providerMode} compact testId="validation-mapping-list" />
+                    </div>
                   )}
                 </div>
               )}
@@ -692,6 +794,10 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
             </div>
           ) : null}
         </div>
+      )}
+
+      {v && v.state === "published" && (
+        <MigrateTenantsDialog open={migrateOpen} onClose={() => { setMigrateOpen(false); void refresh(); }} planId={planId} target={v} versions={versions} />
       )}
 
       {/* Publish confirmation: validation result + tenant impact, then the atomic server-side publish. */}
@@ -836,17 +942,96 @@ function VersionSnapshot({ v }: { v: PlatformPlanVersionDetail }) {
             <div className="rounded-md border p-2"><div className="text-muted-foreground">Prices captured</div><div className="font-medium tabular-nums">{v.snapshot.prices.length}</div></div>
           </div>
         </div>
-        {v.prices.length > 0 && (
-          <div>
-            <h4 className="mb-2 text-sm font-semibold">Prices bound to this version</h4>
-            <ul className="text-sm text-muted-foreground" data-testid="snapshot-prices">
-              {v.prices.map((p) => (
-                <li key={p.id}>{(p.unitAmountMinor / 100).toFixed(2)} {p.currency.toUpperCase()} / {p.intervalCount > 1 ? `${p.intervalCount} ${p.interval}s` : p.interval} · {p.providerMode} · {p.active ? "active" : "inactive"}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <ManualPrices prices={v.snapshot.manualPrices ?? v.manualPrices ?? []} />
+        <div data-testid="snapshot-prices">
+          <PriceMappings mappings={v.priceMappings ?? []} providerMode={null} captured={v.snapshot.prices} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** Platform-managed (manual billing) price summaries of a version, grouped monthly / annual / other. */
+function ManualPrices({ prices }: { prices: PlatformPlanManualPrice[] }) {
+  const groups: Array<["monthly" | "annual" | "other", string]> = [["monthly", "Monthly"], ["annual", "Annual"], ["other", "Other periods"]];
+  return (
+    <div data-testid="snapshot-manual-prices" data-count={prices.length}>
+      <h4 className="mb-2 text-sm font-semibold">Platform-managed prices (manual billing)</h4>
+      {prices.length === 0 ? (
+        <p className="text-xs text-muted-foreground">None recorded on this version.</p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-3 text-sm">
+          {groups.map(([g, label]) => {
+            const rows = prices.filter((p) => periodGroup(p.interval, p.intervalCount) === g);
+            if (rows.length === 0) return null;
+            return (
+              <div key={g} className="rounded-md border p-2" data-testid={`manual-prices-${g}`}>
+                <div className="text-muted-foreground">{label}</div>
+                <ul>
+                  {rows.map((p, i) => (
+                    <li key={`${p.currency}-${p.interval}-${p.intervalCount}-${i}`} className="font-medium tabular-nums">
+                      {moneyText(p.unitAmountMinor, p.currency)} <span className="font-normal text-muted-foreground">{periodText(p.interval, p.intervalCount)}{p.label ? ` · ${p.label}` : ""}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="mt-1 text-xs text-muted-foreground">Recorded for display and audit only; the product never bills these. Provider pricing lives in the verified mappings below.</p>
+    </div>
+  );
+}
+
+/** Provider price mappings applying to a version (plan-wide + bound), monthly / annual grouping with verification state. */
+function PriceMappings({ mappings, providerMode, compact = false, captured, testId = "snapshot-price-mappings" }: { mappings: PlatformVersionPriceMapping[]; providerMode: string | null; compact?: boolean; captured?: Array<{ id: number }>; testId?: string }) {
+  const groupOf = (m: PlatformVersionPriceMapping) => periodGroup(m.interval, m.intervalCount);
+  const groupLabel: Record<string, string> = { monthly: "Monthly", annual: "Annual", other: "Other" };
+  const capturedIds = new Set((captured ?? []).map((c) => c.id));
+  return (
+    <div data-testid={testId} data-count={mappings.length}>
+      <h4 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold">
+        Provider price mappings
+        {providerMode && <Badge variant="outline">provider mode {providerMode}</Badge>}
+      </h4>
+      {mappings.length === 0 ? (
+        <p className="text-xs text-muted-foreground" data-testid="price-mappings-empty">No provider price applies to this version (plan-wide or bound). Online checkout for it stays unavailable; register prices from Subscriptions.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Period</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead>Verification</TableHead>
+                <TableHead>Active</TableHead>
+                {!compact && <TableHead>Ref</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...mappings]
+                .sort((a, b) => groupOf(a).localeCompare(groupOf(b)))
+                .map((m) => (
+                  <TableRow key={m.id} data-testid={`mapping-row-${m.id}`} data-scope={m.scope} data-verified={m.verified && m.modeMatches ? "true" : "false"}>
+                    <TableCell><span className="text-muted-foreground">{groupLabel[groupOf(m)]} · </span>{periodText(m.interval, m.intervalCount)}</TableCell>
+                    <TableCell className="tabular-nums">{moneyText(m.unitAmountMinor, m.currency)}</TableCell>
+                    <TableCell data-testid={`mapping-scope-${m.id}`}>{m.scope === "version" ? "Bound to this version" : "Plan-wide"}{capturedIds.has(m.id) ? " · captured at publication" : ""}</TableCell>
+                    <TableCell><Badge variant={m.providerMode === "live" ? "default" : "secondary"}>{m.providerMode}</Badge></TableCell>
+                    <TableCell data-testid={`mapping-verified-${m.id}`}>
+                      <StatusBadge tone={!m.verified ? "warning" : !m.modeMatches ? "warning" : "success"}>{!m.verified ? "Unverified" : !m.modeMatches ? "Mode mismatch" : "Verified"}</StatusBadge>
+                    </TableCell>
+                    <TableCell><StatusBadge tone={m.active ? "success" : "neutral"}>{m.active ? "Active" : "Inactive"}</StatusBadge></TableCell>
+                    {!compact && <TableCell className="font-mono text-xs">{m.providerPriceRef ?? "—"}</TableCell>}
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      <p className="mt-1 text-xs text-muted-foreground">A published version's mappings are immutable: deactivate a price rather than delete it; bind new prices to a new draft.</p>
     </div>
   );
 }

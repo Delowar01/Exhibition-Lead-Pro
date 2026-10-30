@@ -187,7 +187,8 @@ describe("comparison", () => {
     const b = { snapshot: { ...okSnapshot(), limits: { ...okSnapshot().limits, contacts: 500, events: 10 } }, trialPolicy: { ...defaultTrialPolicy(14), trialDays: 7 } };
     const rows = compareVersions(a, b);
     expect(rows.filter((r) => r.changed).map((r) => `${r.group}.${r.field}`).sort()).toEqual(["limits.contacts", "limits.events", "trialPolicy.trialDays"]);
-    expect(rows.length).toBe(3 + PLAN_LIMIT_KEYS.length + PLAN_FEATURE_KEYS.length + 5 + 3);
+    expect(rows.length).toBe(3 + PLAN_LIMIT_KEYS.length + PLAN_FEATURE_KEYS.length + 5 + 3 + 1); // + the Batch 42 pricing row (manual price summaries)
+    expect(rows.find((r) => r.group === "pricing")).toMatchObject({ field: "manualPrices", changed: false });
     expect(limitTightens(null, 10)).toBe(true);
     expect(limitTightens(10, null)).toBe(false);
     expect(limitTightens(10, 5)).toBe(true);

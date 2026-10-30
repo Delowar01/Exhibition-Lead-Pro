@@ -8,6 +8,7 @@
 import type { PlatformPlanAllowancesInput } from './platformPlanAllowancesInput';
 import type { PlatformPlanFeatureMatrix } from './platformPlanFeatureMatrix';
 import type { PlatformPlanLimitsInput } from './platformPlanLimitsInput';
+import type { PlatformPlanManualPriceInput } from './platformPlanManualPriceInput';
 import type { PlatformPlanTrialPolicyInput } from './platformPlanTrialPolicyInput';
 import type { PlatformUpdateDraftInputFeatureEnforcement } from './platformUpdateDraftInputFeatureEnforcement';
 
@@ -32,4 +33,9 @@ export interface PlatformUpdateDraftInput {
   featureEnforcement?: PlatformUpdateDraftInputFeatureEnforcement;
   allowances?: PlatformPlanAllowancesInput;
   trialPolicy?: PlatformPlanTrialPolicyInput;
+  /**
+     * Batch 42 (D2) — replaces the draft's manual price summaries (unique per currency / interval / count)
+     * @maxItems 8
+     */
+  manualPrices?: PlatformPlanManualPriceInput[];
 }

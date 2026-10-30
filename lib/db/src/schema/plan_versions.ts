@@ -45,6 +45,24 @@ export interface PlanVersionPriceSummary {
   providerMode: string;
   nickname: string | null;
   active: boolean;
+  // Batch 42 (PB-4): the version the mapping is bound to (null = plan-wide).
+  // Absent on snapshots published before Batch 42 (= plan-wide at the time).
+  planVersionId?: number | null;
+}
+
+// Batch 42 (PB-4.1, owner decision D2) — a platform-managed (manual) price
+// summary recorded in the immutable snapshot: display + audit only. The product
+// never bills it, it is never a provider identity, and it lives in no separate
+// table; manual-billing tenants are invoiced by the platform operator outside
+// the product.
+export const MANUAL_PRICE_INTERVALS = ["day", "week", "month", "year"] as const;
+export type ManualPriceInterval = (typeof MANUAL_PRICE_INTERVALS)[number];
+export interface PlanVersionManualPrice {
+  interval: ManualPriceInterval;
+  intervalCount: number;
+  currency: string; // lowercase ISO-4217
+  unitAmountMinor: number;
+  label: string | null;
 }
 
 // Batch 41 (PB-3) — how a version's feature matrix is applied to its subscribers.
@@ -83,6 +101,8 @@ export interface PlanVersionSnapshot {
   featureEnforcement?: FeatureEnforcementMode;
   // Optional (Batch 41): absent = no AI allowance seeded by the version.
   allowances?: PlanVersionAllowances;
+  // Optional (Batch 42): platform-managed price summaries (absent = none).
+  manualPrices?: PlanVersionManualPrice[];
 }
 
 export const TRIAL_END_OUTCOMES = ["blocked", "read_only"] as const;

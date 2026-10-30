@@ -422,6 +422,7 @@ export default function PlatformPlans() {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead>Scope</TableHead>
                             <TableHead>Amount</TableHead>
                             <TableHead>Interval</TableHead>
                             <TableHead>Ref</TableHead>
@@ -433,11 +434,12 @@ export default function PlatformPlans() {
                         <TableBody>
                           {detail.data.prices.map((p) => (
                             <TableRow key={p.id} data-testid={`price-row-${p.id}`}>
+                              <TableCell data-testid={`plan-price-scope-${p.id}`}>{p.planVersionId == null ? "Plan-wide" : `v${p.planVersion ?? "?"}${p.planVersionState ? ` · ${p.planVersionState}` : ""}`}</TableCell>
                               <TableCell className="tabular-nums">{money(p.unitAmountMinor, p.currency)}</TableCell>
                               <TableCell>{p.intervalCount > 1 ? `${p.intervalCount} ${p.interval}s` : p.interval}</TableCell>
                               <TableCell className="font-mono text-xs">{p.providerPriceRef ?? "—"}</TableCell>
                               <TableCell><Badge variant={p.providerMode === "live" ? "default" : "secondary"}>{p.providerMode}</Badge></TableCell>
-                              <TableCell>{fmt(p.verifiedAt)}</TableCell>
+                              <TableCell>{fmt(p.verifiedAt)}{p.modeMatches === false ? <span className="ml-1 text-xs text-amber-700 dark:text-amber-400">(mode mismatch)</span> : null}</TableCell>
                               <TableCell className="text-right"><StatusBadge tone={p.active ? "success" : "neutral"}>{p.active ? "Active" : "Inactive"}</StatusBadge></TableCell>
                             </TableRow>
                           ))}

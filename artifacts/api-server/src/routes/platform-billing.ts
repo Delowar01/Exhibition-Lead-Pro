@@ -8,11 +8,13 @@ import {
   PlatformSetSubscriptionLimitsBody,
   PlatformRegisterPriceBody,
   PlatformUpdatePriceBody,
+  PlatformPreviewSubscriptionPlanChangeBody,
 } from "@workspace/api-zod";
 import { getClientIp } from "../lib/security.js";
 import { AppError } from "../middlewares/errorHandler.js";
 import * as lifecycle from "../services/subscription-lifecycle.service.js";
 import * as platformBilling from "../services/platform-billing.service.js";
+import { planHistory } from "../services/plan-history.service.js";
 import { projectSubscription } from "../services/subscriptions.service.js";
 
 // Batch 20 — platform-owner manual subscription lifecycle + provider price
@@ -50,11 +52,19 @@ router.get("/platform/subscriptions/:companyId", async (req: AuthRequest, res) =
 router.get("/platform/subscriptions/:companyId/events", async (req: AuthRequest, res) => {
   res.json({ events: await platformBilling.listRecentProviderEvents(companyIdParam(req)) });
 });
+// Batch 42 (PB-4.6): the tenant's plan / version history, projected from the audit trail.
+router.get("/platform/subscriptions/:companyId/plan-history", async (req: AuthRequest, res) => {
+  res.json(await planHistory(companyIdParam(req)));
+});
 
 // ── manual lifecycle ────────────────────────────────────────────────────────
 router.post("/platform/subscriptions/:companyId/plan", validateBody(PlatformSetSubscriptionPlanBody), async (req: AuthRequest, res) => {
   await lifecycle.setPlan(companyIdParam(req), actorOf(req), req.body ?? {});
   await respond(res, companyIdParam(req));
+});
+// Batch 42 (PB-4.4): read-only preview of a plan / version change (the same evaluation the change applies).
+router.post("/platform/subscriptions/:companyId/plan/preview", validateBody(PlatformPreviewSubscriptionPlanChangeBody), async (req: AuthRequest, res) => {
+  res.json(await lifecycle.previewPlanChange(companyIdParam(req), req.body ?? {}));
 });
 router.post("/platform/subscriptions/:companyId/trial", validateBody(PlatformStartTrialBody), async (req: AuthRequest, res) => {
   await lifecycle.startTrial(companyIdParam(req), actorOf(req), req.body ?? {});

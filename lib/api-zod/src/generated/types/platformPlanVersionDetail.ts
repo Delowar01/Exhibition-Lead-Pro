@@ -5,11 +5,16 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlatformPlanManualPrice } from './platformPlanManualPrice';
 import type { PlatformPlanVersion } from './platformPlanVersion';
 import type { PlatformPlanVersionPrice } from './platformPlanVersionPrice';
 import type { PlatformPlanVersionValidation } from './platformPlanVersionValidation';
+import type { PlatformVersionPriceMapping } from './platformVersionPriceMapping';
 
 export type PlatformPlanVersionDetail = PlatformPlanVersion & ({
   prices: PlatformPlanVersionPrice[];
+  /** Batch 42 — applicable provider mappings with scope + verification state */
+  priceMappings?: PlatformVersionPriceMapping[];
+  manualPrices?: PlatformPlanManualPrice[];
   validation: PlatformPlanVersionValidation | null;
 });

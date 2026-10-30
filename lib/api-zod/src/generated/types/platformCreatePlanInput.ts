@@ -9,6 +9,7 @@ import type { PlatformCreatePlanInputFeatureEnforcement } from './platformCreate
 import type { PlatformPlanAllowancesInput } from './platformPlanAllowancesInput';
 import type { PlatformPlanFeatureMatrix } from './platformPlanFeatureMatrix';
 import type { PlatformPlanLimitsInput } from './platformPlanLimitsInput';
+import type { PlatformPlanManualPriceInput } from './platformPlanManualPriceInput';
 import type { PlatformPlanTrialPolicyInput } from './platformPlanTrialPolicyInput';
 
 export interface PlatformCreatePlanInput {
@@ -39,4 +40,6 @@ export interface PlatformCreatePlanInput {
   featureEnforcement?: PlatformCreatePlanInputFeatureEnforcement;
   allowances?: PlatformPlanAllowancesInput;
   trialPolicy?: PlatformPlanTrialPolicyInput;
+  /** @maxItems 8 */
+  manualPrices?: PlatformPlanManualPriceInput[];
 }

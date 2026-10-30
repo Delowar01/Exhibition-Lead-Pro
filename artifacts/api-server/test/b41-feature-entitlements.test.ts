@@ -114,7 +114,11 @@ beforeAll(async () => {
   // A per-tenant override BEFORE the assignment (must survive it).
   const override = await api("PUT", `/platform/subscriptions/${companyE}/limits`, platformToken, { limits: { contacts: 7 } });
   expect(override.status, override.text).toBe(200);
-  const assign = await api("POST", `/platform/subscriptions/${companyE}/plan`, platformToken, { plan: ENFORCED });
+  // Batch 42 (D3): the enforced version removes four features the legacy tenant currently has → the owner confirms the feature-only downgrade explicitly.
+  const unconfirmed = await api("POST", `/platform/subscriptions/${companyE}/plan`, platformToken, { plan: ENFORCED });
+  expect(unconfirmed.status, unconfirmed.text).toBe(409);
+  expect(unconfirmed.body.code).toBe("FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED");
+  const assign = await api("POST", `/platform/subscriptions/${companyE}/plan`, platformToken, { plan: ENFORCED, confirmFeatureDowngrade: true });
   expect(assign.status, assign.text).toBe(200);
   expect(assign.body.planVersionId).toBe(enforcedV1);
 

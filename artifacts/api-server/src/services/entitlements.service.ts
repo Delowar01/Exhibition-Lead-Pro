@@ -127,25 +127,49 @@ async function countUsage(companyId: number, sub: SubscriptionRow, resource: Cou
   }
 }
 
+// Batch 42 — the measured usage of every resource, INDEPENDENT of the current
+// limits (a plan / version change compares the TARGET limits with this; it must
+// work even when the current version reference is invalid). Storage is reported
+// as unmeasurable, never as a verified zero.
+export interface MeasuredUsage {
+  resource: LimitResource;
+  used: number;
+  measurable: boolean;
+  details?: Record<string, number | string>;
+}
+export async function measureUsage(companyId: number, sub: SubscriptionRow, now = new Date(), tx?: Executor): Promise<MeasuredUsage[]> {
+  const out: MeasuredUsage[] = [];
+  for (const resource of LIMIT_RESOURCES) {
+    if (resource === "storageMb") {
+      out.push({ resource, used: 0, measurable: false });
+      continue;
+    }
+    const { used, details } = await countUsage(companyId, sub, resource, { now }, tx);
+    out.push({ resource, used, measurable: true, details });
+  }
+  return out;
+}
+
 export async function usageReport(companyId: number, sub: SubscriptionRow, now = new Date()): Promise<UsageReport> {
   const limits = await effectiveLimitsFor(sub);
   const window = resolveUsageWindow(sub, now);
+  const measured = await measureUsage(companyId, sub, now);
   const resources: ResourceUsage[] = [];
   for (const l of limits) {
-    if (l.resource === "storageMb") {
+    const m = measured.find((x) => x.resource === l.resource);
+    if (!m || !m.measurable) {
       resources.push({ resource: l.resource, used: 0, limit: l.limit, remaining: null, source: l.source, enforced: false, measurable: false });
       continue;
     }
-    const { used, details } = await countUsage(companyId, sub, l.resource, { now });
     resources.push({
       resource: l.resource,
-      used,
+      used: m.used,
       limit: l.limit,
-      remaining: l.limit == null ? null : Math.max(0, l.limit - used),
+      remaining: l.limit == null ? null : Math.max(0, l.limit - m.used),
       source: l.source,
       enforced: l.limit != null,
       measurable: true,
-      details,
+      details: m.details,
     });
   }
   return { window: { startsAt: window.startsAt.toISOString(), endsAt: window.endsAt.toISOString(), source: window.source }, resources };

@@ -1,15 +1,18 @@
 import {
   FEATURE_ENFORCEMENT_MODES,
+  MANUAL_PRICE_INTERVALS,
   PLAN_FEATURE_KEYS,
   PLAN_LIMIT_KEYS,
   TRIAL_END_OUTCOMES,
   type FeatureEnforcementMode,
+  type ManualPriceInterval,
   type PlanFeatureKey,
   type PlanFeatureMatrix,
   type PlanLimitKey,
   type PlanTrialPolicy,
   type PlanVersionAllowances,
   type PlanVersionLimits,
+  type PlanVersionManualPrice,
   type PlanVersionPriceSummary,
   type PlanVersionSnapshot,
 } from "@workspace/db";
@@ -31,8 +34,8 @@ import { PLAN_IDS, type PlanLimitDefaults } from "./lifecycle.js";
 // in lifecycle.ts) keeps that role; `limitsAsPlanDefaults` only adapts a snapshot
 // to the resolver's input shape.
 
-export { FEATURE_ENFORCEMENT_MODES, PLAN_FEATURE_KEYS, PLAN_LIMIT_KEYS, TRIAL_END_OUTCOMES };
-export type { FeatureEnforcementMode, PlanFeatureKey, PlanFeatureMatrix, PlanLimitKey, PlanTrialPolicy, PlanVersionAllowances, PlanVersionLimits, PlanVersionPriceSummary, PlanVersionSnapshot };
+export { FEATURE_ENFORCEMENT_MODES, MANUAL_PRICE_INTERVALS, PLAN_FEATURE_KEYS, PLAN_LIMIT_KEYS, TRIAL_END_OUTCOMES };
+export type { FeatureEnforcementMode, ManualPriceInterval, PlanFeatureKey, PlanFeatureMatrix, PlanLimitKey, PlanTrialPolicy, PlanVersionAllowances, PlanVersionLimits, PlanVersionManualPrice, PlanVersionPriceSummary, PlanVersionSnapshot };
 
 // New plan identities: lowercase slug, never one of the five fixed ids.
 export const PLAN_SLUG_RE = /^[a-z][a-z0-9-]{1,39}$/;
@@ -86,6 +89,69 @@ export function noAllowances(): PlanVersionAllowances {
 }
 export const MAX_AI_TOKENS_PER_MONTH = 1_000_000_000_000;
 export const MAX_AI_COST_MICRO_USD_PER_MONTH = 1_000_000 * 1_000_000; // 1,000,000 USD
+
+// ── Batch 42 (PB-4.1 / D2): platform-managed price summaries ─────────────────
+// A version may record up to MAX_MANUAL_PRICES manual prices (display + audit
+// only; never billed by the product, never a provider identity). The same
+// (currency, interval, intervalCount) period may appear once.
+export const MAX_MANUAL_PRICES = 8;
+export const MAX_PRICE_INTERVAL_COUNT = 12;
+export const MAX_PRICE_MINOR = 1_000_000_000;
+export const MAX_PRICE_LABEL = 60;
+export const CURRENCY_RE = /^[a-z]{3}$/;
+
+// Canonical period key of any price (provider or manual): currency/interval×count.
+export function priceKey(p: { currency: string; interval: string; intervalCount: number }): string {
+  return `${p.currency}/${p.interval}x${p.intervalCount}`;
+}
+
+function manualPriceOf(raw: unknown): PlanVersionManualPrice | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const interval = typeof o.interval === "string" && (MANUAL_PRICE_INTERVALS as readonly string[]).includes(o.interval) ? (o.interval as ManualPriceInterval) : null;
+  const intervalCount = o.intervalCount === undefined ? 1 : o.intervalCount;
+  const currency = typeof o.currency === "string" ? o.currency.trim().toLowerCase() : "";
+  const label = o.label === undefined || o.label === null ? null : typeof o.label === "string" ? o.label.replace(/\s+/g, " ").trim() || null : undefined;
+  if (!interval || !isIntInRange(intervalCount, 1, MAX_PRICE_INTERVAL_COUNT) || !CURRENCY_RE.test(currency) || !isIntInRange(o.unitAmountMinor, 0, MAX_PRICE_MINOR) || label === undefined || (label !== null && label.length > MAX_PRICE_LABEL)) return null;
+  return { interval, intervalCount, currency, unitAmountMinor: o.unitAmountMinor, label };
+}
+
+// Stored snapshot → the valid manual prices (an absent / malformed field = none).
+export function manualPricesOf(snapshot: Pick<PlanVersionSnapshot, "manualPrices"> | null | undefined): PlanVersionManualPrice[] {
+  const raw = snapshot?.manualPrices;
+  if (!Array.isArray(raw)) return [];
+  const out: PlanVersionManualPrice[] = [];
+  for (const r of raw) {
+    const m = manualPriceOf(r);
+    if (m) out.push(m);
+  }
+  return out;
+}
+
+// Draft editor input: the whole list is replaced; every rejected entry is reported.
+export function parseManualPricesInput(input: unknown, base: PlanVersionManualPrice[]): ParseResult<PlanVersionManualPrice[]> {
+  if (input === undefined) return { value: base, issues: [] };
+  if (!Array.isArray(input)) return { value: base, issues: [{ code: "MANUAL_PRICES_INVALID", field: "manualPrices", message: "manualPrices must be an array" }] };
+  const issues: FieldIssue[] = [];
+  if (input.length > MAX_MANUAL_PRICES) issues.push({ code: "MANUAL_PRICES_TOO_MANY", field: "manualPrices", message: `at most ${MAX_MANUAL_PRICES} manual prices` });
+  const value: PlanVersionManualPrice[] = [];
+  const seen = new Set<string>();
+  input.slice(0, MAX_MANUAL_PRICES).forEach((raw, i) => {
+    const m = manualPriceOf(raw);
+    if (!m) {
+      issues.push({ code: "MANUAL_PRICE_INVALID", field: `manualPrices.${i}`, message: `manual price ${i} needs interval (${MANUAL_PRICE_INTERVALS.join("|")}), intervalCount 1–${MAX_PRICE_INTERVAL_COUNT}, a lowercase ISO-4217 currency, unitAmountMinor 0–${MAX_PRICE_MINOR} and an optional label (≤ ${MAX_PRICE_LABEL} chars)` });
+      return;
+    }
+    const key = priceKey(m);
+    if (seen.has(key)) {
+      issues.push({ code: "MANUAL_PRICE_DUPLICATE", field: `manualPrices.${i}`, message: `manual price ${i} repeats the period ${key}` });
+      return;
+    }
+    seen.add(key);
+    value.push(m);
+  });
+  return { value: issues.length ? base : value, issues };
+}
 
 // ── Batch 41: feature enforcement (legacy / grandfathered vs explicitly enforced) ──
 //
@@ -323,6 +389,8 @@ export interface PriceLike {
   nickname: string | null;
   active: boolean;
   verifiedAt: Date | null;
+  // Batch 42: null / absent = plan-wide mapping; a value = bound to that version.
+  planVersionId?: number | null;
 }
 
 export function limitsFromPlanRow(p: PlanRowLike): PlanVersionLimits {
@@ -330,7 +398,7 @@ export function limitsFromPlanRow(p: PlanRowLike): PlanVersionLimits {
 }
 
 export function priceSummary(p: PriceLike): PlanVersionPriceSummary {
-  return { id: p.id, interval: p.interval, intervalCount: p.intervalCount, currency: p.currency, unitAmountMinor: p.unitAmountMinor, providerMode: p.providerMode, nickname: p.nickname, active: p.active };
+  return { id: p.id, interval: p.interval, intervalCount: p.intervalCount, currency: p.currency, unitAmountMinor: p.unitAmountMinor, providerMode: p.providerMode, nickname: p.nickname, active: p.active, planVersionId: p.planVersionId ?? null };
 }
 
 // Version 1 = the plan row's ACTUAL current values (never the seed, never a default).
@@ -356,6 +424,8 @@ export function normalizeSnapshot(snapshot: PlanVersionSnapshot): PlanVersionSna
   // absent field stays absent (legacy meaning preserved, nothing invented).
   if (snapshot.featureEnforcement === "enforced" || snapshot.featureEnforcement === "legacy") out.featureEnforcement = snapshot.featureEnforcement;
   if (snapshot.allowances && typeof snapshot.allowances === "object") out.allowances = allowancesOf(snapshot);
+  // Batch 42: manual price summaries are carried ONLY when present (valid entries only).
+  if (Array.isArray(snapshot.manualPrices)) out.manualPrices = manualPricesOf(snapshot);
   return out;
 }
 
@@ -458,11 +528,44 @@ export function validateVersionForPublish(snapshot: PlanVersionSnapshot, trial: 
   if (trial?.endOutcome === "read_only" && isIntInRange(trial?.readOnlyGraceDays, 1, MAX_GRACE_DAYS)) warnings.push({ code: "TRIAL_READ_ONLY_GRACE", field: "trialPolicy.endOutcome", message: `subscribers of this version get ${trial.readOnlyGraceDays} read-only day(s) after the trial ends before they are blocked` });
   if (trial?.eligible && trial?.trialDays === 0) warnings.push({ code: "TRIAL_ZERO_DAYS", field: "trialPolicy.trialDays", message: "trials are eligible but 0 days long" });
   // Prices: every ACTIVE price applying to this version must be verified in the
-  // provider mode the platform is configured for.
+  // provider mode the platform is configured for. Batch 42: the applicable set
+  // (plan-wide + bound to this version) must also be CONSISTENT — one active
+  // provider price per (currency, interval, count) period; an inconsistent set
+  // would make the checkout offer ambiguous.
+  const activePeriods = new Map<string, number>();
   for (const p of ctx.prices) {
     if (!p.active) continue;
     if (!p.verifiedAt) errors.push({ code: "PRICE_UNVERIFIED", field: `prices.${p.id}`, message: `price ${p.id} is not provider-verified` });
     if (p.providerMode !== ctx.configuredProviderMode) errors.push({ code: "PRICE_MODE_MISMATCH", field: `prices.${p.id}`, message: `price ${p.id} was verified in ${p.providerMode} mode; the platform runs in ${ctx.configuredProviderMode} mode` });
+    if (!(MANUAL_PRICE_INTERVALS as readonly string[]).includes(p.interval) || !isIntInRange(p.intervalCount, 1, MAX_PRICE_INTERVAL_COUNT) || !CURRENCY_RE.test(p.currency) || !isIntInRange(p.unitAmountMinor, 0, MAX_PRICE_MINOR)) {
+      errors.push({ code: "PRICE_INCONSISTENT", field: `prices.${p.id}`, message: `price ${p.id} carries an interval / currency / amount outside the supported range` });
+      continue;
+    }
+    const key = priceKey(p);
+    const other = activePeriods.get(key);
+    if (other != null) errors.push({ code: "PRICE_DUPLICATE_PERIOD", field: `prices.${p.id}`, message: `price ${p.id} and price ${other} both offer ${key}; deactivate one of them` });
+    else activePeriods.set(key, p.id);
+  }
+  // Batch 42 (D2): manual price summaries must be well formed and unique per period;
+  // a manual price on a period that an active provider price also offers is allowed
+  // (the provider price is the online offer, the manual one the operator's) but reported.
+  if (snapshot.manualPrices !== undefined) {
+    if (!Array.isArray(snapshot.manualPrices)) errors.push({ code: "MANUAL_PRICES_INVALID", field: "manualPrices", message: "manualPrices must be an array" });
+    else {
+      if (snapshot.manualPrices.length > MAX_MANUAL_PRICES) errors.push({ code: "MANUAL_PRICES_TOO_MANY", field: "manualPrices", message: `at most ${MAX_MANUAL_PRICES} manual prices` });
+      const seen = new Set<string>();
+      snapshot.manualPrices.forEach((raw, i) => {
+        const m = manualPriceOf(raw);
+        if (!m) {
+          errors.push({ code: "MANUAL_PRICE_INVALID", field: `manualPrices.${i}`, message: `manual price ${i} is malformed` });
+          return;
+        }
+        const key = priceKey(m);
+        if (seen.has(key)) errors.push({ code: "MANUAL_PRICE_DUPLICATE", field: `manualPrices.${i}`, message: `manual price ${i} repeats the period ${key}` });
+        seen.add(key);
+        if (activePeriods.has(key)) warnings.push({ code: "MANUAL_PRICE_SHADOWED", field: `manualPrices.${i}`, message: `manual price ${i} (${key}) has an active provider price for the same period; online checkout uses the provider price` });
+      });
+    }
   }
   if (!ctx.prices.some((p) => p.active)) warnings.push({ code: "NO_PROVIDER_PRICE", field: "prices", message: "no active provider price applies to this version; it can only be assigned by the platform owner (manual billing) and is not offered through checkout" });
   return { ok: errors.length === 0, errors, warnings };
@@ -472,7 +575,7 @@ export function validateVersionForPublish(snapshot: PlanVersionSnapshot, trial: 
 
 export type CompareValue = string | number | boolean | null;
 export interface CompareRow {
-  group: "display" | "limits" | "features" | "trialPolicy" | "enforcement" | "allowances";
+  group: "display" | "limits" | "features" | "trialPolicy" | "enforcement" | "allowances" | "pricing";
   field: string;
   left: CompareValue;
   right: CompareValue;
@@ -500,7 +603,16 @@ export function compareVersions(a: VersionContent, b: VersionContent): CompareRo
   push("trialPolicy", "oncePerCompany", a.trialPolicy.oncePerCompany, b.trialPolicy.oncePerCompany);
   push("trialPolicy", "endOutcome", a.trialPolicy.endOutcome, b.trialPolicy.endOutcome);
   push("trialPolicy", "readOnlyGraceDays", a.trialPolicy.readOnlyGraceDays, b.trialPolicy.readOnlyGraceDays);
+  // Batch 42: manual price summaries compare as a canonical, period-sorted text.
+  push("pricing", "manualPrices", manualPricesText(a.snapshot), manualPricesText(b.snapshot));
   return rows;
+}
+
+export function manualPricesText(snapshot: Pick<PlanVersionSnapshot, "manualPrices"> | null | undefined): string {
+  const rows = manualPricesOf(snapshot)
+    .map((m) => `${priceKey(m)}=${m.unitAmountMinor}${m.label ? ` (${m.label})` : ""}`)
+    .sort();
+  return rows.length ? rows.join("; ") : "—";
 }
 
 // A limit "tightens" when the right side is lower than the left (unlimited = +∞).

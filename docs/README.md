@@ -33,6 +33,7 @@ gotchas now live in [`gotchas.md`](gotchas.md) (with a summary pointer in
 | [Project Technical Brief](PROJECT_TECHNICAL_BRIEF.md) | Architecture and the current status of record (branch model, current/planned batches, baseline pointer). |
 | [Project File Map](PROJECT_FILE_MAP.md) | Feature → files map. |
 | [Localhost Development](LOCALHOST_DEVELOPMENT.md) | Local workflow and the **single authoritative test baseline** (§7). |
+| [Plan-Version Backfill Runbook](PLAN_VERSION_BACKFILL_RUNBOOK.md) | Safe operator procedure for the plan-version backfill script: URL guard, database-identity verification (tunnels, forwarded ports, markers), exit codes. Authorizes nothing. |
 | [Hostinger VPS Deployment](HOSTINGER_VPS_DEPLOYMENT.md) | The hosted dev stack: deploy flow, environment, backups, audit-retention operator contract. |
 | [Backup and Recovery](BACKUP_AND_RECOVERY.md) | Scheduled PostgreSQL backups, external health alert, restore procedures, off-host status (code complete, activation deferred by owner). |
 | [B23 Final Reconciliation](B23_FINAL_RECONCILIATION.md) | Gap register G-1…G-10, release gates and the ordered completion plan, with the B24 status addendum. |

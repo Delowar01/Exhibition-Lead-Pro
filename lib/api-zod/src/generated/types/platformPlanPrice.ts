@@ -6,9 +6,23 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlanPrice } from './planPrice';
+import type { PlatformPlanPricePlanVersionState } from './platformPlanPricePlanVersionState';
 import type { PlatformPlanPriceProviderMode } from './platformPlanPriceProviderMode';
+import type { PlatformPlanPriceScope } from './platformPlanPriceScope';
 
 export type PlatformPlanPrice = PlanPrice & ({
+  /** Batch 42 — plan-wide or bound to one version (strict identity, immutable) */
+  scope?: PlatformPlanPriceScope;
+  /**
+     * Version number of the bound version (null when plan-wide)
+     * @nullable
+     */
+  planVersion?: number | null;
+  /** @nullable */
+  planVersionState?: PlatformPlanPricePlanVersionState;
+  verified?: boolean;
+  /** The price was verified in the provider mode the platform is configured for */
+  modeMatches?: boolean;
   /** @nullable */
   providerPriceRef?: string | null;
   /** @nullable */
