@@ -34,6 +34,7 @@ import { useLocale } from "@/hooks/useLocale";
 import {
   type BatchCapture,
   clearBatchCaptures,
+  getBatchSession,
   getPendingOcrCount,
   setBatchCaptures,
   setBatchOcrResult,
@@ -482,6 +483,9 @@ export default function CaptureCameraScreen() {
       // the review screen. This eliminates the sequential OCR wait at review time.
       if (mode === "batch") {
         const batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        // Session token: a completion that lands after the batch was cleared
+        // (Done → review finished, or a new batch session) is dropped.
+        const batchSession = getBatchSession();
         const item: BatchCapture = {
           id: batchId,
           imageData,
@@ -495,7 +499,7 @@ export default function CaptureCameraScreen() {
         // overwritten on the next shutter press before the IIFE finishes).
         const batchCapTiming = capturePerfRef.current ? { ...capturePerfRef.current } : null;
         // Mark pending then fire-and-forget background OCR.
-        setBatchOcrResult(batchId, { status: "pending", extracted: null, scanId: null });
+        setBatchOcrResult(batchId, { status: "pending", extracted: null, scanId: null }, batchSession);
         setPendingOcr(getPendingOcrCount());
         void (async () => {
           const tOcr = Date.now();
@@ -514,11 +518,12 @@ export default function CaptureCameraScreen() {
               },
             });
             const uploadAndOcrMs = Date.now() - tOcr;
-            setBatchOcrResult(batchId, {
-              status: "done",
-              extracted: scan.extractedData ?? null,
-              scanId: scan.id,
-            });
+            const accepted = setBatchOcrResult(
+              batchId,
+              { status: "done", extracted: scan.extractedData ?? null, scanId: scan.id },
+              batchSession,
+            );
+            if (!accepted) return; // batch session already ended: stale completion dropped
             setPendingOcr(getPendingOcrCount());
             scanLog("batch: OCR done", { id: batchId, uploadAndOcrMs });
             if (__DEV__ && batchCapTiming) {
@@ -540,8 +545,9 @@ export default function CaptureCameraScreen() {
               });
             }
           } catch (e) {
-            setBatchOcrResult(batchId, { status: "error", extracted: null, scanId: null });
-            setPendingOcr(getPendingOcrCount());
+            if (setBatchOcrResult(batchId, { status: "error", extracted: null, scanId: null }, batchSession)) {
+              setPendingOcr(getPendingOcrCount());
+            }
             scanLog("batch: OCR error", {
               id: batchId,
               message: e instanceof Error ? e.message : String(e),

@@ -41,6 +41,7 @@ import { useLocale, type Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 import { convertCurrency, formatCurrency } from "@/lib/currency";
 import { getCountry } from "@/lib/countries";
+import { combineQueryViewStates, resolveQueryViewState } from "@/lib/query-state";
 
 function greetingKey(): string {
   const h = new Date().getHours();
@@ -175,6 +176,19 @@ export default function HomeScreen() {
     },
   });
   const eventReport = eventReportQuery.data;
+
+  // Batch 38: the metrics grid is fed by two queries (dashboard counts + pipeline
+  // values). It is ready only when both have data: a failed query is never shown
+  // as zeros, and a retry in flight shows the loading state instead of the error.
+  const metricsState = combineQueryViewStates(
+    resolveQueryViewState({ isLoading: query.isLoading, isError: query.isError, isFetching: query.isFetching, hasData: query.data != null }),
+    resolveQueryViewState({ isLoading: pipelineQuery.isLoading, isError: pipelineQuery.isError, isFetching: pipelineQuery.isFetching, hasData: pipelineQuery.data != null }),
+  );
+  const eventsState = resolveQueryViewState({ isLoading: eventsQuery.isLoading, isError: eventsQuery.isError, isFetching: eventsQuery.isFetching, hasData: eventsQuery.data != null });
+  const retryMetrics = () => {
+    void query.refetch();
+    void pipelineQuery.refetch();
+  };
 
   function openContactsWith(patch: Partial<typeof DEFAULT_CONTACT_FILTERS>) {
     setContactFilters({ ...DEFAULT_CONTACT_FILTERS, ...patch });
@@ -432,13 +446,13 @@ export default function HomeScreen() {
         </Pressable>
 
         {/* Metrics grid */}
-        {query.isLoading ? (
+        {metricsState === "loading" ? (
           <View style={{ height: 180 }}>
             <LoadingState />
           </View>
-        ) : query.isError ? (
+        ) : metricsState === "error" ? (
           <View style={{ minHeight: 180 }}>
-            <ErrorState onRetry={() => void query.refetch()} />
+            <ErrorState onRetry={retryMetrics} />
           </View>
         ) : (
           <View style={[styles.grid, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
@@ -467,7 +481,11 @@ export default function HomeScreen() {
         )}
 
         {/* Last event */}
-        {selectedEvent ? (
+        {eventsState === "error" ? (
+          <View style={{ minHeight: 120 }}>
+            <ErrorState onRetry={() => void eventsQuery.refetch()} />
+          </View>
+        ) : selectedEvent ? (
           <>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
               {t("home.lastEvent")}

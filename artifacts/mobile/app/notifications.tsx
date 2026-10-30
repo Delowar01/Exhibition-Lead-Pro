@@ -27,6 +27,7 @@ import { FONT, Card, EmptyState, ErrorState } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { CATEGORY_ICONS, mapLinkToMobileRoute, timeAgo } from "@/lib/notification-center";
+import { resolveQueryViewState } from "@/lib/query-state";
 
 export default function NotificationsScreen() {
   const colors = useColors();
@@ -37,7 +38,7 @@ export default function NotificationsScreen() {
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
-  const { data, isLoading, isError, isRefetching, refetch } = useListNotifications(undefined, {
+  const { data, isLoading, isError, isFetching, isRefetching, refetch } = useListNotifications(undefined, {
     query: { queryKey: getListNotificationsQueryKey() },
   });
   const { data: unreadData } = useGetUnreadCount({
@@ -47,6 +48,8 @@ export default function NotificationsScreen() {
   const markAll = useMarkAllNotificationsRead();
 
   const notifications = useMemo(() => data?.notifications ?? [], [data]);
+  // Batch 38: loading also while a retry is in flight; error only when nothing loaded.
+  const listState = resolveQueryViewState({ isLoading, isError, isFetching, hasData: data != null });
   const unreadCount = unreadData?.count ?? 0;
 
   const invalidate = useCallback(() => {
@@ -212,7 +215,7 @@ export default function NotificationsScreen() {
           </View>
         }
         ListEmptyComponent={
-          isLoading ? (
+          listState === "loading" ? (
             <View style={{ gap: 12 }}>
                {[1,2,3,4].map(i => (
                  <View key={i} style={[styles.row, { borderColor: colors.border, backgroundColor: colors.card, borderRadius: colors.radius + 4 }]} >
@@ -224,7 +227,7 @@ export default function NotificationsScreen() {
                  </View>
                ))}
             </View>
-          ) : isError ? (
+          ) : listState === "error" ? (
             <Card padded style={{ marginTop: 32 }}>
               <ErrorState onRetry={() => void refetch()} />
             </Card>

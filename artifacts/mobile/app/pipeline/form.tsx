@@ -47,6 +47,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { useSettings } from "@/contexts/SettingsContext";
 import { getCountry } from "@/lib/countries";
+import { resolveQueryViewState } from "@/lib/query-state";
 
 const CURRENCIES = ["SAR", "AED", "QAR", "OMR", "KWD", "BHD", "EGP", "MAD", "USD", "EUR", "GBP", "JOD"];
 const PRIORITIES = ["low", "medium", "high"] as const;
@@ -247,13 +248,20 @@ export default function PipelineFormScreen() {
 
   const isSaving = createLead.isPending || updateLead.isPending;
 
-  if (isEdit && existingLead.isLoading) {
+  // Batch 38: loading while the first load OR a retry is in flight; the shared
+  // ErrorState only when the lead could not be loaded at all (the editor is
+  // never rendered empty, so no blank save is reachable from that state).
+  const existingLeadState = resolveQueryViewState({
+    isLoading: existingLead.isLoading,
+    isError: existingLead.isError,
+    isFetching: existingLead.isFetching,
+    hasData: existingLead.data != null,
+  });
+  if (isEdit && existingLeadState === "loading") {
     return <LoadingState />;
   }
 
-  // The edit form must never open on an empty editor when the lead could not
-  // be loaded (a save from that state would silently blank the record).
-  if (isEdit && existingLead.isError) {
+  if (isEdit && existingLeadState === "error") {
     return <ErrorState onRetry={() => void existingLead.refetch()} />;
   }
 

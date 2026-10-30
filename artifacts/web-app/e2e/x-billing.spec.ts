@@ -32,9 +32,13 @@ const PRICE_ID = "price_fake_usd_4900_month";
 // The badge must render exactly the label of the API's canonical status — the same
 // words the lifecycle assertions further down expect ("Trial", "Active", "Past due", …).
 const TENANT_STATUS_LABEL: Record<string, string> = { trialing: "Trial", active: "Active", past_due: "Past due", cancelled: "Cancelled", expired: "Expired", suspended: "Suspended" };
+const ACCESS_LABEL: Record<string, string> = { full: "Full access", read_only: "Read-only", blocked: "Blocked" };
 const ADMIN_EMAIL = `${RUN_TAG.toLowerCase()}.billing-admin@example.test`;
 const VIEWER_EMAIL = `${RUN_TAG.toLowerCase()}.billing-viewer@example.test`;
+const VIEWONLY_EMAIL = `${RUN_TAG.toLowerCase()}.billing-viewonly@example.test`;
+const ADMIN_ACTIVE_EMAIL = `${RUN_TAG.toLowerCase()}.billing-admin-active@example.test`;
 const COMPANY_NAME = `${RUN_TAG} Billing Co`;
+const COMPANY_ACTIVE_NAME = `${RUN_TAG} Billing Active Co`;
 const SUB_ID = `sub_fake_${RUN_TAG.toLowerCase()}`;
 const T0 = Math.floor(Date.now() / 1000) - 300;
 
@@ -44,8 +48,11 @@ let pg: Client;
 let platform: Auth;
 let admin: Auth;
 let viewer: Auth;
+let viewOnly: Auth; // company A, subscriptions:view only (no manage)
+let adminActive: Auth; // company B (ACTIVE, manual, platform-managed)
 let nexus: Auth;
 let companyId = 0;
+let companyActiveId = 0;
 let subscriptionId = 0;
 let priceId = 0;
 let checkoutIntentId = 0; // the tenant's own Checkout intent — server-generated subscription metadata carries its id (B20 C2 proof)
@@ -155,6 +162,32 @@ test.beforeAll(async () => {
   }
   admin = await login(ADMIN_EMAIL, PASSWORD);
   viewer = await login(VIEWER_EMAIL, PASSWORD);
+  // Batch 38 — a view-only billing user of company A (subscriptions:view, no manage):
+  // may read the page but is never offered a checkout or portal control. POST /users
+  // never accepts a permission matrix, so the grant goes through the tenant's own RBAC
+  // role (the same path y-rbac-permissions.spec.ts proves); the role is assigned BEFORE
+  // the login so the browser session carries the effective permission.
+  const vo = await api("POST", "/users", { email: VIEWONLY_EMAIL, name: "Billing View Only", role: "employee", companyId, password: PASSWORD }, platform.token);
+  expect(vo.status, vo.text).toBe(201);
+  const viewRole = await api("POST", "/rbac/roles", { name: `${RUN_TAG} billing view-only`, permissions: [{ module: "subscriptions", action: "view" }] }, admin.token);
+  expect(viewRole.status, viewRole.text).toBe(201);
+  const assigned = await api("PUT", `/users/${vo.json.id}/roles`, { roleIds: [viewRole.json.id] }, admin.token);
+  expect(assigned.status, assigned.text).toBe(200);
+  viewOnly = await login(VIEWONLY_EMAIL, PASSWORD);
+  expect(viewOnly.user).toMatchObject({ permissions: { subscriptions: ["view"] } });
+  // Batch 38 — a second, platform-managed company driven to ACTIVE by the platform
+  // owner (manual billing): the contract case in which neither self-service checkout
+  // nor the provider portal may be offered, whatever prices are registered.
+  const active = await api("POST", "/companies", { name: COMPANY_ACTIVE_NAME, plan: "free", industry: "QA" }, platform.token);
+  expect(active.status, active.text).toBe(201);
+  companyActiveId = active.json.id;
+  const activated = await api("POST", `/platform/subscriptions/${companyActiveId}/activate`, {}, platform.token);
+  expect(activated.status, activated.text).toBe(200);
+  const activeRow = (await api("GET", `/platform/subscriptions/${companyActiveId}`, undefined, platform.token)).json;
+  expect(activeRow).toMatchObject({ status: "active", billingSource: "manual" });
+  const adminActiveRes = await api("POST", "/users", { email: ADMIN_ACTIVE_EMAIL, name: "Billing Admin Active", role: "primary_admin", companyId: companyActiveId, password: PASSWORD }, platform.token);
+  expect(adminActiveRes.status, adminActiveRes.text).toBe(201);
+  adminActive = await login(ADMIN_ACTIVE_EMAIL, PASSWORD);
 
   const prices = await api("GET", "/platform/billing/prices", undefined, platform.token);
   const existing = (prices.json.prices as any[]).find((p) => p.planId === "professional" && p.unitAmountMinor === 4900 && p.currency === "usd" && p.interval === "month");
@@ -170,10 +203,11 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  if (companyId) {
-    await pg.query("delete from audit_logs where company_id = $1", [companyId]);
-    await pg.query("delete from users where company_id = $1", [companyId]);
-    await pg.query("delete from companies where id = $1", [companyId]);
+  for (const id of [companyId, companyActiveId]) {
+    if (!id) continue;
+    await pg.query("delete from audit_logs where company_id = $1", [id]);
+    await pg.query("delete from users where company_id = $1", [id]);
+    await pg.query("delete from companies where id = $1", [id]);
   }
   await pg.query("delete from billing_provider_events where event_id like $1", [`evt_${RUN_TAG.toLowerCase()}_%`]);
   if (createdPrice) {
@@ -183,24 +217,69 @@ test.afterAll(async () => {
   await pg.end();
 });
 
-test("tenant Subscription page shows only the canonical state for a platform-managed company", async ({ page }) => {
-  const errors = trackConsole(page);
-  await seedAs(page, { token: state.token, user: { ...state.user, companyId: state.user.companyId } });
-  const current = (await api("GET", "/subscriptions/current", undefined, state.token)).json;
-  await page.goto("/admin/subscription");
+type CurrentSubscription = {
+  plan: string;
+  status: string;
+  accessMode: string;
+  billingSource: string;
+  billing: { managedByPlatform: boolean; checkoutAvailable: boolean; checkoutUnavailableReason: string | null; portalAvailable: boolean; portalUnavailableReason: string | null };
+  usage: { resources: Array<{ resource: string; used: number; limit: number | null; measurable: boolean }> };
+};
+
+/**
+ * Batch 38 — contract-aware assertions for the tenant Subscription page. What the page
+ * may show is decided by the API's canonical state (status label, access mode,
+ * checkoutAvailable, portalAvailable, managedByPlatform) combined with the caller's
+ * billing permission — never by a fixture assumption about the demo tenant's state.
+ * Every price shown must be one of the API's verified active prices; when no checkout
+ * is offered, no amount may appear anywhere on the page.
+ */
+async function expectTenantPageMirrorsApi(page: Page, current: CurrentSubscription, auth: Auth, access: { canManage: boolean }) {
   await expect(page.getByTestId("subscription-page")).toBeVisible();
   await expect(page.getByTestId("plan-name")).toHaveText(new RegExp(current.plan, "i"));
-  const badge = await page.getByTestId("status-badge").innerText();
   expect(TENANT_STATUS_LABEL).toHaveProperty(current.status);
-  expect(badge.trim()).toBe(TENANT_STATUS_LABEL[current.status]);
-  await expect(page.getByTestId("access-mode")).toHaveText(current.accessMode === "full" ? "Full access" : current.accessMode === "read_only" ? "Read-only" : "Blocked");
-  expect(current.billing.managedByPlatform).toBe(true);
-  await expect(page.getByTestId("portal-unavailable")).toBeVisible();
-  await expect(page.getByTestId("portal-button")).toHaveCount(0);
-  await expect(page.getByTestId("checkout-card")).toHaveCount(0);
+  await expect(page.getByTestId("status-badge")).toHaveText(TENANT_STATUS_LABEL[current.status]);
+  expect(ACCESS_LABEL).toHaveProperty(current.accessMode);
+  await expect(page.getByTestId("access-mode")).toHaveText(ACCESS_LABEL[current.accessMode]);
+  await expect(page.getByTestId("plan-card")).toContainText(current.billing.managedByPlatform ? "Managed by the platform operator" : "Managed through online billing");
+  await expect(page.getByTestId("billing-card")).toContainText(current.billing.managedByPlatform ? "Platform-managed" : "Online billing");
+  // Provider portal: only when the API offers it AND the user may manage billing.
+  await expect(page.getByTestId("portal-button")).toHaveCount(current.billing.portalAvailable && access.canManage ? 1 : 0);
+  await expect(page.getByTestId("portal-unavailable")).toHaveCount(current.billing.portalAvailable ? 0 : 1);
+  // Self-service checkout: only when the API offers it AND the user may manage billing.
+  const checkoutShown = current.billing.checkoutAvailable && access.canManage;
+  await expect(page.getByTestId("checkout-card")).toHaveCount(checkoutShown ? 1 : 0);
+  const reason = current.billing.checkoutUnavailableReason;
+  await expect(page.getByTestId("checkout-unavailable")).toHaveCount(!current.billing.checkoutAvailable && reason && reason !== "LIVE_SUBSCRIPTION_EXISTS" ? 1 : 0);
   await expect(page.getByRole("button", { name: /upgrade/i })).toHaveCount(0);
+  if (checkoutShown) {
+    const plansRes = (await api("GET", "/subscriptions/plans", undefined, auth.token)).json;
+    const plans = (Array.isArray(plansRes) ? plansRes : plansRes.plans) as Array<{ prices: Array<{ id: number; active: boolean; unitAmountMinor: number; currency: string }> }>;
+    const activePrices = plans.flatMap((p) => p.prices.filter((pr) => pr.active));
+    expect(activePrices.length).toBeGreaterThan(0);
+    await expect(page.locator('[data-testid^="price-option-"]')).toHaveCount(activePrices.length);
+    for (const price of activePrices) {
+      await expect(page.getByTestId(`price-option-${price.id}`)).toContainText(money(price.unitAmountMinor, price.currency));
+    }
+  } else {
+    expect(await page.locator("body").innerText()).not.toMatch(/\$\d/); // no amount without a verified checkout
+  }
+  if (current.billing.managedByPlatform) expect(await page.locator("body").innerText()).not.toMatch(/renew(al|s) on/i);
+}
+
+test("tenant Subscription page mirrors the API's canonical state (fixture tenant, platform-managed)", async ({ page }) => {
+  const errors = trackConsole(page);
+  await seedAs(page, { token: state.token, user: { ...state.user, companyId: state.user.companyId } });
+  const current = (await api("GET", "/subscriptions/current", undefined, state.token)).json as CurrentSubscription;
+  expect(current.billing.managedByPlatform).toBe(true);
+  expect(current.billingSource).toBe("manual");
+  await page.goto("/admin/subscription");
+  // The fixture tenant's status is whatever the seed produced (seed-demo: active); the
+  // assertions follow the API, so an active tenant proves "no checkout, no portal" and a
+  // trialing tenant proves "checkout offered with verified prices, no portal".
+  await expectTenantPageMirrorsApi(page, current, { token: state.token, user: state.user as Auth["user"] }, { canManage: true });
   // Usage rows are the API's numbers, verbatim.
-  for (const r of current.usage.resources as Array<{ resource: string; used: number; limit: number | null; measurable: boolean }>) {
+  for (const r of current.usage.resources) {
     const row = page.getByTestId(`usage-row-${r.resource}`);
     await expect(row).toBeVisible();
     const text = await row.innerText();
@@ -208,9 +287,58 @@ test("tenant Subscription page shows only the canonical state for a platform-man
     else expect(text).toMatch(/Not measured/);
     if (r.limit == null) expect(text).toMatch(/Unlimited|Not enforced/);
   }
-  const body = await page.locator("body").innerText();
-  expect(body).not.toMatch(/\$\d/); // no invented prices on a manual subscription
-  expect(body).not.toMatch(/renew(al|s) on/i);
+  expect(errors).toEqual([]);
+});
+
+test("active manual subscription (platform-managed): no self-service checkout, no provider portal, canonical label Active", async ({ page }) => {
+  const errors = trackConsole(page);
+  const current = (await api("GET", "/subscriptions/current", undefined, adminActive.token)).json as CurrentSubscription;
+  expect(current).toMatchObject({ status: "active", billingSource: "manual", accessMode: "full" });
+  expect(current.billing).toMatchObject({ managedByPlatform: true, checkoutAvailable: false, checkoutUnavailableReason: "STATUS_NOT_ELIGIBLE", portalAvailable: false, portalUnavailableReason: "NOT_PROVIDER_MANAGED" });
+  // The API refuses both self-service operations for this state (not only the UI).
+  expect((await api("POST", "/subscriptions/checkout", { planPriceId: priceId }, adminActive.token)).status).toBe(409);
+  expect((await api("POST", "/subscriptions/portal", {}, adminActive.token)).status).toBe(409);
+  await seedAs(page, adminActive);
+  await page.goto("/admin/subscription");
+  await expectTenantPageMirrorsApi(page, current, adminActive, { canManage: true });
+  await expect(page.getByTestId("status-badge")).toHaveText("Active");
+  await expect(page.getByTestId("checkout-card")).toHaveCount(0);
+  await expect(page.getByTestId("checkout-unavailable")).toBeVisible();
+  await expect(page.getByTestId("portal-button")).toHaveCount(0);
+  await expect(page.getByTestId("portal-unavailable")).toBeVisible();
+  expect(await page.locator("body").innerText()).not.toMatch(/\$\d/);
+  expect(errors).toEqual([]);
+});
+
+test("trialing manual subscription eligible for self-service checkout: checkout offered with verified prices only, provider portal unavailable, view-only user sees no controls", async ({ page }) => {
+  const errors = trackConsole(page);
+  const current = (await api("GET", "/subscriptions/current", undefined, admin.token)).json as CurrentSubscription;
+  expect(current).toMatchObject({ status: "trialing", billingSource: "manual", accessMode: "full" });
+  expect(current.billing).toMatchObject({ managedByPlatform: true, checkoutAvailable: true, checkoutUnavailableReason: null, portalAvailable: false, portalUnavailableReason: "NOT_PROVIDER_MANAGED" });
+  await seedAs(page, admin);
+  await page.goto("/admin/subscription");
+  await expectTenantPageMirrorsApi(page, current, admin, { canManage: true });
+  await expect(page.getByTestId("status-badge")).toHaveText("Trial");
+  await expect(page.getByTestId("checkout-card")).toBeVisible();
+  await expect(page.getByTestId("portal-unavailable")).toBeVisible();
+  await expect(page.getByTestId("portal-button")).toHaveCount(0);
+  // A manual trial has no provider portal: the API refuses it even for a manager.
+  expect((await api("POST", "/subscriptions/portal", {}, admin.token)).status).toBe(409);
+  // RBAC: the view-only user of the same company reads the same canonical state but is
+  // offered no control, and the API refuses the manage operations with 403.
+  const mine = (await api("GET", "/subscriptions/current", undefined, viewOnly.token)).json as CurrentSubscription;
+  expect(mine.billing.checkoutAvailable).toBe(true);
+  expect((await api("POST", "/subscriptions/checkout", { planPriceId: priceId }, viewOnly.token)).status).toBe(403);
+  expect((await api("POST", "/subscriptions/portal", {}, viewOnly.token)).status).toBe(403);
+  const voPage = await page.context().newPage();
+  const voErrors = trackConsole(voPage);
+  await seedAs(voPage, viewOnly);
+  await voPage.goto("/admin/subscription");
+  await expectTenantPageMirrorsApi(voPage, mine, viewOnly, { canManage: false });
+  await expect(voPage.getByTestId("checkout-card")).toHaveCount(0);
+  await expect(voPage.getByTestId("portal-button")).toHaveCount(0);
+  await voPage.close();
+  expect(voErrors).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -222,6 +350,12 @@ test("billing is gated by subscriptions:view — the nav link and the page deny 
   await page.goto("/admin/subscription");
   await expect(page.getByText("No access")).toBeVisible();
   await expect(page.getByTestId("plan-name")).toHaveCount(0);
+  // Server RBAC is authoritative: no subscriptions permission → 403 on read and manage;
+  // the platform owner is fenced out of tenant billing entirely (requireTenantUser → 403).
+  expect((await api("GET", "/subscriptions/current", undefined, viewer.token)).status).toBe(403);
+  expect((await api("POST", "/subscriptions/checkout", { planPriceId: priceId }, viewer.token)).status).toBe(403);
+  expect((await api("GET", "/subscriptions/current", undefined, platform.token)).status).toBe(403);
+  expect((await api("POST", "/subscriptions/checkout", { planPriceId: priceId }, platform.token)).status).toBe(403);
   // The admin of the same company sees the link.
   const adminPage = await page.context().newPage();
   await seedAs(adminPage, admin);
@@ -264,6 +398,18 @@ test("self-service Checkout is offered only with a verified price; entitlement c
   await page.route("https://billing.fake.local/**", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<title>Fake Portal</title><h1>Hosted billing portal (intercepted)</h1>" }));
   await page.getByTestId("portal-button").click();
   await page.waitForURL(/billing\.fake\.local/);
+  // Provider portal restriction by permission: the view-only user of the same (now
+  // provider-managed) company gets the explanation, never the button; the API refuses.
+  const afterWebhook = (await api("GET", "/subscriptions/current", undefined, viewOnly.token)).json as CurrentSubscription;
+  expect(afterWebhook.billing).toMatchObject({ managedByPlatform: false, portalAvailable: true, checkoutAvailable: false, checkoutUnavailableReason: "LIVE_SUBSCRIPTION_EXISTS" });
+  expect((await api("POST", "/subscriptions/portal", {}, viewOnly.token)).status).toBe(403);
+  const voPage = await page.context().newPage();
+  await seedAs(voPage, viewOnly);
+  await voPage.goto("/admin/subscription");
+  await expectTenantPageMirrorsApi(voPage, afterWebhook, viewOnly, { canManage: false });
+  await expect(voPage.getByTestId("portal-button")).toHaveCount(0);
+  await expect(voPage.getByTestId("billing-card")).toContainText("Billing can be managed by an administrator");
+  await voPage.close();
   expect(errors).toEqual([]);
 });
 
