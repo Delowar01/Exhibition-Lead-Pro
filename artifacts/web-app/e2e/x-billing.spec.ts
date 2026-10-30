@@ -28,6 +28,10 @@ const NEXUS = { email: "admin@nexussys.io", password: "Admin123!" };
 const PASSWORD = "BillingQa123!";
 const SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 const PRICE_ID = "price_fake_usd_4900_month";
+// Tenant Subscription page label vocabulary (pages/admin/Subscription.tsx STATUS_LABEL).
+// The badge must render exactly the label of the API's canonical status — the same
+// words the lifecycle assertions further down expect ("Trial", "Active", "Past due", …).
+const TENANT_STATUS_LABEL: Record<string, string> = { trialing: "Trial", active: "Active", past_due: "Past due", cancelled: "Cancelled", expired: "Expired", suspended: "Suspended" };
 const ADMIN_EMAIL = `${RUN_TAG.toLowerCase()}.billing-admin@example.test`;
 const VIEWER_EMAIL = `${RUN_TAG.toLowerCase()}.billing-viewer@example.test`;
 const COMPANY_NAME = `${RUN_TAG} Billing Co`;
@@ -187,7 +191,8 @@ test("tenant Subscription page shows only the canonical state for a platform-man
   await expect(page.getByTestId("subscription-page")).toBeVisible();
   await expect(page.getByTestId("plan-name")).toHaveText(new RegExp(current.plan, "i"));
   const badge = await page.getByTestId("status-badge").innerText();
-  expect(badge.toLowerCase().replace(/\s+/g, "_")).toContain(current.status.replace("_", "_").split("_")[0]);
+  expect(TENANT_STATUS_LABEL).toHaveProperty(current.status);
+  expect(badge.trim()).toBe(TENANT_STATUS_LABEL[current.status]);
   await expect(page.getByTestId("access-mode")).toHaveText(current.accessMode === "full" ? "Full access" : current.accessMode === "read_only" ? "Read-only" : "Blocked");
   expect(current.billing.managedByPlatform).toBe(true);
   await expect(page.getByTestId("portal-unavailable")).toBeVisible();

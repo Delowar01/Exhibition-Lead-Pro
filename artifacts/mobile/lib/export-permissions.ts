@@ -6,6 +6,9 @@ import type { User } from "@workspace/api-client-react";
 // so showing the control would only produce a 403 — keep the client in lockstep.
 export function canExport(user: User | null): boolean {
   if (!user) return false;
+  // A platform operator never reaches tenant export (requireTenantUser → 403),
+  // whatever its permission matrix says — never offer the control.
+  if (user.role === "platform_owner") return false;
   if (user.role === "primary_admin") return true;
   const perms = (user.permissions ?? {}) as Record<string, string[] | undefined>;
   return (perms.reports ?? []).includes("view");

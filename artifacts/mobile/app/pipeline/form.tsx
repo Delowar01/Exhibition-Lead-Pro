@@ -35,6 +35,7 @@ import {
 
 import { DateTimeField } from "@/components/DateTimeField";
 import {
+  ErrorState,
   FONT,
   LEAD_STAGE_COLORS,
   LEAD_STAGE_ORDER,
@@ -248,6 +249,12 @@ export default function PipelineFormScreen() {
 
   if (isEdit && existingLead.isLoading) {
     return <LoadingState />;
+  }
+
+  // The edit form must never open on an empty editor when the lead could not
+  // be loaded (a save from that state would silently blank the record).
+  if (isEdit && existingLead.isError) {
+    return <ErrorState onRetry={() => void existingLead.refetch()} />;
   }
 
   const stageColor = LEAD_STAGE_COLORS[stage] ?? colors.primary;

@@ -27,6 +27,7 @@ import {
 import {
   Avatar,
   Badge,
+  ErrorState,
   FONT,
   LoadingState,
   prettyLabel,
@@ -434,6 +435,10 @@ export default function HomeScreen() {
         {query.isLoading ? (
           <View style={{ height: 180 }}>
             <LoadingState />
+          </View>
+        ) : query.isError ? (
+          <View style={{ minHeight: 180 }}>
+            <ErrorState onRetry={() => void query.refetch()} />
           </View>
         ) : (
           <View style={[styles.grid, { flexDirection: isRTL ? "row-reverse" : "row" }]}>

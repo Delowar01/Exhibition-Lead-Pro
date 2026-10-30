@@ -34,6 +34,7 @@ import { useLocale } from "@/hooks/useLocale";
 import {
   type BatchCapture,
   clearBatchCaptures,
+  getPendingOcrCount,
   setBatchCaptures,
   setBatchOcrResult,
 } from "@/lib/batch-store";
@@ -154,6 +155,9 @@ export default function CaptureCameraScreen() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [batchCount, setBatchCount] = useState(0);
+  // Background OCR still in flight for the current batch (shown on the banner
+  // and the Done button so the user knows review may still be processing).
+  const [pendingOcr, setPendingOcr] = useState(0);
   // Transient on-device capture-quality indicator (advisory only).
   const [lastQuality, setLastQuality] = useState<CaptureQuality | null>(null);
   // Direct lower-res capture (set once the camera is ready). undefined = sensor
@@ -492,6 +496,7 @@ export default function CaptureCameraScreen() {
         const batchCapTiming = capturePerfRef.current ? { ...capturePerfRef.current } : null;
         // Mark pending then fire-and-forget background OCR.
         setBatchOcrResult(batchId, { status: "pending", extracted: null, scanId: null });
+        setPendingOcr(getPendingOcrCount());
         void (async () => {
           const tOcr = Date.now();
           try {
@@ -514,6 +519,7 @@ export default function CaptureCameraScreen() {
               extracted: scan.extractedData ?? null,
               scanId: scan.id,
             });
+            setPendingOcr(getPendingOcrCount());
             scanLog("batch: OCR done", { id: batchId, uploadAndOcrMs });
             if (__DEV__ && batchCapTiming) {
               addScanMetric({
@@ -535,6 +541,7 @@ export default function CaptureCameraScreen() {
             }
           } catch (e) {
             setBatchOcrResult(batchId, { status: "error", extracted: null, scanId: null });
+            setPendingOcr(getPendingOcrCount());
             scanLog("batch: OCR error", {
               id: batchId,
               message: e instanceof Error ? e.message : String(e),
@@ -686,7 +693,10 @@ export default function CaptureCameraScreen() {
 
   // Clear any stale batch buffer when entering batch mode.
   useEffect(() => {
-    if (mode === "batch") clearBatchCaptures();
+    if (mode === "batch") {
+      clearBatchCaptures();
+      setPendingOcr(0);
+    }
   }, [mode]);
 
   // Permission loading
@@ -824,7 +834,9 @@ export default function CaptureCameraScreen() {
           <View style={[styles.rapidBanner, { backgroundColor: "#FB923C" }]}>
             <Feather name="layers" size={18} color="#FFFFFF" />
             <Text style={styles.rapidBannerText}>
-              {t("capture.batchBanner", { count: batchCount })}
+              {pendingOcr > 0
+                ? t("capture.batchBannerProcessing", { count: batchCount, pending: pendingOcr })
+                : t("capture.batchBanner", { count: batchCount })}
             </Text>
           </View>
         ) : null}
@@ -891,7 +903,11 @@ export default function CaptureCameraScreen() {
             style={({ pressed }) => [styles.doneBtn, { backgroundColor: "rgba(255,255,255,0.2)", opacity: pressed ? 0.7 : 1 }]}
           >
             <Text style={styles.doneBtnText}>
-              {batchCount > 0 ? t("capture.doneReview", { count: batchCount }) : t("capture.done")}
+              {batchCount > 0
+                ? pendingOcr > 0
+                  ? t("capture.doneReviewPending", { count: batchCount, pending: pendingOcr })
+                  : t("capture.doneReview", { count: batchCount })
+                : t("capture.done")}
             </Text>
             <Feather name="chevron-right" size={20} color="#FFFFFF" />
           </Pressable>

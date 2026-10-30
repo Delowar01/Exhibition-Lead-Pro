@@ -23,7 +23,7 @@ import {
   type Notification,
 } from "@workspace/api-client-react";
 
-import { FONT, Card, EmptyState } from "@/components/ui";
+import { FONT, Card, EmptyState, ErrorState } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { CATEGORY_ICONS, mapLinkToMobileRoute, timeAgo } from "@/lib/notification-center";
@@ -37,7 +37,7 @@ export default function NotificationsScreen() {
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
-  const { data, isLoading, isRefetching, refetch } = useListNotifications(undefined, {
+  const { data, isLoading, isError, isRefetching, refetch } = useListNotifications(undefined, {
     query: { queryKey: getListNotificationsQueryKey() },
   });
   const { data: unreadData } = useGetUnreadCount({
@@ -224,6 +224,10 @@ export default function NotificationsScreen() {
                  </View>
                ))}
             </View>
+          ) : isError ? (
+            <Card padded style={{ marginTop: 32 }}>
+              <ErrorState onRetry={() => void refetch()} />
+            </Card>
           ) : (
             <Card padded style={{ marginTop: 32 }}>
                <EmptyState icon="bell" title={t("notifCenter.empty")} subtitle={t("notifCenter.emptyDesc")} />
