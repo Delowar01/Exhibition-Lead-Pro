@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  usePlatformListPlans,
+  getPlatformListPlansQueryKey,
   usePlatformGetSubscription,
   usePlatformListSubscriptionEvents,
   usePlatformSetSubscriptionPlan,
@@ -46,7 +48,28 @@ import { RefreshCw } from "lucide-react";
 // (transaction + transition table + audit); nothing here invents billing policy.
 
 export const STATUSES = ["trialing", "active", "past_due", "cancelled", "expired", "suspended"] as const;
+/** The five permanent plan ids — the fallback until the live catalog loads (Batch 40 made the catalog dynamic). */
 export const PLANS = ["free", "starter", "professional", "business", "enterprise"] as const;
+
+/**
+ * Plan ids from the live catalog. `assignable` = published + active plans (the
+ * only ones the API accepts for assignments, company creation and price
+ * registration); `all` = every plan (list filters). Falls back to the fixed five
+ * while the catalog is loading or unavailable.
+ */
+export function usePlanOptions(enabled = true): { assignable: string[]; all: string[]; nameOf: (id: string) => string } {
+  const catalog = usePlatformListPlans({ query: { enabled, queryKey: getPlatformListPlansQueryKey(), staleTime: 60_000 } });
+  return useMemo(() => {
+    const plans = catalog.data?.plans ?? [];
+    if (plans.length === 0) return { assignable: [...PLANS], all: [...PLANS], nameOf: (id: string) => id };
+    const names = new Map(plans.map((p) => [p.id, p.name] as const));
+    return {
+      assignable: plans.filter((p) => p.status === "published" && p.isActive).map((p) => p.id),
+      all: plans.map((p) => p.id),
+      nameOf: (id: string) => names.get(id) ?? id,
+    };
+  }, [catalog.data]);
+}
 export const STATUS_LABEL: Record<string, string> = { trialing: "Trial", active: "Active", past_due: "Past due", cancelled: "Cancelled", expired: "Expired", suspended: "Suspended" };
 /** Canonical status words for tenant rows and the tenant page (mirrors the API vocabulary). */
 export const CANONICAL_STATUS_LABEL: Record<string, string> = { trialing: "Trialing", active: "Active", past_due: "Past due", cancelled: "Cancelled", expired: "Expired", suspended: "Suspended" };
@@ -127,6 +150,7 @@ export function SubscriptionManager({ companyId, onClose, onChanged }: Subscript
   const [busy, setBusy] = useState(false);
 
   const open = companyId != null;
+  const planOptions = usePlanOptions(open);
   const detail = usePlatformGetSubscription(companyId ?? 0, { query: { enabled: open, queryKey: getPlatformGetSubscriptionQueryKey(companyId ?? 0) } });
   const events = usePlatformListSubscriptionEvents(companyId ?? 0, { query: { enabled: open, queryKey: getPlatformListSubscriptionEventsQueryKey(companyId ?? 0) } });
 
@@ -163,7 +187,7 @@ export function SubscriptionManager({ companyId, onClose, onChanged }: Subscript
     try {
       switch (verb) {
         case "set_plan":
-          await m.setPlan.mutateAsync({ companyId: cid, data: { plan: planChoice as (typeof PLANS)[number] } });
+          await m.setPlan.mutateAsync({ companyId: cid, data: { plan: planChoice } });
           break;
         case "start_trial":
           await m.startTrial.mutateAsync({ companyId: cid, data: { trialDays: Math.max(1, Math.min(365, Number(trialDays) || 14)) } });
@@ -336,7 +360,10 @@ export function SubscriptionManager({ companyId, onClose, onChanged }: Subscript
                   <Label>Plan</Label>
                   <Select value={planChoice} onValueChange={setPlanChoice}>
                     <SelectTrigger data-testid="plan-select"><SelectValue /></SelectTrigger>
-                    <SelectContent>{PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {planOptions.assignable.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
+                      {pending && !planOptions.assignable.includes(planChoice) && <SelectItem value={planChoice} className="capitalize">{planChoice} (current, not assignable)</SelectItem>}
+                    </SelectContent>
                   </Select>
                 </div>
               )}

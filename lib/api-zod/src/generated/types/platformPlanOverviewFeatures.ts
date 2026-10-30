@@ -7,6 +7,6 @@
  */
 
 /**
- * The plan's feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)
+ * The plan row's feature flags (mirror of the current published version's fixed feature matrix; informational — feature gating is not enforced until PB-3)
  */
 export type PlatformPlanOverviewFeatures = {[key: string]: boolean};

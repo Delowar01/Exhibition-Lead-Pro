@@ -1486,17 +1486,6 @@ export interface ProfileActivity {
   devices: ProfileActivityDevicesItem[];
 }
 
-export type CompanyPlan = typeof CompanyPlan[keyof typeof CompanyPlan];
-
-
-export const CompanyPlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
-} as const;
-
 export type CompanyStatus = typeof CompanyStatus[keyof typeof CompanyStatus];
 
 
@@ -1535,7 +1524,8 @@ export interface Company {
   primaryContactEmail?: string | null;
   /** @nullable */
   logoUrl?: string | null;
-  plan: CompanyPlan;
+  /** Plan slug (one of the fixed catalog ids or a builder-created plan) */
+  plan: string;
   status: CompanyStatus;
   /** @nullable */
   suspendedReason?: string | null;
@@ -1554,17 +1544,6 @@ export interface CompanyList {
   page: number;
   limit: number;
 }
-
-export type CompanyInputPlan = typeof CompanyInputPlan[keyof typeof CompanyInputPlan];
-
-
-export const CompanyInputPlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
-} as const;
 
 export interface CompanyInput {
   name: string;
@@ -1590,7 +1569,13 @@ export interface CompanyInput {
   primaryContactName?: string | null;
   /** @nullable */
   primaryContactEmail?: string | null;
-  plan?: CompanyInputPlan;
+  /**
+     * A PUBLISHED plan slug (fixed catalog id or builder-created plan)
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan?: string;
 }
 
 export interface CompanyUpdate {
@@ -3749,6 +3734,16 @@ export interface ProviderEventDiagnostic {
 }
 
 export type PlatformSubscriptionDetail = Subscription & ({
+  /**
+     * Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)
+     * @nullable
+     */
+  planVersionId?: number | null;
+  /**
+     * Version number of the pinned version
+     * @nullable
+     */
+  planVersion?: number | null;
   /** @nullable */
   companyName: string | null;
   limitOverrides: PlatformSubscriptionDetailLimitOverrides;
@@ -3983,19 +3978,52 @@ export interface PlatformPlanSubscriptionCounts {
 }
 
 /**
- * The plan's feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)
+ * The plan row's feature flags (mirror of the current published version's fixed feature matrix; informational — feature gating is not enforced until PB-3)
  */
 export type PlatformPlanOverviewFeatures = {[key: string]: boolean};
 
 /**
- * The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner's data-model approval
+ * Plan lifecycle state (Batch 40)
+ */
+export type PlatformPlanOverviewStatus = typeof PlatformPlanOverviewStatus[keyof typeof PlatformPlanOverviewStatus];
+
+
+export const PlatformPlanOverviewStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+/**
+ * versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill / first publication)
  */
 export type PlatformPlanOverviewVersioning = typeof PlatformPlanOverviewVersioning[keyof typeof PlatformPlanOverviewVersioning];
 
 
 export const PlatformPlanOverviewVersioning = {
   not_versioned: 'not_versioned',
+  versioned: 'versioned',
 } as const;
+
+export type PlatformPlanVersionSummaryState = typeof PlatformPlanVersionSummaryState[keyof typeof PlatformPlanVersionSummaryState];
+
+
+export const PlatformPlanVersionSummaryState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export interface PlatformPlanVersionSummary {
+  id: number;
+  version: number;
+  state: PlatformPlanVersionSummaryState;
+  /** @nullable */
+  publishedAt: string | null;
+  /** @nullable */
+  retiredAt: string | null;
+  subscribers: number;
+}
 
 export interface PlatformPlanOverview {
   id: string;
@@ -4008,13 +4036,24 @@ export interface PlatformPlanOverview {
   seeded: boolean;
   trialDays: number;
   limits: PlatformPlanLimits;
-  /** The plan's feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval) */
+  /** The plan row's feature flags (mirror of the current published version's fixed feature matrix; informational — feature gating is not enforced until PB-3) */
   features: PlatformPlanOverviewFeatures;
   prices: PlatformPlanPrice[];
   activePriceCount: number;
   subscriptions: PlatformPlanSubscriptionCounts;
-  /** The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner's data-model approval */
+  /** Plan lifecycle state (Batch 40) */
+  status: PlatformPlanOverviewStatus;
+  /** versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill / first publication) */
   versioning: PlatformPlanOverviewVersioning;
+  currentVersion: PlatformPlanVersionSummary | null;
+  draft: PlatformPlanVersionSummary | null;
+  versionCount: number;
+  publishedVersionCount: number;
+  retiredVersionCount: number;
+  /** Subscribers pinned to a published version of this plan */
+  pinnedSubscriptions: number;
+  /** Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist */
+  unpinnedSubscriptions: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -4060,7 +4099,9 @@ export interface PlatformPlanCatalog {
   limitResources: PlatformPlanCatalogLimitResourcesItem[];
   trialPolicy: PlatformPlanTrialPolicy;
   provider: PlatformPlanCatalogProvider;
-  /** Always true — the foundation exposes no plan mutation */
+  /** The fixed feature catalog (U2) every version carries */
+  featureCatalog: string[];
+  /** false since Batch 40 — plans change through drafts and immutable published versions; published versions are never edited in place */
   readOnly: boolean;
   generatedAt: string;
 }
@@ -4151,7 +4192,21 @@ export interface PlatformEffectiveLimitPreview {
   /** @nullable */
   companyName: string | null;
   currentPlan: string;
+  /** @nullable */
+  currentPlanVersionId: number | null;
   previewPlan: string;
+  /**
+     * The version whose limits were previewed (the plan's current published version by default; null = legacy plan row)
+     * @nullable
+     */
+  previewVersionId: number | null;
+  /** @nullable */
+  previewVersion: number | null;
+  /**
+     * draft | published | retired (null = legacy plan row)
+     * @nullable
+     */
+  previewVersionState: string | null;
   isCurrentPlan: boolean;
   status: string;
   accessMode: PlatformEffectiveLimitPreviewAccessMode;
@@ -4163,19 +4218,424 @@ export interface PlatformEffectiveLimitPreview {
   generatedAt: string;
 }
 
-export type PlatformSetSubscriptionPlanInputPlan = typeof PlatformSetSubscriptionPlanInputPlan[keyof typeof PlatformSetSubscriptionPlanInputPlan];
+/**
+ * Partial limits; null = unlimited
+ */
+export interface PlatformPlanLimitsInput {
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  contacts?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  events?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  admins?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  employees?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  scans?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  storageMb?: number | null;
+}
+
+/**
+ * The fixed feature catalog (U2); informational until feature gating (PB-3) is approved
+ */
+export interface PlatformPlanFeatureMatrix {[key: string]: boolean}
+
+export type PlatformPlanTrialPolicySpecEndOutcome = typeof PlatformPlanTrialPolicySpecEndOutcome[keyof typeof PlatformPlanTrialPolicySpecEndOutcome];
 
 
-export const PlatformSetSubscriptionPlanInputPlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
+export const PlatformPlanTrialPolicySpecEndOutcome = {
+  blocked: 'blocked',
+  read_only: 'read_only',
 } as const;
 
+export interface PlatformPlanTrialPolicySpec {
+  trialDays: number;
+  eligible: boolean;
+  oncePerCompany: boolean;
+  endOutcome: PlatformPlanTrialPolicySpecEndOutcome;
+  readOnlyGraceDays: number;
+}
+
+export type PlatformPlanTrialPolicyInputEndOutcome = typeof PlatformPlanTrialPolicyInputEndOutcome[keyof typeof PlatformPlanTrialPolicyInputEndOutcome];
+
+
+export const PlatformPlanTrialPolicyInputEndOutcome = {
+  blocked: 'blocked',
+  read_only: 'read_only',
+} as const;
+
+export interface PlatformPlanTrialPolicyInput {
+  /**
+     * @minimum 0
+     * @maximum 365
+     */
+  trialDays?: number;
+  eligible?: boolean;
+  oncePerCompany?: boolean;
+  endOutcome?: PlatformPlanTrialPolicyInputEndOutcome;
+  /**
+     * @minimum 0
+     * @maximum 90
+     */
+  readOnlyGraceDays?: number;
+}
+
+export interface PlatformPlanVersionPrice {
+  id: number;
+  interval: string;
+  intervalCount: number;
+  currency: string;
+  unitAmountMinor: number;
+  providerMode: string;
+  /** @nullable */
+  nickname: string | null;
+  active: boolean;
+}
+
+export interface PlatformPlanVersionSnapshot {
+  name: string;
+  /** @nullable */
+  description: string | null;
+  sortOrder: number;
+  limits: PlatformPlanLimits;
+  features: PlatformPlanFeatureMatrix;
+  prices: PlatformPlanVersionPrice[];
+}
+
+export type PlatformPlanVersionState = typeof PlatformPlanVersionState[keyof typeof PlatformPlanVersionState];
+
+
+export const PlatformPlanVersionState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export interface PlatformPlanVersion {
+  id: number;
+  planId: string;
+  version: number;
+  state: PlatformPlanVersionState;
+  /** The plan's current published (newest non-retired) version */
+  isCurrent: boolean;
+  snapshot: PlatformPlanVersionSnapshot;
+  trialPolicy: PlatformPlanTrialPolicySpec;
+  subscribers: number;
+  /** @nullable */
+  publishedAt: string | null;
+  /** @nullable */
+  publishedBy: number | null;
+  /** @nullable */
+  retiredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformFieldIssue {
+  code: string;
+  field: string;
+  message: string;
+}
+
+export type PlatformPublishBlockerCode = typeof PlatformPublishBlockerCode[keyof typeof PlatformPublishBlockerCode];
+
+
+export const PlatformPublishBlockerCode = {
+  VERSION_IMMUTABLE: 'VERSION_IMMUTABLE',
+  VERSION_RETIRED: 'VERSION_RETIRED',
+  PLAN_ARCHIVED: 'PLAN_ARCHIVED',
+  UNPINNED_SUBSCRIBERS: 'UNPINNED_SUBSCRIBERS',
+} as const;
+
+export interface PlatformPublishBlocker {
+  code: PlatformPublishBlockerCode;
+  message: string;
+  count?: number;
+}
+
+export type PlatformPlanVersionValidationState = typeof PlatformPlanVersionValidationState[keyof typeof PlatformPlanVersionValidationState];
+
+
+export const PlatformPlanVersionValidationState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export type PlatformPlanVersionValidationProviderMode = typeof PlatformPlanVersionValidationProviderMode[keyof typeof PlatformPlanVersionValidationProviderMode];
+
+
+export const PlatformPlanVersionValidationProviderMode = {
+  test: 'test',
+  live: 'live',
+} as const;
+
+export interface PlatformPlanVersionValidation {
+  planId: string;
+  versionId: number;
+  version: number;
+  state: PlatformPlanVersionValidationState;
+  /** Content validation passed (limits consistent, feature keys from the catalog, trial policy complete, prices verified in the configured provider mode) */
+  ok: boolean;
+  errors: PlatformFieldIssue[];
+  warnings: PlatformFieldIssue[];
+  blockers: PlatformPublishBlocker[];
+  /** ok and no blocker */
+  publishable: boolean;
+  pricesConsidered: PlatformPlanVersionPrice[];
+  providerMode: PlatformPlanVersionValidationProviderMode;
+}
+
+export type PlatformPlanVersionDetail = PlatformPlanVersion & ({
+  prices: PlatformPlanVersionPrice[];
+  validation: PlatformPlanVersionValidation | null;
+});
+
+export type PlatformPlanVersionListPlanStatus = typeof PlatformPlanVersionListPlanStatus[keyof typeof PlatformPlanVersionListPlanStatus];
+
+
+export const PlatformPlanVersionListPlanStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export interface PlatformPlanVersionList {
+  planId: string;
+  planStatus: PlatformPlanVersionListPlanStatus;
+  /** @nullable */
+  currentVersionId: number | null;
+  /** @nullable */
+  draftVersionId: number | null;
+  unpinnedSubscribers: number;
+  versions: PlatformPlanVersion[];
+}
+
+export type PlatformCompareRowGroup = typeof PlatformCompareRowGroup[keyof typeof PlatformCompareRowGroup];
+
+
+export const PlatformCompareRowGroup = {
+  display: 'display',
+  limits: 'limits',
+  features: 'features',
+  trialPolicy: 'trialPolicy',
+} as const;
+
+export interface PlatformCompareRow {
+  group: PlatformCompareRowGroup;
+  field: string;
+  /** string | number | boolean | null */
+  left: unknown;
+  /** string | number | boolean | null */
+  right: unknown;
+  changed: boolean;
+}
+
+export interface PlatformPlanVersionComparison {
+  planId: string;
+  left: PlatformPlanVersionSummary;
+  right: PlatformPlanVersionSummary;
+  rows: PlatformCompareRow[];
+  changedFields: string[];
+  tightenedLimits: string[];
+  loosenedLimits: string[];
+}
+
+export type PlatformExceedingTenantResourcesItem = {
+  resource: string;
+  limit: number;
+  used: number;
+};
+
+export interface PlatformExceedingTenant {
+  companyId: number;
+  /** @nullable */
+  companyName: string | null;
+  status: string;
+  resources: PlatformExceedingTenantResourcesItem[];
+}
+
+export type PlatformPlanVersionImpactPlanStatus = typeof PlatformPlanVersionImpactPlanStatus[keyof typeof PlatformPlanVersionImpactPlanStatus];
+
+
+export const PlatformPlanVersionImpactPlanStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export type PlatformPlanVersionImpactState = typeof PlatformPlanVersionImpactState[keyof typeof PlatformPlanVersionImpactState];
+
+
+export const PlatformPlanVersionImpactState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export type PlatformPlanVersionImpactSubscribersByVersionItemState = typeof PlatformPlanVersionImpactSubscribersByVersionItemState[keyof typeof PlatformPlanVersionImpactSubscribersByVersionItemState];
+
+
+export const PlatformPlanVersionImpactSubscribersByVersionItemState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export type PlatformPlanVersionImpactSubscribersByVersionItem = {
+  versionId: number;
+  version: number;
+  state: PlatformPlanVersionImpactSubscribersByVersionItemState;
+  subscribers: number;
+};
+
+export type PlatformPlanVersionImpactPublish = {
+  /** Always 0 — publishing never moves an existing subscriber */
+  subscribersMoved: number;
+  wouldBecomeCurrent: boolean;
+  newTenantsGetThisVersion: boolean;
+  diffVsCurrent: PlatformCompareRow[];
+  tightenedLimits: string[];
+  tenantsExceedingNewLimits: {
+  checked: number;
+  sampled: boolean;
+  tenants: PlatformExceedingTenant[];
+};
+  blockers: PlatformPublishBlocker[];
+} | null;
+
+export type PlatformPlanVersionImpactRetire = {
+  subscribersKept: number;
+  subscribersByStatus: {[key: string]: number};
+  isCurrent: boolean;
+  isLastPublished: boolean;
+  alreadyRetired: boolean;
+  newCurrentVersion: PlatformPlanVersionSummary | null;
+} | null;
+
+export interface PlatformPlanVersionImpact {
+  planId: string;
+  planStatus: PlatformPlanVersionImpactPlanStatus;
+  versionId: number;
+  version: number;
+  state: PlatformPlanVersionImpactState;
+  planSubscribers: number;
+  unpinnedSubscribers: number;
+  subscribersOnVersion: number;
+  subscribersByVersion: PlatformPlanVersionImpactSubscribersByVersionItem[];
+  currentVersion: PlatformPlanVersionSummary | null;
+  generatedAt: string;
+  publish: PlatformPlanVersionImpactPublish;
+  retire: PlatformPlanVersionImpactRetire;
+}
+
+export interface PlatformCreatePlanInput {
+  /**
+     * New plan slug; the five fixed ids are reserved
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  description?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  sortOrder?: number;
+  limits?: PlatformPlanLimitsInput;
+  features?: PlatformPlanFeatureMatrix;
+  trialPolicy?: PlatformPlanTrialPolicyInput;
+}
+
+export interface PlatformDuplicatePlanInput {
+  /**
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+}
+
+export interface PlatformCreateDraftInput {
+  /** A PUBLISHED version to pre-fill from (default = the current published version) */
+  sourceVersionId?: number;
+}
+
+export interface PlatformUpdateDraftInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  description?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  sortOrder?: number;
+  limits?: PlatformPlanLimitsInput;
+  features?: PlatformPlanFeatureMatrix;
+  trialPolicy?: PlatformPlanTrialPolicyInput;
+}
+
+export interface PlatformPlanCreateResult {
+  plan: PlatformPlanDetail;
+  draft: PlatformPlanVersion;
+}
+
+export interface PlatformPlanVersionDeleted {
+  deleted: boolean;
+  versionId: number;
+  /** true when the deleted draft was the only version of a never-published plan (the plan row was removed too) */
+  planDeleted: boolean;
+}
+
 export interface PlatformSetSubscriptionPlanInput {
-  plan: PlatformSetSubscriptionPlanInputPlan;
+  /**
+     * A PUBLISHED plan slug; the tenant is pinned to that plan's current published version
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan: string;
 }
 
 export interface PlatformStartTrialInput {
@@ -4229,19 +4689,14 @@ export interface PlatformSetSubscriptionLimitsInput {
   limits: PlatformSetSubscriptionLimitsInputLimits;
 }
 
-export type PlatformRegisterPriceInputPlanId = typeof PlatformRegisterPriceInputPlanId[keyof typeof PlatformRegisterPriceInputPlanId];
-
-
-export const PlatformRegisterPriceInputPlanId = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
-} as const;
-
 export interface PlatformRegisterPriceInput {
-  planId: PlatformRegisterPriceInputPlanId;
+  /**
+     * Plan slug (draft or published; never archived)
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  planId: string;
   /**
      * @minLength 6
      * @maxLength 128

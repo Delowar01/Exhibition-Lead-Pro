@@ -5,7 +5,7 @@ import { logger } from "../lib/logger.js";
 import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, PlanPriceRow } from "../repositories/subscriptions.repository.js";
 import { resolveEntitlement, normalizeLegacyStatus, allowedActions, SUBSCRIPTION_STATUSES, BILLING_SOURCES, LIVE_PROVIDER_STATUSES } from "../lib/billing/lifecycle.js";
-import { findPlan } from "../lib/billing/plan-catalog.js";
+import { findPlanRow } from "../lib/billing/plan-catalog.js";
 import { getBillingProvider, BillingProviderError } from "../lib/billing/provider.js";
 import { projectSubscription, priceView } from "./subscriptions.service.js";
 import { parseListQuery } from "../lib/list-query.js";
@@ -66,9 +66,13 @@ export async function getSubscriptionDetail(companyId: number) {
   if (!sub) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
   const company = await repo.findCompany(companyId);
   const projection = await projectSubscription(sub);
+  const pinned = sub.planVersionId != null ? await repo.findPlanVersionById(sub.planVersionId) : undefined;
   return {
     ...projection,
     companyName: company?.name ?? null,
+    // Batch 40: the pinned plan version (null = legacy reference to the plan row).
+    planVersionId: sub.planVersionId ?? null,
+    planVersion: pinned?.version ?? null,
     limitOverrides: sub.limitOverrides,
     allowedActions: allowedActions(sub),
     suspendedReason: sub.suspendedReason,
@@ -135,7 +139,8 @@ function fullPriceView(p: PlanPriceRow) {
 export async function registerPrice(actor: AuditActor, input: { planId?: unknown; providerPriceId?: unknown }) {
   const planId = typeof input.planId === "string" ? input.planId : "";
   const providerPriceId = typeof input.providerPriceId === "string" ? input.providerPriceId.trim() : "";
-  if (!(await findPlan(planId))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+  const planRow = await findPlanRow(planId);
+  if (!planRow || planRow.status === "archived") throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
   if (!/^price_[A-Za-z0-9_]{6,120}$/.test(providerPriceId)) throw new AppError(400, "providerPriceId must be a provider price id", { code: "INVALID_PRICE_ID" });
   const provider = getBillingProvider();
   if (!provider.available) throw new AppError(503, "Billing provider unavailable", { code: "PROVIDER_UNAVAILABLE" });

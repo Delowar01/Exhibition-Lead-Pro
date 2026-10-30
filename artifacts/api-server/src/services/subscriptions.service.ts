@@ -11,6 +11,7 @@ import { getBillingProvider, BillingProviderError, type ProviderCheckoutSession 
 import { billingFault } from "../lib/billing/test-faults.js";
 import { applyProviderState, ProviderModeMismatchError, ProviderPriceUnmappedError } from "./subscription-lifecycle.service.js";
 import { writeSubscriptionAudit, type AuditActor } from "../lib/billing/audit.js";
+import { resolvePlanAssignment } from "../lib/billing/plan-catalog.js";
 import { effectiveLimitsFor, usageReport } from "./entitlements.service.js";
 
 // Batch 20 — tenant-facing subscription service. READS never write (no lazy
@@ -336,6 +337,8 @@ export async function createCheckout(user: AuthUser, input: { planPriceId?: unkn
       if (!sub) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
       const price = await repo.findPlanPriceById(planPriceId, tx);
       if (!price || !price.active) throw new AppError(400, "This price is not available.", { code: "PRICE_NOT_AVAILABLE" });
+      // Batch 40: a price can only be bought for a PUBLISHED plan (never a draft / archived one).
+      if (!(await resolvePlanAssignment(price.planId, tx))) throw new AppError(400, "This price is not available.", { code: "PRICE_NOT_AVAILABLE" });
       if (price.providerMode !== mode) throw new AppError(400, "This price was verified in a different provider mode.", { code: "PRICE_MODE_MISMATCH" });
       const activeCount = (await repo.listPlanPrices({ activeOnly: true }, tx)).length;
       const caps = resolveBillingCapabilities(sub, providerContext(activeCount), sub.providerStatus);

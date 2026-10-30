@@ -4,6 +4,7 @@ import {
   companiesTable,
   plansTable,
   planPricesTable,
+  planVersionsTable,
   billingCheckoutSessionsTable,
   billingProviderEventsTable,
   subscriptionUsageReservationsTable,
@@ -175,7 +176,7 @@ export async function listPlans(activeOnly: boolean, tx?: Executor): Promise<Pla
   return exec(tx)
     .select()
     .from(plansTable)
-    .where(activeOnly ? eq(plansTable.isActive, true) : undefined)
+    .where(activeOnly ? and(eq(plansTable.isActive, true), eq(plansTable.status, "published")) : undefined)
     .orderBy(asc(plansTable.sortOrder), asc(plansTable.id));
 }
 
@@ -565,4 +566,156 @@ export async function countSubscriptionsByPlanAndSource(tx?: Executor): Promise<
 // with the resolver's own "numeric override only" rule).
 export async function listSubscriptionLimitOverrides(tx?: Executor): Promise<Array<{ plan: string; limitOverrides: SubscriptionRow["limitOverrides"] }>> {
   return exec(tx).select({ plan: subscriptionsTable.plan, limitOverrides: subscriptionsTable.limitOverrides }).from(subscriptionsTable);
+}
+
+// ── plan lifecycle + versions (Batch 40) ─────────────────────────────────────
+
+export type PlanVersionRow = typeof planVersionsTable.$inferSelect;
+
+// Plan-row locks. Publish / retire / archive take FOR UPDATE; every assignment
+// (company creation, set_plan, provider sync) takes FOR SHARE so a publication
+// and an assignment of the same plan serialize (no NULL reference can slip in
+// between the publish guard and its commit).
+export async function lockPlan(id: string, tx: Executor): Promise<PlanRow | undefined> {
+  const [row] = await tx.select().from(plansTable).where(eq(plansTable.id, id)).for("update");
+  return row;
+}
+export async function sharePlan(id: string, tx: Executor): Promise<PlanRow | undefined> {
+  const [row] = await tx.select().from(plansTable).where(eq(plansTable.id, id)).for("share");
+  return row;
+}
+export async function lockAllPlans(tx: Executor): Promise<PlanRow[]> {
+  return tx.select().from(plansTable).orderBy(asc(plansTable.id)).for("update");
+}
+// Returns undefined when the id already exists (race-safe creation).
+export async function insertPlan(values: typeof plansTable.$inferInsert, tx?: Executor): Promise<PlanRow | undefined> {
+  const [row] = await exec(tx).insert(plansTable).values(values).onConflictDoNothing({ target: plansTable.id }).returning();
+  return row;
+}
+export async function deletePlan(id: string, tx: Executor): Promise<number> {
+  const rows = await tx.delete(plansTable).where(eq(plansTable.id, id)).returning({ id: plansTable.id });
+  return rows.length;
+}
+export async function updatePlan(id: string, data: Partial<typeof plansTable.$inferInsert>, tx?: Executor): Promise<PlanRow | undefined> {
+  const [row] = await exec(tx)
+    .update(plansTable)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(plansTable.id, id))
+    .returning();
+  return row;
+}
+
+export async function listPlanVersions(planId: string, tx?: Executor): Promise<PlanVersionRow[]> {
+  return exec(tx).select().from(planVersionsTable).where(eq(planVersionsTable.planId, planId)).orderBy(asc(planVersionsTable.version));
+}
+export async function listAllPlanVersions(tx?: Executor): Promise<PlanVersionRow[]> {
+  return exec(tx).select().from(planVersionsTable).orderBy(asc(planVersionsTable.planId), asc(planVersionsTable.version));
+}
+export async function findPlanVersionById(id: number, tx?: Executor): Promise<PlanVersionRow | undefined> {
+  const [row] = await exec(tx).select().from(planVersionsTable).where(eq(planVersionsTable.id, id)).limit(1);
+  return row;
+}
+export async function lockPlanVersion(id: number, tx: Executor): Promise<PlanVersionRow | undefined> {
+  const [row] = await tx.select().from(planVersionsTable).where(eq(planVersionsTable.id, id)).for("update");
+  return row;
+}
+export async function findDraftVersion(planId: string, tx?: Executor): Promise<PlanVersionRow | undefined> {
+  const [row] = await exec(tx)
+    .select()
+    .from(planVersionsTable)
+    .where(and(eq(planVersionsTable.planId, planId), isNull(planVersionsTable.publishedAt)))
+    .limit(1);
+  return row;
+}
+// The CURRENT published version = the newest published, non-retired version.
+export async function findCurrentPublishedVersion(planId: string, tx?: Executor): Promise<PlanVersionRow | undefined> {
+  const [row] = await exec(tx)
+    .select()
+    .from(planVersionsTable)
+    .where(and(eq(planVersionsTable.planId, planId), isNotNull(planVersionsTable.publishedAt), isNull(planVersionsTable.retiredAt)))
+    .orderBy(desc(planVersionsTable.version))
+    .limit(1);
+  return row;
+}
+export async function countPublishedNonRetiredVersions(planId: string, tx?: Executor): Promise<number> {
+  const [{ n }] = await exec(tx)
+    .select({ n: count() })
+    .from(planVersionsTable)
+    .where(and(eq(planVersionsTable.planId, planId), isNotNull(planVersionsTable.publishedAt), isNull(planVersionsTable.retiredAt)));
+  return Number(n);
+}
+export async function maxVersionNumber(planId: string, tx: Executor): Promise<number> {
+  const [row] = await tx.select({ m: sql<number>`coalesce(max(${planVersionsTable.version}), 0)` }).from(planVersionsTable).where(eq(planVersionsTable.planId, planId));
+  return Number(row?.m ?? 0);
+}
+export async function insertPlanVersion(values: typeof planVersionsTable.$inferInsert, tx?: Executor): Promise<PlanVersionRow> {
+  const [row] = await exec(tx).insert(planVersionsTable).values(values).returning();
+  return row;
+}
+export async function updatePlanVersion(id: number, data: Partial<typeof planVersionsTable.$inferInsert>, tx?: Executor): Promise<PlanVersionRow | undefined> {
+  const [row] = await exec(tx)
+    .update(planVersionsTable)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(planVersionsTable.id, id))
+    .returning();
+  return row;
+}
+export async function deletePlanVersion(id: number, tx: Executor): Promise<number> {
+  const rows = await tx.delete(planVersionsTable).where(eq(planVersionsTable.id, id)).returning({ id: planVersionsTable.id });
+  return rows.length;
+}
+
+// Subscription ↔ version aggregates.
+export async function countSubscriptionsOnVersion(versionId: number, tx?: Executor): Promise<number> {
+  const [{ n }] = await exec(tx).select({ n: count() }).from(subscriptionsTable).where(eq(subscriptionsTable.planVersionId, versionId));
+  return Number(n);
+}
+export async function countSubscriptionsByVersion(planId: string, tx?: Executor): Promise<Array<{ planVersionId: number | null; count: number }>> {
+  const rows = await exec(tx)
+    .select({ planVersionId: subscriptionsTable.planVersionId, count: count() })
+    .from(subscriptionsTable)
+    .where(eq(subscriptionsTable.plan, planId))
+    .groupBy(subscriptionsTable.planVersionId);
+  return rows.map((r) => ({ planVersionId: r.planVersionId, count: Number(r.count) }));
+}
+export async function countSubscriptionsOnPlan(planId: string, tx?: Executor): Promise<number> {
+  const [{ n }] = await exec(tx).select({ n: count() }).from(subscriptionsTable).where(eq(subscriptionsTable.plan, planId));
+  return Number(n);
+}
+export async function countUnpinnedSubscriptions(planId: string, tx?: Executor): Promise<number> {
+  const [{ n }] = await exec(tx)
+    .select({ n: count() })
+    .from(subscriptionsTable)
+    .where(and(eq(subscriptionsTable.plan, planId), isNull(subscriptionsTable.planVersionId)));
+  return Number(n);
+}
+export async function listSubscriptionsOnPlan(planId: string, limit: number, tx?: Executor): Promise<SubscriptionRow[]> {
+  return exec(tx).select().from(subscriptionsTable).where(eq(subscriptionsTable.plan, planId)).orderBy(asc(subscriptionsTable.id)).limit(limit);
+}
+export async function listSubscriptionsOnVersion(versionId: number, limit: number, tx?: Executor): Promise<SubscriptionRow[]> {
+  return exec(tx).select().from(subscriptionsTable).where(eq(subscriptionsTable.planVersionId, versionId)).orderBy(asc(subscriptionsTable.id)).limit(limit);
+}
+// Backfill: every NULL-reference subscription, locked for the transaction.
+export async function lockUnpinnedSubscriptions(tx: Executor): Promise<SubscriptionRow[]> {
+  return tx.select().from(subscriptionsTable).where(isNull(subscriptionsTable.planVersionId)).orderBy(asc(subscriptionsTable.id)).for("update");
+}
+export async function listPinnedSubscriptions(tx?: Executor): Promise<SubscriptionRow[]> {
+  return exec(tx).select().from(subscriptionsTable).where(isNotNull(subscriptionsTable.planVersionId)).orderBy(asc(subscriptionsTable.id));
+}
+// Prices that apply to a version: plan-wide (NULL) or bound to exactly it.
+export async function listPlanPricesForVersion(planId: string, versionId: number | null, tx?: Executor): Promise<PlanPriceRow[]> {
+  const conds: SQL[] = [eq(planPricesTable.planId, planId)];
+  conds.push(versionId == null ? isNull(planPricesTable.planVersionId) : or(isNull(planPricesTable.planVersionId), eq(planPricesTable.planVersionId, versionId))!);
+  return exec(tx)
+    .select()
+    .from(planPricesTable)
+    .where(and(...conds))
+    .orderBy(asc(planPricesTable.id));
+}
+export async function countSubscriptionsByPlanAndVersion(tx?: Executor): Promise<Array<{ plan: string; planVersionId: number | null; count: number }>> {
+  const rows = await exec(tx)
+    .select({ plan: subscriptionsTable.plan, planVersionId: subscriptionsTable.planVersionId, count: count() })
+    .from(subscriptionsTable)
+    .groupBy(subscriptionsTable.plan, subscriptionsTable.planVersionId);
+  return rows.map((r) => ({ plan: r.plan, planVersionId: r.planVersionId, count: Number(r.count) }));
 }

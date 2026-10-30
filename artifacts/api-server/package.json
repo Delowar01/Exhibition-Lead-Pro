@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "repair-subscriptions": "tsx ./scripts/repair-subscriptions.ts",
+    "backfill-plan-versions": "tsx ./scripts/backfill-plan-versions.ts",
     "migrate-storage": "tsx ./scripts/migrate-storage.ts"
   },
   "dependencies": {

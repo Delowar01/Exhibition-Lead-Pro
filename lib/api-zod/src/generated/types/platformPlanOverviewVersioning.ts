@@ -7,11 +7,12 @@
  */
 
 /**
- * The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner's data-model approval
+ * versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill / first publication)
  */
 export type PlatformPlanOverviewVersioning = typeof PlatformPlanOverviewVersioning[keyof typeof PlatformPlanOverviewVersioning];
 
 
 export const PlatformPlanOverviewVersioning = {
   not_versioned: 'not_versioned',
+  versioned: 'versioned',
 } as const;

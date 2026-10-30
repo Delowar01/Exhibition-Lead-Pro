@@ -20,6 +20,7 @@ export const PROVIDER_ACTOR: AuditActor = { userId: null, userName: "system:stri
 
 const SAFE_FIELDS = new Set([
   "plan",
+  "planVersionId",
   "status",
   "billingSource",
   "trialStartedAt",
@@ -65,8 +66,8 @@ export interface SubscriptionAuditInput {
 
 export async function writeSubscriptionAudit(tx: Executor, input: SubscriptionAuditInput): Promise<void> {
   const metadata: Record<string, unknown> = {
-    before: input.before ? { status: input.before.status ?? null, plan: input.before.plan ?? null, billingSource: input.before.billingSource ?? null } : null,
-    after: { status: input.after.status ?? null, plan: input.after.plan ?? null, billingSource: input.after.billingSource ?? null },
+    before: input.before ? { status: input.before.status ?? null, plan: input.before.plan ?? null, planVersionId: input.before.planVersionId ?? null, billingSource: input.before.billingSource ?? null } : null,
+    after: { status: input.after.status ?? null, plan: input.after.plan ?? null, planVersionId: input.after.planVersionId ?? null, billingSource: input.after.billingSource ?? null },
     changed: changedFields(input.before, input.after),
     ...(input.extra ?? {}),
   };

@@ -81,6 +81,41 @@ function trackConsole(page: Page): string[] {
 
 const pageOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 const limitText = (n: number | null) => (n == null ? "Unlimited" : n.toLocaleString("en-US"));
+/** Opens a shadcn/Radix select by test id and picks an option by accessible name. The cards around the select load
+ *  asynchronously and can shift the trigger to the edge of the viewport while the popper is open, so the trigger is
+ *  let settle and centred first, and the option is only clicked once its box lies inside the viewport (otherwise the
+ *  popper is closed and the attempt repeated). No assertion of the calling test is affected. */
+async function pickOption(page: Page, trigger: string, name: string | RegExp) {
+  const t = page.getByTestId(trigger);
+  await expect(t).toBeVisible();
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await t.evaluate(async (el) => {
+      let last = el.getBoundingClientRect().top;
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        const now = el.getBoundingClientRect().top;
+        if (Math.abs(now - last) < 1) break;
+        last = now;
+      }
+      el.scrollIntoView({ block: "center" });
+    });
+    await t.click();
+    const option = page.getByRole("option", { name });
+    await expect(option).toBeVisible();
+    const inViewport = await option.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth;
+    });
+    if (inViewport) {
+      await option.click();
+      return;
+    }
+    await page.keyboard.press("Escape");
+    await expect(option).toBeHidden();
+    await page.waitForTimeout(300);
+  }
+  throw new Error(`option ${String(name)} of ${trigger} never came into the viewport`);
+}
 
 test.beforeAll(async () => {
   platform = await login(PLATFORM.email, PLATFORM.password);
@@ -107,22 +142,30 @@ test("platform owner: the Plans screen shows the catalog, detail, prices, counts
   await expect(root).toBeVisible();
   await expect(page.locator('a[href="/platform/plans"]').first()).toBeVisible();
 
-  // Catalog = the API's five plans, in the API's order, with the API's default limits.
+  // Catalog = the API's plans, in the API's order, with the API's default limits. Since Batch 40 the
+  // catalog is dynamic: the five fixed plans are always present (in order) and other plans may exist.
   const catalog = (await api("GET", "/platform/plans", undefined, platform.token)).json;
-  expect(catalog.plans.map((p: any) => p.id)).toEqual(["free", "starter", "professional", "business", "enterprise"]);
-  await expect(page.locator('[data-testid^="plan-row-"]')).toHaveCount(5);
+  const FIXED = ["free", "starter", "professional", "business", "enterprise"];
+  expect(catalog.plans.map((p: any) => p.id).filter((id: string) => FIXED.includes(id))).toEqual(FIXED);
+  await expect(page.locator('[data-testid^="plan-row-"]')).toHaveCount(catalog.plans.length);
   for (const p of catalog.plans) {
     const row = page.getByTestId(`plan-row-${p.id}`);
     await expect(row).toContainText(p.name);
     for (const r of RESOURCES) await expect(page.getByTestId(`plan-limit-${p.id}-${r}`)).toHaveText(limitText(p.limits[r]));
     await expect(page.getByTestId(`plan-subs-${p.id}`)).toHaveText(String(p.subscriptions.total));
   }
-  await expect(page.getByTestId("plans-readonly-notice")).toContainText("not editable in place");
+  await expect(page.getByTestId("plans-readonly-notice")).toContainText("immutable");
   await expect(page.getByTestId("trial-policy-card")).toContainText(`${catalog.trialPolicy.defaultTrialDays} days`);
 
-  // No mutation control anywhere on the page.
-  await expect(root.getByRole("button", { name: /^(edit|save|publish|delete|archive|create plan|new plan|duplicate)$/i })).toHaveCount(0);
+  // Batch 40: plans change ONLY through drafts and immutable published versions — the page offers the
+  // versioned Plan Builder controls (create / duplicate / archive / versions) but never an in-place edit
+  // of a published plan's limits (no limit input outside a draft editor; zc-plan-versions covers the flow).
+  await expect(page.getByTestId("plan-create-open")).toBeVisible();
+  await expect(root.getByRole("button", { name: /^(edit|save)$/i })).toHaveCount(0);
   await expect(root.locator("input:not([data-testid='preview-search'])")).toHaveCount(0);
+  for (const p of catalog.plans) {
+    await expect(page.getByTestId(`plan-status-${p.id}`)).toContainText(p.status === "published" ? "Published" : p.status === "draft" ? "Draft" : "Archived");
+  }
 
   // Detail card for the tenant's plan.
   await page.getByTestId("plan-details-free").click();
@@ -158,8 +201,7 @@ test("platform owner: the Plans screen shows the catalog, detail, prices, counts
   }
 
   // Effective-limit preview for our tenant under its current plan (free): the API's rows, verbatim.
-  await page.getByTestId("preview-plan").click();
-  await page.getByRole("option", { name: free.name }).click();
+  await pickOption(page, "preview-plan", free.name);
   await page.getByTestId("preview-search").fill(COMPANY_NAME);
   await page.getByTestId(`preview-pick-${companyId}`).click();
   const pv = (await api("GET", `/platform/plans/free/effective-limits/${companyId}`, undefined, platform.token)).json;
@@ -191,7 +233,8 @@ test("responsive + dark: the Plans screen has no horizontal overflow and no cons
   await seedAs(page, platform, "dark");
   await page.goto("/platform/plans");
   await expect(page.getByTestId("platform-plans")).toBeVisible();
-  await expect(page.locator('[data-testid^="plan-row-"]')).toHaveCount(5);
+  const catalog = (await api("GET", "/platform/plans", undefined, platform.token)).json;
+  await expect(page.locator('[data-testid^="plan-row-"]')).toHaveCount(catalog.plans.length);
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.getByTestId("plan-details-free").click();
   await expect(page.getByTestId("plan-detail")).toBeVisible();

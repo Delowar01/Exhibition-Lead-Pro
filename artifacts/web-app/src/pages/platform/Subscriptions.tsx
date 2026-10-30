@@ -23,7 +23,7 @@ import { PageHeader, MetricCard, StatusBadge, TableSkeleton, EmptyState, ErrorSt
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Search, Building2 } from "lucide-react";
 import { Link } from "wouter";
-import { SubscriptionManager, STATUSES, PLANS, STATUS_LABEL, statusTone, fmt, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
+import { SubscriptionManager, STATUSES, usePlanOptions, STATUS_LABEL, statusTone, fmt, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
 
 // Batch 20 — truthful Platform Subscriptions screen. Everything on this page is
 // real API data: canonical subscription rows with filters + pagination, counts by
@@ -105,11 +105,12 @@ export default function PlatformSubscriptions() {
   const prices = usePlatformListPrices({ query: { queryKey: getPlatformListPricesQueryKey() } });
   const registerPriceMutation = usePlatformRegisterPrice();
   const updatePriceMutation = usePlatformUpdatePrice();
+  const planOptions = usePlanOptions();
 
   const registerPrice = async () => {
     setBusy(true);
     try {
-      await registerPriceMutation.mutateAsync({ data: { planId: priceForm.planId as (typeof PLANS)[number], providerPriceId: priceForm.providerPriceId.trim() } });
+      await registerPriceMutation.mutateAsync({ data: { planId: priceForm.planId, providerPriceId: priceForm.providerPriceId.trim() } });
       toast({ title: "Price registered" });
       setPriceForm({ ...priceForm, providerPriceId: "" });
       void queryClient.invalidateQueries({ queryKey: getPlatformListPricesQueryKey() });
@@ -178,7 +179,7 @@ export default function PlatformSubscriptions() {
                 <SelectTrigger className="w-[150px]"><SelectValue placeholder="Plan" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All plans</SelectItem>
-                  {PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
+                  {planOptions.all.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={source} onValueChange={(v) => { setSource(v); setPage(1); }}>
@@ -275,7 +276,7 @@ export default function PlatformSubscriptions() {
             <div className="flex flex-col sm:flex-row gap-2">
               <Select value={priceForm.planId} onValueChange={(v) => setPriceForm({ ...priceForm, planId: v })}>
                 <SelectTrigger className="sm:w-[160px]" data-testid="price-plan"><SelectValue /></SelectTrigger>
-                <SelectContent>{PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
+                <SelectContent>{planOptions.assignable.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
               </Select>
               <Input placeholder="price_…" value={priceForm.providerPriceId} onChange={(e) => setPriceForm({ ...priceForm, providerPriceId: e.target.value })} data-testid="price-id" />
               <Button onClick={() => void registerPrice()} disabled={busy || !providerStatus.data?.available || priceForm.providerPriceId.trim().length < 6} data-testid="price-register">Register</Button>

@@ -1,6 +1,7 @@
-import { sql } from "drizzle-orm";
-import { db, plansTable } from "@workspace/db";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { db, plansTable, planVersionsTable } from "@workspace/db";
 import { PLAN_IDS, type PlanId } from "./lifecycle.js";
+import { PLAN_SLUG_RE } from "./plan-versions.js";
 
 // Batch 20 — stable plan catalog. Seeds the five plan identities idempotently
 // (INSERT … ON CONFLICT DO NOTHING): a plan that already exists — including one an
@@ -60,10 +61,43 @@ export async function ensurePlanCatalog(tx?: Executor): Promise<{ inserted: Plan
 }
 
 // Guard used by the services: a plan must be one of the stable identities AND
-// exist in the catalog (seeded). Returns the row or null.
+// exist in the catalog (seeded). Returns the row or null. (Kept for the fixed
+// catalog; assignment paths use findAssignablePlan / resolvePlanAssignment.)
 export async function findPlan(id: string, tx?: Executor) {
   if (!(PLAN_IDS as readonly string[]).includes(id)) return null;
   const e = tx ?? db;
   const [row] = await e.select().from(plansTable).where(sql`${plansTable.id} = ${id}`).limit(1);
   return row ?? null;
+}
+
+// Batch 40 — any plan row by slug (fixed or builder-created), whatever its status.
+export async function findPlanRow(id: string, tx?: Executor) {
+  if (!PLAN_SLUG_RE.test(id)) return null;
+  const e = tx ?? db;
+  const [row] = await e.select().from(plansTable).where(eq(plansTable.id, id)).limit(1);
+  return row ?? null;
+}
+
+// Batch 40 — a plan that may be ASSIGNED to a tenant: exists and is published
+// (drafts and archived plans are never assignable).
+export async function findAssignablePlan(id: string, tx?: Executor) {
+  const row = await findPlanRow(id, tx);
+  return row && row.status === "published" ? row : null;
+}
+
+// Batch 40 — the version a NEW assignment pins to: the plan's current published,
+// non-retired version, or null when the plan has no published version yet (legacy
+// reference = the plan row, exactly as before versioning). Takes a SHARE lock on
+// the plan row so a concurrent publish (FOR UPDATE) serializes with the assignment.
+export async function resolvePlanAssignment(id: string, tx: Executor): Promise<{ plan: NonNullable<Awaited<ReturnType<typeof findPlanRow>>>; planVersionId: number | null } | null> {
+  if (!PLAN_SLUG_RE.test(id)) return null;
+  const [plan] = await tx.select().from(plansTable).where(eq(plansTable.id, id)).for("share");
+  if (!plan || plan.status !== "published") return null;
+  const [version] = await tx
+    .select({ id: planVersionsTable.id })
+    .from(planVersionsTable)
+    .where(and(eq(planVersionsTable.planId, id), isNotNull(planVersionsTable.publishedAt), isNull(planVersionsTable.retiredAt)))
+    .orderBy(desc(planVersionsTable.version))
+    .limit(1);
+  return { plan, planVersionId: version?.id ?? null };
 }

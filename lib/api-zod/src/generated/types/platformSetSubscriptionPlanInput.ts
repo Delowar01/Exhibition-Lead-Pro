@@ -5,8 +5,13 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { PlatformSetSubscriptionPlanInputPlan } from './platformSetSubscriptionPlanInputPlan';
 
 export interface PlatformSetSubscriptionPlanInput {
-  plan: PlatformSetSubscriptionPlanInputPlan;
+  /**
+     * A PUBLISHED plan slug; the tenant is pinned to that plan's current published version
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan: string;
 }

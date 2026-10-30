@@ -15,10 +15,13 @@ import { db, companiesTable, usersTable, contactsTable, eventsTable, auditLogsTa
 //   • none of the new endpoints writes anything (table snapshots before / after);
 //   • entitlement compatibility: a change to a plan row a tenant is NOT on never
 //     changes that tenant's effective limits, a tenant override shields the tenant
-//     from any plan-default change, and — documented honestly — a change to the
-//     tenant's OWN plan row flows through immediately today, which is exactly why
-//     PB-2 must introduce immutable published versions before plans become editable.
-// No schema change, no Gemini, no email, no object storage.
+//     from any plan-default change, and a change to the tenant's OWN plan row flows
+//     through ONLY while the tenant still carries the legacy NULL version reference
+//     (pre-backfill); a tenant pinned to a published version (Batch 40) is immune.
+// Batch 40 correction: the plan-row mutation below captures the EXACT original
+// value and restores it (never a hard-coded NULL), and only ever runs against the
+// isolated local database the suite is pointed at.
+// No Gemini, no email, no object storage.
 
 const BASE = "http://localhost:80/api";
 const PLATFORM = { email: "admin@cardscannerpro.com", password: "Admin123!" };
@@ -37,6 +40,23 @@ let adminBToken = ""; // company B primary_admin (plan starter)
 let companyA = 0;
 let companyB = 0;
 const companyIds: number[] = [];
+// Batch 40 — the EXACT original value of the plan row the isolation test mutates
+// (captured before any test runs; restored verbatim afterwards).
+let starterEventsLimitOriginal: number | null | undefined;
+let starterRowCaptured = false;
+
+// The fixture mutation below must only ever touch an isolated disposable database.
+function assertIsolatedDatabase() {
+  const url = process.env.DATABASE_URL ?? "";
+  const host = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+  if (!["localhost", "127.0.0.1", "::1", "postgres", "db"].includes(host)) throw new Error("refusing to mutate plan rows: DATABASE_URL does not point at a local/isolated database");
+}
 
 function headers(token: string | null) {
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -76,6 +96,10 @@ async function snapshot() {
 }
 
 beforeAll(async () => {
+  assertIsolatedDatabase();
+  const [starterRow] = await db.select({ eventsLimit: plansTable.eventsLimit }).from(plansTable).where(eq(plansTable.id, "starter"));
+  starterEventsLimitOriginal = starterRow?.eventsLimit;
+  starterRowCaptured = starterRow !== undefined;
   platformToken = await login(PLATFORM.email, PLATFORM.password);
   for (const [name, plan, setter] of [
     [`QA B39 Plans A ${SUFFIX}`, "free", (id: number) => (companyA = id)],
@@ -103,8 +127,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Defensive: the isolation test restores the plan row itself; make sure the
-  // seeded default is back even if that test aborted half-way.
-  await db.update(plansTable).set({ eventsLimit: null }).where(eq(plansTable.id, "starter"));
+  // EXACT captured original is back even if that test aborted half-way.
+  if (starterRowCaptured) await db.update(plansTable).set({ eventsLimit: starterEventsLimitOriginal ?? null }).where(eq(plansTable.id, "starter"));
   if (companyIds.length) {
     await db.delete(contactsTable).where(inArray(contactsTable.companyId, companyIds));
     await db.delete(eventsTable).where(inArray(eventsTable.companyId, companyIds));
@@ -120,15 +144,18 @@ describe("plan catalog — read-only overview over the existing entities", () =>
     const res = await api("GET", "/platform/plans", platformToken);
     expect(res.status, res.text).toBe(200);
     const c = res.body;
-    expect(c.readOnly).toBe(true);
+    expect(c.readOnly).toBe(false); // Batch 40: plans change through drafts and immutable published versions
     expect(c.limitResources).toEqual([...RESOURCES]);
     expect(typeof c.generatedAt).toBe("string");
-    expect(c.plans.map((p: any) => p.id)).toEqual([...PLAN_IDS]);
+    // The five fixed ids are always present, in catalog order (builder-created plans may follow).
+    const fixedInOrder = c.plans.map((p: any) => p.id).filter((id: string) => (PLAN_IDS as readonly string[]).includes(id));
+    expect(fixedInOrder).toEqual([...PLAN_IDS]);
     const orders = c.plans.map((p: any) => p.sortOrder);
     expect([...orders].sort((a, b) => a - b)).toEqual(orders);
-    for (const p of c.plans) {
+    for (const p of c.plans.filter((x: any) => (PLAN_IDS as readonly string[]).includes(x.id))) {
       expect(p.seeded).toBe(true);
-      expect(p.versioning).toBe("not_versioned");
+      expect(["not_versioned", "versioned"]).toContain(p.versioning);
+      expect(["draft", "published", "archived"]).toContain(p.status);
       expect(typeof p.name).toBe("string");
       expect(typeof p.isActive).toBe("boolean");
       expect(typeof p.trialDays).toBe("number");
@@ -185,7 +212,8 @@ describe("plan catalog — read-only overview over the existing entities", () =>
   it("plan detail adds override counts; unknown or malformed plan ids are 404 without leaking anything", async () => {
     const res = await api("GET", "/platform/plans/free", platformToken);
     expect(res.status, res.text).toBe(200);
-    expect(res.body).toMatchObject({ id: "free", seeded: true, versioning: "not_versioned" });
+    expect(res.body).toMatchObject({ id: "free", seeded: true });
+    expect(["not_versioned", "versioned"]).toContain(res.body.versioning); // legacy row or backfilled v1
     expect(Object.keys(res.body.overrides.byResource).sort()).toEqual([...RESOURCES].sort());
     expect(res.body.overrides.tenantsWithAnyOverride).toBeLessThanOrEqual(res.body.subscriptions.total);
     for (const bad of ["platinum", "FREE", "free%20", "1"]) {
@@ -335,9 +363,8 @@ describe("no-write guarantee and entitlement compatibility", () => {
     expect(after).toBe(before);
   });
 
-  it("the new surface exposes no mutation route: POST / PUT / PATCH / DELETE on the plan endpoints are not found", async () => {
+  it("a published plan is never edited in place: there is no PUT / PATCH / DELETE on a plan id, and the Batch 40 mutation routes validate and refuse before touching a fixed plan row", async () => {
     for (const [method, path] of [
-      ["POST", "/platform/plans"],
       ["PUT", "/platform/plans/free"],
       ["PATCH", "/platform/plans/free"],
       ["DELETE", "/platform/plans/free"],
@@ -346,17 +373,30 @@ describe("no-write guarantee and entitlement compatibility", () => {
       const r = await api(method, path, platformToken, { name: "x", limits: { contacts: 1 } });
       expect(r.status, `${method} ${path}`).toBe(404);
     }
+    // POST /platform/plans exists since Batch 40 but validates its body and reserves the fixed ids.
+    expect((await api("POST", "/platform/plans", platformToken, { name: "x", limits: { contacts: 1 } })).status).toBe(400);
+    const reserved = await api("POST", "/platform/plans", platformToken, { id: "free", name: "x" });
+    expect(reserved.status).toBe(409);
+    expect(reserved.body.code).toBe("PLAN_ID_RESERVED");
     const plan = await db.select().from(plansTable).where(eq(plansTable.id, "free"));
     expect(plan[0].name).not.toBe("x");
   });
 
-  it("resolver input isolation: a change to a plan row a tenant is NOT on never changes that tenant; an override shields a tenant on the changed plan; the tenant's own plan row flows through today (the PB-2 versioning requirement)", async () => {
+  it("resolver input isolation: a change to a plan row a tenant is NOT on never changes that tenant; an override shields a tenant on the changed plan; the tenant's own plan row flows through only for a legacy (unpinned) reference, never for a tenant pinned to a published version", async () => {
+    assertIsolatedDatabase();
     // Company A is on `free` with overrides {contacts: 3, scans: 5}; company B is on `starter` with no override.
     const baselineA = (await api("GET", "/subscriptions/current", adminToken)).body;
     const baselineB = (await api("GET", "/subscriptions/current", adminBToken)).body;
-    expect(limitsOf(baselineB.limits).events).toEqual({ limit: null, source: "unlimited" });
+    const starterBefore = (await api("GET", "/platform/plans/starter", platformToken)).body;
+    const baselineStarterEvents = starterBefore.limits.events as number | null;
+    expect(limitsOf(baselineB.limits).events).toEqual(baselineStarterEvents == null ? { limit: null, source: "unlimited" } : { limit: baselineStarterEvents, source: "plan" });
     const previewAUnderStarterBefore = (await preview("starter", companyA)).body;
-    expect(previewAUnderStarterBefore.changedResources).toEqual([]);
+    expect(previewAUnderStarterBefore.changedResources).toEqual(baselineStarterEvents == null ? [] : ["events"]);
+    // Batch 40: is B pinned to a published version (post-backfill) or a legacy NULL reference (pre-backfill)?
+    const bDetail = (await api("GET", `/platform/subscriptions/${companyB}`, platformToken)).body;
+    const bPinned = bDetail.planVersionId != null;
+    const [{ eventsLimit: exactOriginal }] = await db.select({ eventsLimit: plansTable.eventsLimit }).from(plansTable).where(eq(plansTable.id, "starter"));
+    expect(exactOriginal).toBe(starterEventsLimitOriginal ?? null);
     try {
       // Simulate an in-place edit of the published `starter` plan directly in the ISOLATED local DB
       // (there is deliberately no API for this — the point of the test is what such an edit would do).
@@ -376,14 +416,24 @@ describe("no-write guarantee and entitlement compatibility", () => {
       // A's overrides still win on the edited plan too.
       expect(previewAStarter.rows.find((r: any) => r.resource === "contacts")).toMatchObject({ effective: 3, source: "override", changes: false });
 
-      // (3) Company B (plan starter, no override) — the in-place edit flows through IMMEDIATELY today.
-      //     This is the documented hazard: published entitlements are shared, so the Plan Builder must
-      //     publish immutable versions and pin subscriptions to them (PB-2) before plans become editable.
+      // (3) Company B (plan starter, no override):
+      //     • legacy NULL reference (pre-backfill): the in-place row edit flows through immediately —
+      //       the documented hazard that the versioned Plan Builder removes;
+      //     • pinned to a published version (post-backfill): the row edit changes NOTHING for B — the
+      //       resolver reads B's immutable version snapshot (PB-1.3 / Batch 40).
       const afterB = (await api("GET", "/subscriptions/current", adminBToken)).body;
-      expect(limitsOf(afterB.limits).events).toEqual({ limit: 7, source: "plan" });
-      const previewB = (await preview("starter", companyB)).body;
-      expect(previewB.isCurrentPlan).toBe(true);
-      expect(previewB.rows.find((r: any) => r.resource === "events")).toMatchObject({ effective: 7, source: "plan", currentEffective: 7, changes: false });
+      if (bPinned) {
+        expect(limitsOf(afterB.limits)).toEqual(limitsOf(baselineB.limits));
+        const previewB = (await preview("starter", companyB)).body;
+        expect(previewB.isCurrentPlan).toBe(true);
+        // The plan-row preview differs from B's pinned entitlement — visible, never applied.
+        expect(previewB.rows.find((r: any) => r.resource === "events")).toMatchObject({ planDefault: 7, effective: 7, currentEffective: limitsOf(baselineB.limits).events.limit, changes: limitsOf(baselineB.limits).events.limit !== 7 });
+      } else {
+        expect(limitsOf(afterB.limits).events).toEqual({ limit: 7, source: "plan" });
+        const previewB = (await preview("starter", companyB)).body;
+        expect(previewB.isCurrentPlan).toBe(true);
+        expect(previewB.rows.find((r: any) => r.resource === "events")).toMatchObject({ effective: 7, source: "plan", currentEffective: 7, changes: false });
+      }
 
       // (4) An override shields a tenant on the edited plan from the plan-default change.
       await setLimits(companyB, { events: 20 });
@@ -396,15 +446,18 @@ describe("no-write guarantee and entitlement compatibility", () => {
       expect(catalog.limits.events).toBe(2);
       expect(catalog.overrides.byResource.events).toBeGreaterThanOrEqual(1);
     } finally {
-      await db.update(plansTable).set({ eventsLimit: null }).where(eq(plansTable.id, "starter"));
+      // Restore the EXACT captured original (not a hard-coded default).
+      await db.update(plansTable).set({ eventsLimit: exactOriginal }).where(eq(plansTable.id, "starter"));
       await setLimits(companyB, { events: null });
     }
-    // Restored: both tenants back to their baseline effective limits.
+    // Restored: both tenants back to their baseline effective limits and the row back to its original value.
     const restoredA = (await api("GET", "/subscriptions/current", adminToken)).body;
     expect(limitsOf(restoredA.limits)).toEqual(limitsOf(baselineA.limits));
     const restoredB = (await api("GET", "/subscriptions/current", adminBToken)).body;
     expect(limitsOf(restoredB.limits)).toEqual(limitsOf(baselineB.limits));
     const starter = (await api("GET", "/platform/plans/starter", platformToken)).body;
-    expect(starter.limits.events).toBeNull();
+    expect(starter.limits.events).toBe(exactOriginal);
+    const [{ eventsLimit: rowAfter }] = await db.select({ eventsLimit: plansTable.eventsLimit }).from(plansTable).where(eq(plansTable.id, "starter"));
+    expect(rowAfter).toBe(exactOriginal);
   });
 });

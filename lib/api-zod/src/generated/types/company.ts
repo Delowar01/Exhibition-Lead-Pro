@@ -5,7 +5,6 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { CompanyPlan } from './companyPlan';
 import type { CompanyStatus } from './companyStatus';
 import type { SubscriptionSummary } from './subscriptionSummary';
 
@@ -36,7 +35,8 @@ export interface Company {
   primaryContactEmail?: string | null;
   /** @nullable */
   logoUrl?: string | null;
-  plan: CompanyPlan;
+  /** Plan slug (one of the fixed catalog ids or a builder-created plan) */
+  plan: string;
   status: CompanyStatus;
   /** @nullable */
   suspendedReason?: string | null;

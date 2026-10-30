@@ -14,6 +14,7 @@ import {
   type LimitResource,
   type UsageWindow,
 } from "../lib/billing/lifecycle.js";
+import { limitsAsPlanDefaults } from "../lib/billing/plan-versions.js";
 
 // Batch 20 — central entitlement / usage service. This is the ONLY place that
 // compares usage with a limit. Every creation / import / invitation / role-change
@@ -46,27 +47,36 @@ export interface UsageReport {
 // a company without a canonical subscription row, or a subscription that
 // references a plan that no longer exists, is an integrity fault that must surface
 // as a deterministic error — never as "unlimited".
-export type SubscriptionIntegrityCode = "SUBSCRIPTION_MISSING" | "SUBSCRIPTION_PLAN_INVALID";
+export type SubscriptionIntegrityCode = "SUBSCRIPTION_MISSING" | "SUBSCRIPTION_PLAN_INVALID" | "SUBSCRIPTION_PLAN_VERSION_INVALID";
+
+const INTEGRITY_MESSAGES: Record<SubscriptionIntegrityCode, string> = {
+  SUBSCRIPTION_MISSING: "This company has no canonical subscription record. Contact the platform operator.",
+  SUBSCRIPTION_PLAN_INVALID: "This company's subscription references an unknown plan. Contact the platform operator.",
+  SUBSCRIPTION_PLAN_VERSION_INVALID: "This company's subscription references an invalid plan version. Contact the platform operator.",
+};
 
 export class SubscriptionIntegrityError extends AppError {
   constructor(code: SubscriptionIntegrityCode, companyId: number, plan?: string) {
-    super(
-      409,
-      code === "SUBSCRIPTION_MISSING"
-        ? "This company has no canonical subscription record. Contact the platform operator."
-        : "This company's subscription references an unknown plan. Contact the platform operator.",
-      { code, details: plan ? { companyId, plan } : { companyId } },
-    );
+    super(409, INTEGRITY_MESSAGES[code], { code, details: plan ? { companyId, plan } : { companyId } });
     Object.setPrototypeOf(this, SubscriptionIntegrityError.prototype);
   }
 }
 
-// Effective limits of a subscription. Throws SUBSCRIPTION_PLAN_INVALID when the
-// referenced plan row is missing (the DB FK forbids this for new writes; legacy
-// rows are repaired by scripts/repair-subscriptions.ts).
+// Effective limits of a subscription — the ONLY place the plan defaults are read
+// for entitlement. Batch 40: a subscription PINNED to a plan version reads that
+// version's immutable snapshot limits; a NULL reference (legacy, pre-backfill)
+// reads the plan row exactly as before versioning. Both feed the single resolver.
+// Fails closed: a missing plan row (SUBSCRIPTION_PLAN_INVALID) or a pinned version
+// that is missing, unpublished or belongs to another plan
+// (SUBSCRIPTION_PLAN_VERSION_INVALID) is an integrity fault, never "unlimited".
 export async function effectiveLimitsFor(sub: SubscriptionRow, tx?: Executor): Promise<EffectiveLimit[]> {
   const plan = await repo.findPlanById(sub.plan, tx);
   if (!plan) throw new SubscriptionIntegrityError("SUBSCRIPTION_PLAN_INVALID", sub.companyId, sub.plan);
+  if (sub.planVersionId != null) {
+    const version = await repo.findPlanVersionById(sub.planVersionId, tx);
+    if (!version || version.planId !== sub.plan || !version.publishedAt) throw new SubscriptionIntegrityError("SUBSCRIPTION_PLAN_VERSION_INVALID", sub.companyId, sub.plan);
+    return resolveEffectiveLimits(limitsAsPlanDefaults(version.snapshot.limits), sub.limitOverrides);
+  }
   return resolveEffectiveLimits(plan, sub.limitOverrides);
 }
 

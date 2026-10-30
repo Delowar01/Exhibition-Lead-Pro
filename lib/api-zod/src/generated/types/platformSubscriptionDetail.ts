@@ -10,6 +10,16 @@ import type { ProviderEventDiagnostic } from './providerEventDiagnostic';
 import type { Subscription } from './subscription';
 
 export type PlatformSubscriptionDetail = Subscription & ({
+  /**
+     * Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)
+     * @nullable
+     */
+  planVersionId?: number | null;
+  /**
+     * Version number of the pinned version
+     * @nullable
+     */
+  planVersion?: number | null;
   /** @nullable */
   companyName: string | null;
   limitOverrides: PlatformSubscriptionDetailLimitOverrides;

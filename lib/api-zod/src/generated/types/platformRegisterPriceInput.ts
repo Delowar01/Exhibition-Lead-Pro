@@ -5,10 +5,15 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { PlatformRegisterPriceInputPlanId } from './platformRegisterPriceInputPlanId';
 
 export interface PlatformRegisterPriceInput {
-  planId: PlatformRegisterPriceInputPlanId;
+  /**
+     * Plan slug (draft or published; never archived)
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  planId: string;
   /**
      * @minLength 6
      * @maxLength 128

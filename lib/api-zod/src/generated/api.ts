@@ -962,6 +962,8 @@ export const PlatformGetSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1014,8 +1016,15 @@ export const PlatformSetSubscriptionPlanParams = zod.object({
   "companyId": zod.coerce.number()
 })
 
+export const platformSetSubscriptionPlanBodyPlanMin = 2;
+export const platformSetSubscriptionPlanBodyPlanMax = 40;
+
+
+export const platformSetSubscriptionPlanBodyPlanRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+
+
 export const PlatformSetSubscriptionPlanBody = zod.object({
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise'])
+  "plan": zod.string().min(platformSetSubscriptionPlanBodyPlanMin).max(platformSetSubscriptionPlanBodyPlanMax).regex(platformSetSubscriptionPlanBodyPlanRegExp).describe('A PUBLISHED plan slug; the tenant is pinned to that plan\'s current published version')
 })
 
 export const PlatformSetSubscriptionPlanResponse = zod.object({
@@ -1070,6 +1079,8 @@ export const PlatformSetSubscriptionPlanResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1162,6 +1173,8 @@ export const PlatformStartTrialResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1245,6 +1258,8 @@ export const PlatformActivateSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1328,6 +1343,8 @@ export const PlatformMarkSubscriptionPastDueResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1411,6 +1428,8 @@ export const PlatformCancelSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1494,6 +1513,8 @@ export const PlatformExpireSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1585,6 +1606,8 @@ export const PlatformSuspendSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1668,6 +1691,8 @@ export const PlatformReactivateSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1776,6 +1801,8 @@ export const PlatformSetSubscriptionLimitsResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1859,6 +1886,8 @@ export const PlatformConvertSubscriptionToManualResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1967,7 +1996,7 @@ export const PlatformListPlansResponse = zod.object({
   "scans": zod.number().nullable(),
   "storageMb": zod.number().nullable()
 }).describe('Plan default limits (null = unlimited \/ not enforced)'),
-  "features": zod.record(zod.string(), zod.boolean()).describe('The plan\'s feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan row\'s feature flags (mirror of the current published version\'s fixed feature matrix; informational — feature gating is not enforced until PB-3)'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
@@ -2001,7 +2030,29 @@ export const PlatformListPlansResponse = zod.object({
 }),
   "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
 }),
-  "versioning": zod.enum(['not_versioned']).describe('The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner\'s data-model approval'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('Plan lifecycle state (Batch 40)'),
+  "versioning": zod.enum(['not_versioned', 'versioned']).describe('versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill \/ first publication)'),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "draft": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "versionCount": zod.number(),
+  "publishedVersionCount": zod.number(),
+  "retiredVersionCount": zod.number(),
+  "pinnedSubscriptions": zod.number().describe('Subscribers pinned to a published version of this plan'),
+  "unpinnedSubscriptions": zod.number().describe('Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })),
@@ -2019,8 +2070,68 @@ export const PlatformListPlansResponse = zod.object({
   "available": zod.boolean(),
   "stripeMode": zod.string().nullable()
 }),
-  "readOnly": zod.boolean().describe('Always true — the foundation exposes no plan mutation'),
+  "featureCatalog": zod.array(zod.string()).describe('The fixed feature catalog (U2) every version carries'),
+  "readOnly": zod.boolean().describe('false since Batch 40 — plans change through drafts and immutable published versions; published versions are never edited in place'),
   "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Create a new DRAFT plan (new slug; never one of the five fixed ids). Not assignable or visible to tenants until a version is published.
+ */
+export const platformCreatePlanBodyIdMin = 2;
+export const platformCreatePlanBodyIdMax = 40;
+
+
+export const platformCreatePlanBodyIdRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+export const platformCreatePlanBodyNameMax = 80;
+
+export const platformCreatePlanBodyDescriptionMax = 500;
+
+export const platformCreatePlanBodySortOrderMin = 0;
+export const platformCreatePlanBodySortOrderMax = 1000;
+
+export const platformCreatePlanBodyLimitsContactsMin = 0;
+
+export const platformCreatePlanBodyLimitsEventsMin = 0;
+
+export const platformCreatePlanBodyLimitsAdminsMin = 0;
+
+export const platformCreatePlanBodyLimitsEmployeesMin = 0;
+
+export const platformCreatePlanBodyLimitsScansMin = 0;
+
+export const platformCreatePlanBodyLimitsStorageMbMin = 0;
+
+export const platformCreatePlanBodyTrialPolicyTrialDaysMin = 0;
+export const platformCreatePlanBodyTrialPolicyTrialDaysMax = 365;
+
+export const platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMin = 0;
+export const platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMax = 90;
+
+
+
+export const PlatformCreatePlanBody = zod.object({
+  "id": zod.string().min(platformCreatePlanBodyIdMin).max(platformCreatePlanBodyIdMax).regex(platformCreatePlanBodyIdRegExp).describe('New plan slug; the five fixed ids are reserved'),
+  "name": zod.string().min(1).max(platformCreatePlanBodyNameMax),
+  "description": zod.string().max(platformCreatePlanBodyDescriptionMax).nullish(),
+  "sortOrder": zod.number().min(platformCreatePlanBodySortOrderMin).max(platformCreatePlanBodySortOrderMax).optional(),
+  "limits": zod.object({
+  "contacts": zod.number().min(platformCreatePlanBodyLimitsContactsMin).nullish(),
+  "events": zod.number().min(platformCreatePlanBodyLimitsEventsMin).nullish(),
+  "admins": zod.number().min(platformCreatePlanBodyLimitsAdminsMin).nullish(),
+  "employees": zod.number().min(platformCreatePlanBodyLimitsEmployeesMin).nullish(),
+  "scans": zod.number().min(platformCreatePlanBodyLimitsScansMin).nullish(),
+  "storageMb": zod.number().min(platformCreatePlanBodyLimitsStorageMbMin).nullish()
+}).optional().describe('Partial limits; null = unlimited'),
+  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number().min(platformCreatePlanBodyTrialPolicyTrialDaysMin).max(platformCreatePlanBodyTrialPolicyTrialDaysMax).optional(),
+  "eligible": zod.boolean().optional(),
+  "oncePerCompany": zod.boolean().optional(),
+  "endOutcome": zod.enum(['blocked', 'read_only']).optional(),
+  "readOnlyGraceDays": zod.number().min(platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMin).max(platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMax).optional()
+}).optional()
 })
 
 
@@ -2047,7 +2158,7 @@ export const PlatformGetPlanResponse = zod.object({
   "scans": zod.number().nullable(),
   "storageMb": zod.number().nullable()
 }).describe('Plan default limits (null = unlimited \/ not enforced)'),
-  "features": zod.record(zod.string(), zod.boolean()).describe('The plan\'s feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan row\'s feature flags (mirror of the current published version\'s fixed feature matrix; informational — feature gating is not enforced until PB-3)'),
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
@@ -2081,7 +2192,29 @@ export const PlatformGetPlanResponse = zod.object({
 }),
   "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
 }),
-  "versioning": zod.enum(['not_versioned']).describe('The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner\'s data-model approval'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('Plan lifecycle state (Batch 40)'),
+  "versioning": zod.enum(['not_versioned', 'versioned']).describe('versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill \/ first publication)'),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "draft": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "versionCount": zod.number(),
+  "publishedVersionCount": zod.number(),
+  "retiredVersionCount": zod.number(),
+  "pinnedSubscriptions": zod.number().describe('Subscribers pinned to a published version of this plan'),
+  "unpinnedSubscriptions": zod.number().describe('Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }).and(zod.object({
@@ -2111,7 +2244,735 @@ export const PlatformPreviewPlanLimitsResponse = zod.object({
   "companyId": zod.number(),
   "companyName": zod.string().nullable(),
   "currentPlan": zod.string(),
+  "currentPlanVersionId": zod.number().nullable(),
   "previewPlan": zod.string(),
+  "previewVersionId": zod.number().nullable().describe('The version whose limits were previewed (the plan\'s current published version by default; null = legacy plan row)'),
+  "previewVersion": zod.number().nullable(),
+  "previewVersionState": zod.string().nullable().describe('draft | published | retired (null = legacy plan row)'),
+  "isCurrentPlan": zod.boolean(),
+  "status": zod.string(),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "billingSource": zod.string(),
+  "rows": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "planDefault": zod.number().nullable().describe('The previewed plan\'s default (null = unlimited)'),
+  "override": zod.number().nullable().describe('The tenant\'s own numeric override (null = none)'),
+  "effective": zod.number().nullable().describe('override ?? plan default ?? unlimited, from the single resolver'),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "currentEffective": zod.number().nullable().describe('The tenant\'s effective limit on its current plan'),
+  "changes": zod.boolean().describe('effective differs from currentEffective'),
+  "used": zod.number(),
+  "measurable": zod.boolean(),
+  "remaining": zod.number().nullable(),
+  "exceeds": zod.boolean().describe('Measured usage already exceeds the previewed effective limit (informational)')
+})),
+  "changedResources": zod.array(zod.string()),
+  "blockingResources": zod.array(zod.string()),
+  "readOnly": zod.boolean(),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Duplicate a plan into a NEW draft plan (limits, feature matrix and trial policy copied; provider prices are not copied)
+ */
+export const PlatformDuplicatePlanParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const platformDuplicatePlanBodyIdMin = 2;
+export const platformDuplicatePlanBodyIdMax = 40;
+
+
+export const platformDuplicatePlanBodyIdRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+export const platformDuplicatePlanBodyNameMax = 80;
+
+
+
+export const PlatformDuplicatePlanBody = zod.object({
+  "id": zod.string().min(platformDuplicatePlanBodyIdMin).max(platformDuplicatePlanBodyIdMax).regex(platformDuplicatePlanBodyIdRegExp),
+  "name": zod.string().min(1).max(platformDuplicatePlanBodyNameMax).optional()
+})
+
+
+/**
+ * @summary Archive a builder-created plan that has no subscribers and no draft (fixed catalog ids are never archived here and never deleted)
+ */
+export const PlatformArchivePlanParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const PlatformArchivePlanResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "isActive": zod.boolean(),
+  "seeded": zod.boolean().describe('One of the five fixed catalog identities'),
+  "trialDays": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan row\'s feature flags (mirror of the current published version\'s fixed feature matrix; informational — feature gating is not enforced until PB-3)'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+}))),
+  "activePriceCount": zod.number(),
+  "subscriptions": zod.object({
+  "total": zod.number(),
+  "byStatus": zod.object({
+  "trialing": zod.number(),
+  "active": zod.number(),
+  "past_due": zod.number(),
+  "cancelled": zod.number(),
+  "expired": zod.number(),
+  "suspended": zod.number()
+}),
+  "byBillingSource": zod.object({
+  "manual": zod.number(),
+  "stripe": zod.number()
+}),
+  "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
+}),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('Plan lifecycle state (Batch 40)'),
+  "versioning": zod.enum(['not_versioned', 'versioned']).describe('versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill \/ first publication)'),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "draft": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "versionCount": zod.number(),
+  "publishedVersionCount": zod.number(),
+  "retiredVersionCount": zod.number(),
+  "pinnedSubscriptions": zod.number().describe('Subscribers pinned to a published version of this plan'),
+  "unpinnedSubscriptions": zod.number().describe('Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "overrides": zod.object({
+  "tenantsWithAnyOverride": zod.number(),
+  "byResource": zod.object({
+  "contacts": zod.number(),
+  "events": zod.number(),
+  "admins": zod.number(),
+  "employees": zod.number(),
+  "scans": zod.number(),
+  "storageMb": zod.number()
+})
+})
+}))
+
+
+/**
+ * @summary Version history of a plan (drafts, published and retired versions with subscriber counts)
+ */
+export const PlatformListPlanVersionsParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const PlatformListPlanVersionsResponse = zod.object({
+  "planId": zod.string(),
+  "planStatus": zod.enum(['draft', 'published', 'archived']),
+  "currentVersionId": zod.number().nullable(),
+  "draftVersionId": zod.number().nullable(),
+  "unpinnedSubscribers": zod.number(),
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+}))
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a new draft pre-filled from the current published version (or a chosen published version). One draft per plan.
+ */
+export const PlatformCreatePlanDraftParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const PlatformCreatePlanDraftBody = zod.object({
+  "sourceVersionId": zod.number().optional().describe('A PUBLISHED version to pre-fill from (default = the current published version)')
+})
+
+
+/**
+ * @summary One plan version with its applicable prices and (for drafts) the publication validation
+ */
+export const PlatformGetPlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformGetPlanVersionResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+}))
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "validation": zod.union([zod.object({
+  "planId": zod.string(),
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "ok": zod.boolean().describe('Content validation passed (limits consistent, feature keys from the catalog, trial policy complete, prices verified in the configured provider mode)'),
+  "errors": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "blockers": zod.array(zod.object({
+  "code": zod.enum(['VERSION_IMMUTABLE', 'VERSION_RETIRED', 'PLAN_ARCHIVED', 'UNPINNED_SUBSCRIBERS']),
+  "message": zod.string(),
+  "count": zod.number().optional()
+})),
+  "publishable": zod.boolean().describe('ok and no blocker'),
+  "pricesConsidered": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "providerMode": zod.enum(['test', 'live'])
+}),zod.null()])
+}))
+
+
+/**
+ * @summary Edit a DRAFT version (display fields, limits, feature matrix, trial policy). A published version answers 409 VERSION_IMMUTABLE.
+ */
+export const PlatformUpdatePlanDraftParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const platformUpdatePlanDraftBodyNameMax = 80;
+
+export const platformUpdatePlanDraftBodyDescriptionMax = 500;
+
+export const platformUpdatePlanDraftBodySortOrderMin = 0;
+export const platformUpdatePlanDraftBodySortOrderMax = 1000;
+
+export const platformUpdatePlanDraftBodyLimitsContactsMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsEventsMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsAdminsMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsEmployeesMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsScansMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsStorageMbMin = 0;
+
+export const platformUpdatePlanDraftBodyTrialPolicyTrialDaysMin = 0;
+export const platformUpdatePlanDraftBodyTrialPolicyTrialDaysMax = 365;
+
+export const platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMin = 0;
+export const platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMax = 90;
+
+
+
+export const PlatformUpdatePlanDraftBody = zod.object({
+  "name": zod.string().min(1).max(platformUpdatePlanDraftBodyNameMax).optional(),
+  "description": zod.string().max(platformUpdatePlanDraftBodyDescriptionMax).nullish(),
+  "sortOrder": zod.number().min(platformUpdatePlanDraftBodySortOrderMin).max(platformUpdatePlanDraftBodySortOrderMax).optional(),
+  "limits": zod.object({
+  "contacts": zod.number().min(platformUpdatePlanDraftBodyLimitsContactsMin).nullish(),
+  "events": zod.number().min(platformUpdatePlanDraftBodyLimitsEventsMin).nullish(),
+  "admins": zod.number().min(platformUpdatePlanDraftBodyLimitsAdminsMin).nullish(),
+  "employees": zod.number().min(platformUpdatePlanDraftBodyLimitsEmployeesMin).nullish(),
+  "scans": zod.number().min(platformUpdatePlanDraftBodyLimitsScansMin).nullish(),
+  "storageMb": zod.number().min(platformUpdatePlanDraftBodyLimitsStorageMbMin).nullish()
+}).optional().describe('Partial limits; null = unlimited'),
+  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number().min(platformUpdatePlanDraftBodyTrialPolicyTrialDaysMin).max(platformUpdatePlanDraftBodyTrialPolicyTrialDaysMax).optional(),
+  "eligible": zod.boolean().optional(),
+  "oncePerCompany": zod.boolean().optional(),
+  "endOutcome": zod.enum(['blocked', 'read_only']).optional(),
+  "readOnlyGraceDays": zod.number().min(platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMin).max(platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMax).optional()
+}).optional()
+})
+
+export const PlatformUpdatePlanDraftResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+}))
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a DRAFT version (published versions are never deleted; a version with subscribers is never deleted)
+ */
+export const PlatformDeletePlanDraftParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformDeletePlanDraftResponse = zod.object({
+  "deleted": zod.boolean(),
+  "versionId": zod.number(),
+  "planDeleted": zod.boolean().describe('true when the deleted draft was the only version of a never-published plan (the plan row was removed too)')
+})
+
+
+/**
+ * @summary Publication validation of a version (read-only; nothing is changed)
+ */
+export const PlatformValidatePlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformValidatePlanVersionResponse = zod.object({
+  "planId": zod.string(),
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "ok": zod.boolean().describe('Content validation passed (limits consistent, feature keys from the catalog, trial policy complete, prices verified in the configured provider mode)'),
+  "errors": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "blockers": zod.array(zod.object({
+  "code": zod.enum(['VERSION_IMMUTABLE', 'VERSION_RETIRED', 'PLAN_ARCHIVED', 'UNPINNED_SUBSCRIBERS']),
+  "message": zod.string(),
+  "count": zod.number().optional()
+})),
+  "publishable": zod.boolean().describe('ok and no blocker'),
+  "pricesConsidered": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "providerMode": zod.enum(['test', 'live'])
+})
+
+
+/**
+ * @summary Publish a draft as an immutable version (atomic, re-validated under lock; never moves existing subscribers; refused while legacy unpinned subscribers exist)
+ */
+export const PlatformPublishPlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformPublishPlanVersionResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+}))
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Retire a published version (no longer assignable to new tenants; subscribers keep it; the last published version cannot be retired)
+ */
+export const PlatformRetirePlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformRetirePlanVersionResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); informational until feature gating (PB-3) is approved'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+}))
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Tenant impact preview of publishing (draft) or retiring (published) a version — read-only
+ */
+export const PlatformPlanVersionImpactParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformPlanVersionImpactResponse = zod.object({
+  "planId": zod.string(),
+  "planStatus": zod.enum(['draft', 'published', 'archived']),
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "planSubscribers": zod.number(),
+  "unpinnedSubscribers": zod.number(),
+  "subscribersOnVersion": zod.number(),
+  "subscribersByVersion": zod.array(zod.object({
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "subscribers": zod.number()
+})),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "generatedAt": zod.coerce.date(),
+  "publish": zod.union([zod.object({
+  "subscribersMoved": zod.number().describe('Always 0 — publishing never moves an existing subscriber'),
+  "wouldBecomeCurrent": zod.boolean(),
+  "newTenantsGetThisVersion": zod.boolean(),
+  "diffVsCurrent": zod.array(zod.object({
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy']),
+  "field": zod.string(),
+  "left": zod.unknown().describe('string | number | boolean | null'),
+  "right": zod.unknown().describe('string | number | boolean | null'),
+  "changed": zod.boolean()
+})),
+  "tightenedLimits": zod.array(zod.string()),
+  "tenantsExceedingNewLimits": zod.object({
+  "checked": zod.number(),
+  "sampled": zod.boolean(),
+  "tenants": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "status": zod.string(),
+  "resources": zod.array(zod.object({
+  "resource": zod.string(),
+  "limit": zod.number(),
+  "used": zod.number()
+}))
+}))
+}),
+  "blockers": zod.array(zod.object({
+  "code": zod.enum(['VERSION_IMMUTABLE', 'VERSION_RETIRED', 'PLAN_ARCHIVED', 'UNPINNED_SUBSCRIBERS']),
+  "message": zod.string(),
+  "count": zod.number().optional()
+}))
+}),zod.null()]),
+  "retire": zod.union([zod.object({
+  "subscribersKept": zod.number(),
+  "subscribersByStatus": zod.record(zod.string(), zod.number()),
+  "isCurrent": zod.boolean(),
+  "isLastPublished": zod.boolean(),
+  "alreadyRetired": zod.boolean(),
+  "newCurrentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()])
+}),zod.null()])
+})
+
+
+/**
+ * @summary Field-by-field comparison of two versions of a plan
+ */
+export const PlatformComparePlanVersionsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number(),
+  "otherVersionId": zod.coerce.number()
+})
+
+export const PlatformComparePlanVersionsResponse = zod.object({
+  "planId": zod.string(),
+  "left": zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),
+  "right": zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),
+  "rows": zod.array(zod.object({
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy']),
+  "field": zod.string(),
+  "left": zod.unknown().describe('string | number | boolean | null'),
+  "right": zod.unknown().describe('string | number | boolean | null'),
+  "changed": zod.boolean()
+})),
+  "changedFields": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "loosenedLimits": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a specific version (draft or published) — the single resolver with the tenant's own overrides
+ */
+export const PlatformPreviewPlanVersionLimitsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number(),
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformPreviewPlanVersionLimitsResponse = zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "currentPlan": zod.string(),
+  "currentPlanVersionId": zod.number().nullable(),
+  "previewPlan": zod.string(),
+  "previewVersionId": zod.number().nullable().describe('The version whose limits were previewed (the plan\'s current published version by default; null = legacy plan row)'),
+  "previewVersion": zod.number().nullable(),
+  "previewVersionState": zod.string().nullable().describe('draft | published | retired (null = legacy plan row)'),
   "isCurrentPlan": zod.boolean(),
   "status": zod.string(),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -2179,13 +3040,18 @@ export const PlatformListPricesResponse = zod.object({
 /**
  * @summary Register a provider price id for a plan (interval/currency/amount are retrieved from the provider, never from the request)
  */
+export const platformRegisterPriceBodyPlanIdMin = 2;
+export const platformRegisterPriceBodyPlanIdMax = 40;
+
+
+export const platformRegisterPriceBodyPlanIdRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
 export const platformRegisterPriceBodyProviderPriceIdMin = 6;
 export const platformRegisterPriceBodyProviderPriceIdMax = 128;
 
 
 
 export const PlatformRegisterPriceBody = zod.object({
-  "planId": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "planId": zod.string().min(platformRegisterPriceBodyPlanIdMin).max(platformRegisterPriceBodyPlanIdMax).regex(platformRegisterPriceBodyPlanIdRegExp).describe('Plan slug (draft or published; never archived)'),
   "providerPriceId": zod.string().min(platformRegisterPriceBodyProviderPriceIdMin).max(platformRegisterPriceBodyProviderPriceIdMax)
 })
 
@@ -2249,7 +3115,7 @@ export const ListCompaniesResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2279,6 +3145,12 @@ export const ListCompaniesResponse = zod.object({
  * @summary Create company
  */
 export const createCompanyBodyPlanDefault = `free`;
+export const createCompanyBodyPlanMin = 2;
+export const createCompanyBodyPlanMax = 40;
+
+
+export const createCompanyBodyPlanRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+
 
 export const CreateCompanyBody = zod.object({
   "name": zod.string(),
@@ -2293,7 +3165,7 @@ export const CreateCompanyBody = zod.object({
   "currency": zod.string().nullish(),
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']).default(createCompanyBodyPlanDefault)
+  "plan": zod.string().min(createCompanyBodyPlanMin).max(createCompanyBodyPlanMax).regex(createCompanyBodyPlanRegExp).default(createCompanyBodyPlanDefault).describe('A PUBLISHED plan slug (fixed catalog id or builder-created plan)')
 })
 
 
@@ -2319,7 +3191,7 @@ export const GetCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2378,7 +3250,7 @@ export const UpdateCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2663,7 +3535,7 @@ export const SuspendCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2707,7 +3579,7 @@ export const ActivateCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),

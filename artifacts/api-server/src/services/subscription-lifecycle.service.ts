@@ -5,7 +5,7 @@ import { logger } from "../lib/logger.js";
 import type { Executor } from "../repositories/base.js";
 import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
-import { findPlan } from "../lib/billing/plan-catalog.js";
+import { findAssignablePlan, resolvePlanAssignment } from "../lib/billing/plan-catalog.js";
 import {
   checkTransition,
   legacyCompanyStatus,
@@ -102,7 +102,10 @@ export interface CreateSubscriptionOptions {
 // plan configures a default).
 export async function createSubscriptionForCompany(tx: Executor, company: { id: number; name: string }, opts: CreateSubscriptionOptions): Promise<SubscriptionRow> {
   const plan = opts.plan ?? "free";
-  if (!(await findPlan(plan, tx))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+  // Batch 40: only a PUBLISHED plan is assignable; the new row pins to the plan's
+  // current published version (null = legacy reference while no version exists).
+  const assignment = await resolvePlanAssignment(plan, tx);
+  if (!assignment) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
   const now = new Date();
   const days = opts.trialDays ?? config.billing.trialDays;
   const trialExpiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -110,6 +113,7 @@ export async function createSubscriptionForCompany(tx: Executor, company: { id: 
     {
       companyId: company.id,
       plan,
+      planVersionId: assignment.planVersionId,
       status: "trialing",
       billingSource: "manual",
       trialStartedAt: now,
@@ -123,7 +127,7 @@ export async function createSubscriptionForCompany(tx: Executor, company: { id: 
     tx,
   );
   await repo.writeCompanyMirror(company.id, mirrorFor(sub), tx);
-  await writeSubscriptionAudit(tx, { action: "subscription.create", companyId: company.id, subscriptionId: sub.id, before: null, after: sub, actor: opts.actor, extra: { trialDays: days } });
+  await writeSubscriptionAudit(tx, { action: "subscription.create", companyId: company.id, subscriptionId: sub.id, before: null, after: sub, actor: opts.actor, extra: { trialDays: days, planVersionId: assignment.planVersionId } });
   return sub;
 }
 
@@ -131,11 +135,14 @@ export async function createSubscriptionForCompany(tx: Executor, company: { id: 
 
 export async function setPlan(companyId: number, actor: Actor, input: { plan?: unknown }): Promise<SubscriptionRow> {
   const plan = typeof input.plan === "string" ? input.plan : "";
-  if (!(await findPlan(plan))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+  if (!(await findAssignablePlan(plan))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
   return withLockedSubscription(companyId, async (tx, sub) => {
     assertTransition("set_plan", sub);
-    if (sub.plan === plan) return sub;
-    return commitChange(tx, sub, { plan }, "subscription.set_plan", actor);
+    if (sub.plan === plan) return sub; // same plan: the tenant's pinned version is never moved implicitly
+    // Batch 40: explicit pin to the target plan's current published version.
+    const assignment = await resolvePlanAssignment(plan, tx);
+    if (!assignment) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+    return commitChange(tx, sub, { plan, planVersionId: assignment.planVersionId }, "subscription.set_plan", actor, { planVersionId: assignment.planVersionId });
   });
 }
 
@@ -439,8 +446,17 @@ export async function applyProviderState(
   if (mappedPrice && mappedPrice.providerMode !== configuredStripeMode()) throw new ProviderModeMismatchError();
   const priceChanged = remote.priceId !== sub.stripePriceId || replaced || !sub.stripeSubscriptionId;
   if (remoteLive && !mappedPrice && (priceChanged || !remote.priceId)) throw new ProviderPriceUnmappedError();
+  // Batch 40: a provider-driven plan change pins the tenant to the price's bound
+  // version or the plan's current published version; a price whose plan is not
+  // published (draft / archived) can never change entitlement → unmapped.
+  let planPatch: Partial<SubscriptionRow> = {};
+  if (mappedPrice && mappedPrice.planId !== sub.plan) {
+    const assignment = await resolvePlanAssignment(mappedPrice.planId, tx);
+    if (!assignment) throw new ProviderPriceUnmappedError();
+    planPatch = { plan: mappedPrice.planId, planVersionId: mappedPrice.planVersionId ?? assignment.planVersionId };
+  }
   const patch: Partial<SubscriptionRow> = {
-    ...(mappedPrice ? { plan: mappedPrice.planId } : {}),
+    ...planPatch,
     billingSource: "stripe",
     stripeSubscriptionId: remote.id,
     stripeCustomerId: sub.stripeCustomerId ?? (remote.customerId || null),
@@ -464,7 +480,7 @@ export async function applyProviderState(
     }
   }
   // Skip the write when nothing observable changed (idempotent redelivery).
-  const observable = ["plan", "status", "statusBeforeSuspension", "stripeSubscriptionId", "stripeCustomerId", "stripePriceId", "providerStatus", "currentPeriodStartsAt", "currentPeriodEndsAt", "cancelAtPeriodEnd", "canceledAt", "endedAt", "trialExpiresAt", "billingSource"] as const;
+  const observable = ["plan", "planVersionId", "status", "statusBeforeSuspension", "stripeSubscriptionId", "stripeCustomerId", "stripePriceId", "providerStatus", "currentPeriodStartsAt", "currentPeriodEndsAt", "cancelAtPeriodEnd", "canceledAt", "endedAt", "trialExpiresAt", "billingSource"] as const;
   const same = observable.every((k) => {
     const a = sub[k];
     const b = patch[k];

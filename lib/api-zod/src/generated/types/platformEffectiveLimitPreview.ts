@@ -13,7 +13,21 @@ export interface PlatformEffectiveLimitPreview {
   /** @nullable */
   companyName: string | null;
   currentPlan: string;
+  /** @nullable */
+  currentPlanVersionId: number | null;
   previewPlan: string;
+  /**
+     * The version whose limits were previewed (the plan's current published version by default; null = legacy plan row)
+     * @nullable
+     */
+  previewVersionId: number | null;
+  /** @nullable */
+  previewVersion: number | null;
+  /**
+     * draft | published | retired (null = legacy plan row)
+     * @nullable
+     */
+  previewVersionState: string | null;
   isCurrentPlan: boolean;
   status: string;
   accessMode: PlatformEffectiveLimitPreviewAccessMode;

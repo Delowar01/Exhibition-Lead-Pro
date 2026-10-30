@@ -7,9 +7,11 @@
  */
 import type { PlatformPlanLimits } from './platformPlanLimits';
 import type { PlatformPlanOverviewFeatures } from './platformPlanOverviewFeatures';
+import type { PlatformPlanOverviewStatus } from './platformPlanOverviewStatus';
 import type { PlatformPlanOverviewVersioning } from './platformPlanOverviewVersioning';
 import type { PlatformPlanPrice } from './platformPlanPrice';
 import type { PlatformPlanSubscriptionCounts } from './platformPlanSubscriptionCounts';
+import type { PlatformPlanVersionSummary } from './platformPlanVersionSummary';
 
 export interface PlatformPlanOverview {
   id: string;
@@ -22,13 +24,24 @@ export interface PlatformPlanOverview {
   seeded: boolean;
   trialDays: number;
   limits: PlatformPlanLimits;
-  /** The plan's feature flags as stored (empty today; the fixed feature catalog of PB-3 is pending owner approval) */
+  /** The plan row's feature flags (mirror of the current published version's fixed feature matrix; informational — feature gating is not enforced until PB-3) */
   features: PlatformPlanOverviewFeatures;
   prices: PlatformPlanPrice[];
   activePriceCount: number;
   subscriptions: PlatformPlanSubscriptionCounts;
-  /** The fixed catalog is not versioned; published-plan immutability and drafts (PB-2) require the owner's data-model approval */
+  /** Plan lifecycle state (Batch 40) */
+  status: PlatformPlanOverviewStatus;
+  /** versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill / first publication) */
   versioning: PlatformPlanOverviewVersioning;
+  currentVersion: PlatformPlanVersionSummary | null;
+  draft: PlatformPlanVersionSummary | null;
+  versionCount: number;
+  publishedVersionCount: number;
+  retiredVersionCount: number;
+  /** Subscribers pinned to a published version of this plan */
+  pinnedSubscriptions: number;
+  /** Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist */
+  unpinnedSubscriptions: number;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -15,7 +15,9 @@ export interface PlatformPlanCatalog {
   limitResources: PlatformPlanCatalogLimitResourcesItem[];
   trialPolicy: PlatformPlanTrialPolicy;
   provider: PlatformPlanCatalogProvider;
-  /** Always true — the foundation exposes no plan mutation */
+  /** The fixed feature catalog (U2) every version carries */
+  featureCatalog: string[];
+  /** false since Batch 40 — plans change through drafts and immutable published versions; published versions are never edited in place */
   readOnly: boolean;
   generatedAt: Date;
 }

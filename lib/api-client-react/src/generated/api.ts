@@ -266,12 +266,23 @@ import type {
   PipelineView,
   Plan,
   PlatformBillingStatus,
+  PlatformCreateDraftInput,
+  PlatformCreatePlanInput,
+  PlatformDuplicatePlanInput,
   PlatformEffectiveLimitPreview,
   PlatformListSubscriptionsParams,
   PlatformPlanCatalog,
+  PlatformPlanCreateResult,
   PlatformPlanDetail,
   PlatformPlanPrice,
   PlatformPlanPriceList,
+  PlatformPlanVersion,
+  PlatformPlanVersionComparison,
+  PlatformPlanVersionDeleted,
+  PlatformPlanVersionDetail,
+  PlatformPlanVersionImpact,
+  PlatformPlanVersionList,
+  PlatformPlanVersionValidation,
   PlatformRegisterPriceInput,
   PlatformSetSubscriptionLimitsInput,
   PlatformSetSubscriptionPlanInput,
@@ -282,6 +293,7 @@ import type {
   PlatformSubscriptionMetrics,
   PlatformSuspendSubscriptionInput,
   PlatformSyncResult,
+  PlatformUpdateDraftInput,
   PlatformUpdatePriceInput,
   PortalSessionResponse,
   Profile,
@@ -4654,6 +4666,77 @@ export function usePlatformListPlans<TData = Awaited<ReturnType<typeof platformL
 
 
 
+export const getPlatformCreatePlanUrl = () => {
+
+
+
+
+  return `/api/platform/plans`
+}
+
+/**
+ * @summary Create a new DRAFT plan (new slug; never one of the five fixed ids). Not assignable or visible to tenants until a version is published.
+ */
+export const platformCreatePlan = async (platformCreatePlanInput: PlatformCreatePlanInput, options?: RequestInit): Promise<PlatformPlanCreateResult> => {
+
+  return customFetch<PlatformPlanCreateResult>(getPlatformCreatePlanUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      platformCreatePlanInput,)
+  }
+);}
+
+
+
+
+export const getPlatformCreatePlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformCreatePlan>>, TError,{data: BodyType<PlatformCreatePlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformCreatePlan>>, TError,{data: BodyType<PlatformCreatePlanInput>}, TContext> => {
+
+const mutationKey = ['platformCreatePlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformCreatePlan>>, {data: BodyType<PlatformCreatePlanInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  platformCreatePlan(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformCreatePlanMutationResult = NonNullable<Awaited<ReturnType<typeof platformCreatePlan>>>
+    export type PlatformCreatePlanMutationBody = BodyType<PlatformCreatePlanInput>
+    export type PlatformCreatePlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a new DRAFT plan (new slug; never one of the five fixed ids). Not assignable or visible to tenants until a version is published.
+ */
+export const usePlatformCreatePlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformCreatePlan>>, TError,{data: BodyType<PlatformCreatePlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformCreatePlan>>,
+        TError,
+        {data: BodyType<PlatformCreatePlanInput>},
+        TContext
+      > => {
+      return useMutation(getPlatformCreatePlanMutationOptions(options));
+    }
+
 export const getPlatformGetPlanUrl = (planId: string,) => {
 
 
@@ -4801,6 +4884,997 @@ export function usePlatformPreviewPlanLimits<TData = Awaited<ReturnType<typeof p
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getPlatformPreviewPlanLimitsQueryOptions(planId,companyId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPlatformDuplicatePlanUrl = (planId: string,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/duplicate`
+}
+
+/**
+ * @summary Duplicate a plan into a NEW draft plan (limits, feature matrix and trial policy copied; provider prices are not copied)
+ */
+export const platformDuplicatePlan = async (planId: string,
+    platformDuplicatePlanInput: PlatformDuplicatePlanInput, options?: RequestInit): Promise<PlatformPlanCreateResult> => {
+
+  return customFetch<PlatformPlanCreateResult>(getPlatformDuplicatePlanUrl(planId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      platformDuplicatePlanInput,)
+  }
+);}
+
+
+
+
+export const getPlatformDuplicatePlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformDuplicatePlan>>, TError,{planId: string;data: BodyType<PlatformDuplicatePlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformDuplicatePlan>>, TError,{planId: string;data: BodyType<PlatformDuplicatePlanInput>}, TContext> => {
+
+const mutationKey = ['platformDuplicatePlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformDuplicatePlan>>, {planId: string;data: BodyType<PlatformDuplicatePlanInput>}> = (props) => {
+          const {planId,data} = props ?? {};
+
+          return  platformDuplicatePlan(planId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformDuplicatePlanMutationResult = NonNullable<Awaited<ReturnType<typeof platformDuplicatePlan>>>
+    export type PlatformDuplicatePlanMutationBody = BodyType<PlatformDuplicatePlanInput>
+    export type PlatformDuplicatePlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Duplicate a plan into a NEW draft plan (limits, feature matrix and trial policy copied; provider prices are not copied)
+ */
+export const usePlatformDuplicatePlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformDuplicatePlan>>, TError,{planId: string;data: BodyType<PlatformDuplicatePlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformDuplicatePlan>>,
+        TError,
+        {planId: string;data: BodyType<PlatformDuplicatePlanInput>},
+        TContext
+      > => {
+      return useMutation(getPlatformDuplicatePlanMutationOptions(options));
+    }
+
+export const getPlatformArchivePlanUrl = (planId: string,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/archive`
+}
+
+/**
+ * @summary Archive a builder-created plan that has no subscribers and no draft (fixed catalog ids are never archived here and never deleted)
+ */
+export const platformArchivePlan = async (planId: string, options?: RequestInit): Promise<PlatformPlanDetail> => {
+
+  return customFetch<PlatformPlanDetail>(getPlatformArchivePlanUrl(planId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPlatformArchivePlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformArchivePlan>>, TError,{planId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformArchivePlan>>, TError,{planId: string}, TContext> => {
+
+const mutationKey = ['platformArchivePlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformArchivePlan>>, {planId: string}> = (props) => {
+          const {planId} = props ?? {};
+
+          return  platformArchivePlan(planId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformArchivePlanMutationResult = NonNullable<Awaited<ReturnType<typeof platformArchivePlan>>>
+
+    export type PlatformArchivePlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Archive a builder-created plan that has no subscribers and no draft (fixed catalog ids are never archived here and never deleted)
+ */
+export const usePlatformArchivePlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformArchivePlan>>, TError,{planId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformArchivePlan>>,
+        TError,
+        {planId: string},
+        TContext
+      > => {
+      return useMutation(getPlatformArchivePlanMutationOptions(options));
+    }
+
+export const getPlatformListPlanVersionsUrl = (planId: string,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions`
+}
+
+/**
+ * @summary Version history of a plan (drafts, published and retired versions with subscriber counts)
+ */
+export const platformListPlanVersions = async (planId: string, options?: RequestInit): Promise<PlatformPlanVersionList> => {
+
+  return customFetch<PlatformPlanVersionList>(getPlatformListPlanVersionsUrl(planId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformListPlanVersionsQueryKey = (planId: string,) => {
+    return [
+    `/api/platform/plans/${planId}/versions`
+    ] as const;
+    }
+
+
+export const getPlatformListPlanVersionsQueryOptions = <TData = Awaited<ReturnType<typeof platformListPlanVersions>>, TError = ErrorType<unknown>>(planId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformListPlanVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformListPlanVersionsQueryKey(planId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformListPlanVersions>>> = ({ signal }) => platformListPlanVersions(planId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(planId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformListPlanVersions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformListPlanVersionsQueryResult = NonNullable<Awaited<ReturnType<typeof platformListPlanVersions>>>
+export type PlatformListPlanVersionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Version history of a plan (drafts, published and retired versions with subscriber counts)
+ */
+
+export function usePlatformListPlanVersions<TData = Awaited<ReturnType<typeof platformListPlanVersions>>, TError = ErrorType<unknown>>(
+ planId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformListPlanVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformListPlanVersionsQueryOptions(planId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPlatformCreatePlanDraftUrl = (planId: string,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions`
+}
+
+/**
+ * @summary Create a new draft pre-filled from the current published version (or a chosen published version). One draft per plan.
+ */
+export const platformCreatePlanDraft = async (planId: string,
+    platformCreateDraftInput?: PlatformCreateDraftInput, options?: RequestInit): Promise<PlatformPlanVersion> => {
+
+  return customFetch<PlatformPlanVersion>(getPlatformCreatePlanDraftUrl(planId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      platformCreateDraftInput,)
+  }
+);}
+
+
+
+
+export const getPlatformCreatePlanDraftMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformCreatePlanDraft>>, TError,{planId: string;data?: BodyType<PlatformCreateDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformCreatePlanDraft>>, TError,{planId: string;data?: BodyType<PlatformCreateDraftInput>}, TContext> => {
+
+const mutationKey = ['platformCreatePlanDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformCreatePlanDraft>>, {planId: string;data?: BodyType<PlatformCreateDraftInput>}> = (props) => {
+          const {planId,data} = props ?? {};
+
+          return  platformCreatePlanDraft(planId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformCreatePlanDraftMutationResult = NonNullable<Awaited<ReturnType<typeof platformCreatePlanDraft>>>
+    export type PlatformCreatePlanDraftMutationBody = BodyType<PlatformCreateDraftInput> | undefined
+    export type PlatformCreatePlanDraftMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a new draft pre-filled from the current published version (or a chosen published version). One draft per plan.
+ */
+export const usePlatformCreatePlanDraft = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformCreatePlanDraft>>, TError,{planId: string;data?: BodyType<PlatformCreateDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformCreatePlanDraft>>,
+        TError,
+        {planId: string;data?: BodyType<PlatformCreateDraftInput>},
+        TContext
+      > => {
+      return useMutation(getPlatformCreatePlanDraftMutationOptions(options));
+    }
+
+export const getPlatformGetPlanVersionUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}`
+}
+
+/**
+ * @summary One plan version with its applicable prices and (for drafts) the publication validation
+ */
+export const platformGetPlanVersion = async (planId: string,
+    versionId: number, options?: RequestInit): Promise<PlatformPlanVersionDetail> => {
+
+  return customFetch<PlatformPlanVersionDetail>(getPlatformGetPlanVersionUrl(planId,versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformGetPlanVersionQueryKey = (planId: string,
+    versionId: number,) => {
+    return [
+    `/api/platform/plans/${planId}/versions/${versionId}`
+    ] as const;
+    }
+
+
+export const getPlatformGetPlanVersionQueryOptions = <TData = Awaited<ReturnType<typeof platformGetPlanVersion>>, TError = ErrorType<unknown>>(planId: string,
+    versionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformGetPlanVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformGetPlanVersionQueryKey(planId,versionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformGetPlanVersion>>> = ({ signal }) => platformGetPlanVersion(planId,versionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(planId && versionId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformGetPlanVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformGetPlanVersionQueryResult = NonNullable<Awaited<ReturnType<typeof platformGetPlanVersion>>>
+export type PlatformGetPlanVersionQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary One plan version with its applicable prices and (for drafts) the publication validation
+ */
+
+export function usePlatformGetPlanVersion<TData = Awaited<ReturnType<typeof platformGetPlanVersion>>, TError = ErrorType<unknown>>(
+ planId: string,
+    versionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformGetPlanVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformGetPlanVersionQueryOptions(planId,versionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPlatformUpdatePlanDraftUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}`
+}
+
+/**
+ * @summary Edit a DRAFT version (display fields, limits, feature matrix, trial policy). A published version answers 409 VERSION_IMMUTABLE.
+ */
+export const platformUpdatePlanDraft = async (planId: string,
+    versionId: number,
+    platformUpdateDraftInput: PlatformUpdateDraftInput, options?: RequestInit): Promise<PlatformPlanVersion> => {
+
+  return customFetch<PlatformPlanVersion>(getPlatformUpdatePlanDraftUrl(planId,versionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      platformUpdateDraftInput,)
+  }
+);}
+
+
+
+
+export const getPlatformUpdatePlanDraftMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformUpdatePlanDraft>>, TError,{planId: string;versionId: number;data: BodyType<PlatformUpdateDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformUpdatePlanDraft>>, TError,{planId: string;versionId: number;data: BodyType<PlatformUpdateDraftInput>}, TContext> => {
+
+const mutationKey = ['platformUpdatePlanDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformUpdatePlanDraft>>, {planId: string;versionId: number;data: BodyType<PlatformUpdateDraftInput>}> = (props) => {
+          const {planId,versionId,data} = props ?? {};
+
+          return  platformUpdatePlanDraft(planId,versionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformUpdatePlanDraftMutationResult = NonNullable<Awaited<ReturnType<typeof platformUpdatePlanDraft>>>
+    export type PlatformUpdatePlanDraftMutationBody = BodyType<PlatformUpdateDraftInput>
+    export type PlatformUpdatePlanDraftMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Edit a DRAFT version (display fields, limits, feature matrix, trial policy). A published version answers 409 VERSION_IMMUTABLE.
+ */
+export const usePlatformUpdatePlanDraft = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformUpdatePlanDraft>>, TError,{planId: string;versionId: number;data: BodyType<PlatformUpdateDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformUpdatePlanDraft>>,
+        TError,
+        {planId: string;versionId: number;data: BodyType<PlatformUpdateDraftInput>},
+        TContext
+      > => {
+      return useMutation(getPlatformUpdatePlanDraftMutationOptions(options));
+    }
+
+export const getPlatformDeletePlanDraftUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}`
+}
+
+/**
+ * @summary Delete a DRAFT version (published versions are never deleted; a version with subscribers is never deleted)
+ */
+export const platformDeletePlanDraft = async (planId: string,
+    versionId: number, options?: RequestInit): Promise<PlatformPlanVersionDeleted> => {
+
+  return customFetch<PlatformPlanVersionDeleted>(getPlatformDeletePlanDraftUrl(planId,versionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getPlatformDeletePlanDraftMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformDeletePlanDraft>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformDeletePlanDraft>>, TError,{planId: string;versionId: number}, TContext> => {
+
+const mutationKey = ['platformDeletePlanDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformDeletePlanDraft>>, {planId: string;versionId: number}> = (props) => {
+          const {planId,versionId} = props ?? {};
+
+          return  platformDeletePlanDraft(planId,versionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformDeletePlanDraftMutationResult = NonNullable<Awaited<ReturnType<typeof platformDeletePlanDraft>>>
+
+    export type PlatformDeletePlanDraftMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a DRAFT version (published versions are never deleted; a version with subscribers is never deleted)
+ */
+export const usePlatformDeletePlanDraft = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformDeletePlanDraft>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformDeletePlanDraft>>,
+        TError,
+        {planId: string;versionId: number},
+        TContext
+      > => {
+      return useMutation(getPlatformDeletePlanDraftMutationOptions(options));
+    }
+
+export const getPlatformValidatePlanVersionUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}/validate`
+}
+
+/**
+ * @summary Publication validation of a version (read-only; nothing is changed)
+ */
+export const platformValidatePlanVersion = async (planId: string,
+    versionId: number, options?: RequestInit): Promise<PlatformPlanVersionValidation> => {
+
+  return customFetch<PlatformPlanVersionValidation>(getPlatformValidatePlanVersionUrl(planId,versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPlatformValidatePlanVersionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformValidatePlanVersion>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformValidatePlanVersion>>, TError,{planId: string;versionId: number}, TContext> => {
+
+const mutationKey = ['platformValidatePlanVersion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformValidatePlanVersion>>, {planId: string;versionId: number}> = (props) => {
+          const {planId,versionId} = props ?? {};
+
+          return  platformValidatePlanVersion(planId,versionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformValidatePlanVersionMutationResult = NonNullable<Awaited<ReturnType<typeof platformValidatePlanVersion>>>
+
+    export type PlatformValidatePlanVersionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Publication validation of a version (read-only; nothing is changed)
+ */
+export const usePlatformValidatePlanVersion = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformValidatePlanVersion>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformValidatePlanVersion>>,
+        TError,
+        {planId: string;versionId: number},
+        TContext
+      > => {
+      return useMutation(getPlatformValidatePlanVersionMutationOptions(options));
+    }
+
+export const getPlatformPublishPlanVersionUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}/publish`
+}
+
+/**
+ * @summary Publish a draft as an immutable version (atomic, re-validated under lock; never moves existing subscribers; refused while legacy unpinned subscribers exist)
+ */
+export const platformPublishPlanVersion = async (planId: string,
+    versionId: number, options?: RequestInit): Promise<PlatformPlanVersion> => {
+
+  return customFetch<PlatformPlanVersion>(getPlatformPublishPlanVersionUrl(planId,versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPlatformPublishPlanVersionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformPublishPlanVersion>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformPublishPlanVersion>>, TError,{planId: string;versionId: number}, TContext> => {
+
+const mutationKey = ['platformPublishPlanVersion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformPublishPlanVersion>>, {planId: string;versionId: number}> = (props) => {
+          const {planId,versionId} = props ?? {};
+
+          return  platformPublishPlanVersion(planId,versionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformPublishPlanVersionMutationResult = NonNullable<Awaited<ReturnType<typeof platformPublishPlanVersion>>>
+
+    export type PlatformPublishPlanVersionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Publish a draft as an immutable version (atomic, re-validated under lock; never moves existing subscribers; refused while legacy unpinned subscribers exist)
+ */
+export const usePlatformPublishPlanVersion = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformPublishPlanVersion>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformPublishPlanVersion>>,
+        TError,
+        {planId: string;versionId: number},
+        TContext
+      > => {
+      return useMutation(getPlatformPublishPlanVersionMutationOptions(options));
+    }
+
+export const getPlatformRetirePlanVersionUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}/retire`
+}
+
+/**
+ * @summary Retire a published version (no longer assignable to new tenants; subscribers keep it; the last published version cannot be retired)
+ */
+export const platformRetirePlanVersion = async (planId: string,
+    versionId: number, options?: RequestInit): Promise<PlatformPlanVersion> => {
+
+  return customFetch<PlatformPlanVersion>(getPlatformRetirePlanVersionUrl(planId,versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPlatformRetirePlanVersionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformRetirePlanVersion>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof platformRetirePlanVersion>>, TError,{planId: string;versionId: number}, TContext> => {
+
+const mutationKey = ['platformRetirePlanVersion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof platformRetirePlanVersion>>, {planId: string;versionId: number}> = (props) => {
+          const {planId,versionId} = props ?? {};
+
+          return  platformRetirePlanVersion(planId,versionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlatformRetirePlanVersionMutationResult = NonNullable<Awaited<ReturnType<typeof platformRetirePlanVersion>>>
+
+    export type PlatformRetirePlanVersionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Retire a published version (no longer assignable to new tenants; subscribers keep it; the last published version cannot be retired)
+ */
+export const usePlatformRetirePlanVersion = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof platformRetirePlanVersion>>, TError,{planId: string;versionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof platformRetirePlanVersion>>,
+        TError,
+        {planId: string;versionId: number},
+        TContext
+      > => {
+      return useMutation(getPlatformRetirePlanVersionMutationOptions(options));
+    }
+
+export const getPlatformPlanVersionImpactUrl = (planId: string,
+    versionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}/impact`
+}
+
+/**
+ * @summary Tenant impact preview of publishing (draft) or retiring (published) a version — read-only
+ */
+export const platformPlanVersionImpact = async (planId: string,
+    versionId: number, options?: RequestInit): Promise<PlatformPlanVersionImpact> => {
+
+  return customFetch<PlatformPlanVersionImpact>(getPlatformPlanVersionImpactUrl(planId,versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformPlanVersionImpactQueryKey = (planId: string,
+    versionId: number,) => {
+    return [
+    `/api/platform/plans/${planId}/versions/${versionId}/impact`
+    ] as const;
+    }
+
+
+export const getPlatformPlanVersionImpactQueryOptions = <TData = Awaited<ReturnType<typeof platformPlanVersionImpact>>, TError = ErrorType<unknown>>(planId: string,
+    versionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformPlanVersionImpact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformPlanVersionImpactQueryKey(planId,versionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformPlanVersionImpact>>> = ({ signal }) => platformPlanVersionImpact(planId,versionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(planId && versionId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformPlanVersionImpact>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformPlanVersionImpactQueryResult = NonNullable<Awaited<ReturnType<typeof platformPlanVersionImpact>>>
+export type PlatformPlanVersionImpactQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Tenant impact preview of publishing (draft) or retiring (published) a version — read-only
+ */
+
+export function usePlatformPlanVersionImpact<TData = Awaited<ReturnType<typeof platformPlanVersionImpact>>, TError = ErrorType<unknown>>(
+ planId: string,
+    versionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformPlanVersionImpact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformPlanVersionImpactQueryOptions(planId,versionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPlatformComparePlanVersionsUrl = (planId: string,
+    versionId: number,
+    otherVersionId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}/compare/${otherVersionId}`
+}
+
+/**
+ * @summary Field-by-field comparison of two versions of a plan
+ */
+export const platformComparePlanVersions = async (planId: string,
+    versionId: number,
+    otherVersionId: number, options?: RequestInit): Promise<PlatformPlanVersionComparison> => {
+
+  return customFetch<PlatformPlanVersionComparison>(getPlatformComparePlanVersionsUrl(planId,versionId,otherVersionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformComparePlanVersionsQueryKey = (planId: string,
+    versionId: number,
+    otherVersionId: number,) => {
+    return [
+    `/api/platform/plans/${planId}/versions/${versionId}/compare/${otherVersionId}`
+    ] as const;
+    }
+
+
+export const getPlatformComparePlanVersionsQueryOptions = <TData = Awaited<ReturnType<typeof platformComparePlanVersions>>, TError = ErrorType<unknown>>(planId: string,
+    versionId: number,
+    otherVersionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformComparePlanVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformComparePlanVersionsQueryKey(planId,versionId,otherVersionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformComparePlanVersions>>> = ({ signal }) => platformComparePlanVersions(planId,versionId,otherVersionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(planId && versionId && otherVersionId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformComparePlanVersions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformComparePlanVersionsQueryResult = NonNullable<Awaited<ReturnType<typeof platformComparePlanVersions>>>
+export type PlatformComparePlanVersionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Field-by-field comparison of two versions of a plan
+ */
+
+export function usePlatformComparePlanVersions<TData = Awaited<ReturnType<typeof platformComparePlanVersions>>, TError = ErrorType<unknown>>(
+ planId: string,
+    versionId: number,
+    otherVersionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformComparePlanVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformComparePlanVersionsQueryOptions(planId,versionId,otherVersionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPlatformPreviewPlanVersionLimitsUrl = (planId: string,
+    versionId: number,
+    companyId: number,) => {
+
+
+
+
+  return `/api/platform/plans/${planId}/versions/${versionId}/effective-limits/${companyId}`
+}
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a specific version (draft or published) — the single resolver with the tenant's own overrides
+ */
+export const platformPreviewPlanVersionLimits = async (planId: string,
+    versionId: number,
+    companyId: number, options?: RequestInit): Promise<PlatformEffectiveLimitPreview> => {
+
+  return customFetch<PlatformEffectiveLimitPreview>(getPlatformPreviewPlanVersionLimitsUrl(planId,versionId,companyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPlatformPreviewPlanVersionLimitsQueryKey = (planId: string,
+    versionId: number,
+    companyId: number,) => {
+    return [
+    `/api/platform/plans/${planId}/versions/${versionId}/effective-limits/${companyId}`
+    ] as const;
+    }
+
+
+export const getPlatformPreviewPlanVersionLimitsQueryOptions = <TData = Awaited<ReturnType<typeof platformPreviewPlanVersionLimits>>, TError = ErrorType<unknown>>(planId: string,
+    versionId: number,
+    companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformPreviewPlanVersionLimits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPlatformPreviewPlanVersionLimitsQueryKey(planId,versionId,companyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformPreviewPlanVersionLimits>>> = ({ signal }) => platformPreviewPlanVersionLimits(planId,versionId,companyId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(planId && versionId && companyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof platformPreviewPlanVersionLimits>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PlatformPreviewPlanVersionLimitsQueryResult = NonNullable<Awaited<ReturnType<typeof platformPreviewPlanVersionLimits>>>
+export type PlatformPreviewPlanVersionLimitsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a specific version (draft or published) — the single resolver with the tenant's own overrides
+ */
+
+export function usePlatformPreviewPlanVersionLimits<TData = Awaited<ReturnType<typeof platformPreviewPlanVersionLimits>>, TError = ErrorType<unknown>>(
+ planId: string,
+    versionId: number,
+    companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformPreviewPlanVersionLimits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPlatformPreviewPlanVersionLimitsQueryOptions(planId,versionId,companyId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

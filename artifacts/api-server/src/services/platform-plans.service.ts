@@ -1,34 +1,33 @@
 import { config } from "../config.js";
 import { AppError } from "../middlewares/errorHandler.js";
 import * as repo from "../repositories/subscriptions.repository.js";
-import type { PlanRow, SubscriptionRow } from "../repositories/subscriptions.repository.js";
+import type { PlanRow, PlanVersionRow, SubscriptionRow } from "../repositories/subscriptions.repository.js";
 import { PLAN_CATALOG, DEFAULT_TRIAL_DAYS } from "../lib/billing/plan-catalog.js";
 import {
   BILLING_SOURCES,
   LIMIT_RESOURCES,
   SUBSCRIPTION_STATUSES,
-  isPlanId,
   normalizeLegacyStatus,
   resolveEffectiveLimits,
   resolveEntitlement,
   type EffectiveLimit,
   type LimitResource,
+  type PlanLimitDefaults,
 } from "../lib/billing/lifecycle.js";
 import { getBillingProvider } from "../lib/billing/provider.js";
+import { PLAN_FEATURE_KEYS, isPlanSlug, limitsAsPlanDefaults } from "../lib/billing/plan-versions.js";
 import { effectiveLimitsFor, usageReport } from "./entitlements.service.js";
 import { listPrices } from "./platform-billing.service.js";
+import { versionState, versionSummary, type VersionSummary } from "./plan-builder.service.js";
 
-// Batch 39 — Plan Builder foundation (PB-1, schema-independent, READ-ONLY).
-//
-// Platform-owner views over the EXISTING entities only: the five fixed plans
-// (`plans`), their verified provider price mappings (`plan_prices`), the canonical
-// subscriptions and their per-tenant `limit_overrides`. Nothing here writes, and no
-// endpoint of this module mutates a plan: published-plan entitlements stay exactly
-// as they are until the owner approves the versioned model (PB-1.4 / PB-2).
+// Batch 39 — Plan Builder foundation (PB-1, READ-ONLY views), extended in Batch 40
+// with the versioning state of every plan (status, current published version,
+// draft, pinned / unpinned subscribers). Mutations live in plan-builder.service.ts.
 //
 // Entitlement decisions are NOT re-implemented. The effective-limit preview calls
 // the single resolver (`resolveEffectiveLimits` through `effectiveLimitsFor`) and the
-// single usage counter (`usageReport`) the enforcement paths already use.
+// single usage counter (`usageReport`) the enforcement paths already use; a
+// version preview feeds the version's snapshot limits to the same resolver.
 
 const SEEDED_IDS = new Set<string>(PLAN_CATALOG.map((p) => p.id));
 
@@ -84,15 +83,27 @@ interface Aggregates {
   byStatus: Map<string, StatusCounts>;
   bySource: Map<string, SourceCounts>;
   overrides: Map<string, { tenants: number; byResource: ResourceCounts }>;
+  versions: Map<string, PlanVersionRow[]>;
+  byVersion: Map<string, Map<number | null, number>>;
 }
 
 async function loadAggregates(): Promise<Aggregates> {
-  const [prices, statusRows, sourceRows, overrideRows] = await Promise.all([
+  const [prices, statusRows, sourceRows, overrideRows, versionRows, versionCounts] = await Promise.all([
     listPrices(),
     repo.countSubscriptionsByPlanAndStatus(),
     repo.countSubscriptionsByPlanAndSource(),
     repo.listSubscriptionLimitOverrides(),
+    repo.listAllPlanVersions(),
+    repo.countSubscriptionsByPlanAndVersion(),
   ]);
+  const versions = new Map<string, PlanVersionRow[]>();
+  for (const v of versionRows) versions.set(v.planId, [...(versions.get(v.planId) ?? []), v]);
+  const byVersion = new Map<string, Map<number | null, number>>();
+  for (const r of versionCounts) {
+    const m = byVersion.get(r.plan) ?? new Map<number | null, number>();
+    m.set(r.planVersionId, r.count);
+    byVersion.set(r.plan, m);
+  }
   const byStatus = new Map<string, StatusCounts>();
   for (const r of statusRows) {
     const counts = byStatus.get(r.plan) ?? emptyStatusCounts();
@@ -114,7 +125,40 @@ async function loadAggregates(): Promise<Aggregates> {
     for (const resource of LIMIT_RESOURCES) if (numericOverride(r.limitOverrides, resource) != null) entry.byResource[resource] += 1;
     overrides.set(r.plan, entry);
   }
-  return { prices, byStatus, bySource, overrides };
+  return { prices, byStatus, bySource, overrides, versions, byVersion };
+}
+
+export interface PlanVersioningSummary {
+  status: PlanRow["status"];
+  versioning: "not_versioned" | "versioned";
+  currentVersion: VersionSummary | null;
+  draft: VersionSummary | null;
+  versionCount: number;
+  publishedVersionCount: number;
+  retiredVersionCount: number;
+  pinnedSubscriptions: number;
+  unpinnedSubscriptions: number;
+}
+
+function versioningOf(p: PlanRow, agg: Aggregates): PlanVersioningSummary {
+  const versions = agg.versions.get(p.id) ?? [];
+  const counts = agg.byVersion.get(p.id) ?? new Map<number | null, number>();
+  const published = versions.filter((v) => v.publishedAt);
+  const current = published.filter((v) => !v.retiredAt).sort((a, b) => b.version - a.version)[0] ?? null;
+  const draft = versions.find((v) => !v.publishedAt) ?? null;
+  let pinned = 0;
+  for (const [k, n] of counts) if (k != null) pinned += n;
+  return {
+    status: p.status,
+    versioning: current ? "versioned" : "not_versioned",
+    currentVersion: current ? versionSummary(current, counts.get(current.id) ?? 0) : null,
+    draft: draft ? versionSummary(draft, 0) : null,
+    versionCount: versions.length,
+    publishedVersionCount: published.length,
+    retiredVersionCount: published.filter((v) => v.retiredAt).length,
+    pinnedSubscriptions: pinned,
+    unpinnedSubscriptions: counts.get(null) ?? 0,
+  };
 }
 
 function overview(p: PlanRow, agg: Aggregates) {
@@ -135,7 +179,7 @@ function overview(p: PlanRow, agg: Aggregates) {
     prices,
     activePriceCount: prices.filter((pr) => pr.active).length,
     subscriptions: { total, byStatus, byBillingSource, withOverrides: agg.overrides.get(p.id)?.tenants ?? 0 },
-    versioning: "not_versioned" as const,
+    ...versioningOf(p, agg),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };
@@ -149,13 +193,16 @@ export async function listPlanCatalog() {
     limitResources: [...LIMIT_RESOURCES],
     trialPolicy: trialPolicy(),
     provider: { kind: provider.kind, available: provider.available, stripeMode: config.billing.stripeMode ?? null },
-    readOnly: true as const,
+    featureCatalog: [...PLAN_FEATURE_KEYS],
+    // Batch 40: the versioned Plan Builder is live — published versions stay
+    // immutable; changes go through drafts (plan-builder.service.ts).
+    readOnly: false as const,
     generatedAt: new Date().toISOString(),
   };
 }
 
 async function requirePlan(planId: string): Promise<PlanRow> {
-  const plan = isPlanId(planId) ? await repo.findPlanById(planId) : undefined;
+  const plan = isPlanSlug(planId) ? await repo.findPlanById(planId) : undefined;
   if (!plan) throw new AppError(404, "Plan not found", { code: "PLAN_NOT_FOUND" });
   return plan;
 }
@@ -177,15 +224,25 @@ function limitOf(limits: EffectiveLimit[], resource: LimitResource): EffectiveLi
 // computed by the same resolver and the same usage counter the product enforces
 // with. Nothing is written; the tenant's subscription, plan and overrides stay as
 // they are. `exceeds` and `blockingResources` are informational (U6 is unapproved).
-export async function previewEffectiveLimits(planId: string, companyId: number, now = new Date()) {
+export async function previewEffectiveLimits(planId: string, companyId: number, now = new Date(), versionId?: number) {
   const plan = await requirePlan(planId);
+  // Batch 40: preview under a specific version (draft or published) when asked;
+  // otherwise under the plan row, which mirrors the current published version.
+  let version: PlanVersionRow | undefined;
+  if (versionId != null) {
+    version = await repo.findPlanVersionById(versionId);
+    if (!version || version.planId !== plan.id) throw new AppError(404, "Plan version not found", { code: "VERSION_NOT_FOUND" });
+  } else {
+    version = await repo.findCurrentPublishedVersion(plan.id);
+  }
+  const source: PlanLimitDefaults = versionId != null && version ? limitsAsPlanDefaults(version.snapshot.limits) : plan;
   const sub = await repo.findByCompanyId(companyId);
   if (!sub) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
   const company = await repo.findCompany(companyId);
   const current = await effectiveLimitsFor(sub); // fails closed on integrity faults, like every enforcement path
-  const preview = resolveEffectiveLimits(plan, sub.limitOverrides);
+  const preview = resolveEffectiveLimits(source, sub.limitOverrides);
   const usage = await usageReport(companyId, sub, now);
-  const defaults = planLimits(plan);
+  const defaults = versionId != null && version ? version.snapshot.limits : planLimits(plan);
   const rows = LIMIT_RESOURCES.map((resource) => {
     const pv = limitOf(preview, resource);
     const cur = limitOf(current, resource);
@@ -211,7 +268,11 @@ export async function previewEffectiveLimits(planId: string, companyId: number, 
     companyId,
     companyName: company?.name ?? null,
     currentPlan: sub.plan,
+    currentPlanVersionId: sub.planVersionId ?? null,
     previewPlan: plan.id,
+    previewVersionId: version?.id ?? null,
+    previewVersion: version?.version ?? null,
+    previewVersionState: version ? versionState(version) : null,
     isCurrentPlan: plan.id === sub.plan,
     status: normalizeLegacyStatus(sub.status) ?? sub.status,
     accessMode: resolveEntitlement(sub, now).accessMode,
