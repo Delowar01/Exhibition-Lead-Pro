@@ -1228,9 +1228,29 @@ paths:
     get:
       operationId: platformSubscriptionPlanHistory
       tags: [platform]
-      summary: The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+      summary: The tenant's plan / version history projected from the audit trail (Batch 42; Batch 43 adds stable server-side cursor pagination over the relevant plan-change events) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
       parameters:
         - $ref: "#/components/parameters/BillingCompanyId"
+        - name: limit
+          in: query
+          description: Page size (1–200, default 50) over the RELEVANT plan-change events only (ordinary audit rows never consume the page)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: Opaque cursor of the last entry of the previous page (nextCursor); omitted = the first page
+          schema:
+            type: string
+        - name: order
+          in: query
+          description: asc = oldest first (chronology), desc = newest first (the latest changes are reachable immediately)
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
       responses:
         "200":
           description: Success
@@ -14763,10 +14783,13 @@ components:
 
     PlatformPlanHistoryEntry:
       type: object
-      required: [auditId, at, action, kind, actor, reason, fromPlan, toPlan, fromVersionId, fromVersion, toVersionId, toVersion, billingSource, changedFields, source, migrationId, dryRunDigest, limitsBefore, limitsAfter, changedLimits, tightenedLimits, loosenedLimits, lostFeatures, gainedFeatures, featureEnforcementBefore, featureEnforcementAfter, confirmFeatureDowngrade, repairedInvalidReference]
+      required: [auditId, cursor, at, action, kind, actor, reason, fromPlan, toPlan, fromVersionId, fromVersion, toVersionId, toVersion, billingSource, changedFields, source, migrationId, dryRunDigest, limitsBefore, limitsAfter, changedLimits, tightenedLimits, loosenedLimits, lostFeatures, gainedFeatures, featureEnforcementBefore, featureEnforcementAfter, confirmFeatureDowngrade, repairedInvalidReference]
       properties:
         auditId:
           type: integer
+        cursor:
+          type: string
+          description: Opaque position of this entry in the stable (createdAt, auditId) order; pass it as `cursor` to continue after it
         at:
           type: string
           format: date-time
@@ -14849,7 +14872,7 @@ components:
 
     PlatformPlanHistory:
       type: object
-      required: [companyId, companyName, original, current, entries, total, truncated, generatedAt]
+      required: [companyId, companyName, original, current, entries, total, truncated, generatedAt, pageSize, order, nextCursor, hasMore]
       properties:
         companyId:
           type: integer
@@ -14886,15 +14909,28 @@ components:
               type: string
         entries:
           type: array
+          description: One page of the tenant's relevant plan-change events in the requested order (stable keyset order over createdAt + auditId)
           items:
             $ref: "#/components/schemas/PlatformPlanHistoryEntry"
         total:
           type: integer
+          description: The number of relevant plan-change events of the tenant across the whole history (not only this page)
         truncated:
           type: boolean
+          description: true when the response does not carry the whole history (= hasMore; kept for compatibility)
         generatedAt:
           type: string
           format: date-time
+        pageSize:
+          type: integer
+        order:
+          type: string
+          enum: [asc, desc]
+        nextCursor:
+          type: ["string", "null"]
+          description: The cursor to request the next page in the same order; null when this page ends the history
+        hasMore:
+          type: boolean
 
     PlatformMigratePlanVersionTenantsInput:
       type: object
@@ -14929,7 +14965,7 @@ components:
 
     PlatformMigrationRow:
       type: object
-      required: [companyId, companyName, currentPlan, currentPlanVersionId, currentVersion, currentReferenceValid, billingSource, status, reason, blocking, unmeasurable, lostFeatures, tightenedLimits, outcome, outcomeReason]
+      required: [companyId, companyName, currentPlan, currentPlanVersionId, currentVersion, currentReferenceValid, billingSource, status, reason, blocking, unmeasurable, lostFeatures, tightenedLimits, outcome, outcomeReason, reviewDigest, changedSinceReview]
       properties:
         companyId:
           type: integer
@@ -14968,13 +15004,22 @@ components:
             type: string
         outcome:
           type: string
-          enum: [migrated, skipped, failed, rolled_back, not_attempted]
+          enum: [migrated, skipped, failed, rolled_back, ineligible, not_attempted]
+          description: Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run)
         outcomeReason:
           type: ["string", "null"]
+        reviewDigest:
+          type: string
+          description: sha-256 over every material eligibility input of THIS tenant as reviewed (reference, status, billing source, overrides, measured usage, target limits, feature matrices, trial / allowance targets, transition, reason); the execution re-computes it inside the tenant's transaction and skips on any difference
+        changedSinceReview:
+          type: array
+          description: On a skipped tenant, the top-level review inputs that differ from the reviewed row (empty otherwise)
+          items:
+            type: string
 
     PlatformMigrationResult:
       type: object
-      required: [planId, target, source, scope, confirmFeatureDowngrade, digest, generatedAt, dryRun, migrationId, rows, summary, complete]
+      required: [planId, target, source, scope, confirmFeatureDowngrade, digest, generatedAt, dryRun, migrationId, rows, summary, complete, status, incompleteReasons]
       properties:
         planId:
           type: string
@@ -15002,7 +15047,7 @@ components:
           type: boolean
         digest:
           type: string
-          description: sha256 over the reviewed rows (target, source, confirmation flag, per-tenant current reference + reason + blockers + lost features)
+          description: sha256 over the canonical serialization of the reviewed scope (target plan / version / state, source, confirmation flag, scope kind) and every tenant's reviewDigest inputs; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same value
         generatedAt:
           type: string
           format: date-time
@@ -15016,7 +15061,7 @@ components:
             $ref: "#/components/schemas/PlatformMigrationRow"
         summary:
           type: object
-          required: [total, eligible, byReason, migrated, skipped, failed, rolledBack, notAttempted]
+          required: [total, eligible, byReason, migrated, skipped, failed, rolledBack, notAttempted, ineligible, concurrentlyChanged]
           properties:
             total:
               type: integer
@@ -15036,9 +15081,25 @@ components:
               type: integer
             notAttempted:
               type: integer
+            ineligible:
+              type: integer
+              description: Tenants deliberately not migrated (reviewed reason other than ELIGIBLE); execution only
+            concurrentlyChanged:
+              type: integer
+              description: Eligible tenants skipped because their data changed between the review and their own transaction (CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING)
         complete:
           type: ["boolean", "null"]
-          description: null for a dry run; true only when nothing failed or rolled back
+          description: null for a dry run; true only when status is `complete` — every eligible tenant of the reviewed scope was migrated (any skipped, failed or rolled-back eligible tenant makes it false)
+        status:
+          type: string
+          enum: [dry_run, complete, partial, concurrently_changed, failed, rolled_back]
+          description: dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error)
+        incompleteReasons:
+          type: array
+          description: Why the execution is not complete (empty for dry runs and complete executions)
+          items:
+            type: string
+            enum: [concurrently_changed, failed, rolled_back]
 
     PlatformStartTrialInput:
       type: object

@@ -42,11 +42,32 @@ const REASON_LABEL: Record<string, string> = {
   FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED: "Would lose features (confirmation required)",
   SUBSCRIPTION_MISSING: "No subscription",
 };
-const OUTCOME_LABEL: Record<string, string> = { migrated: "Migrated", skipped: "Skipped", failed: "Failed", rolled_back: "Rolled back", not_attempted: "Not attempted" };
+const OUTCOME_LABEL: Record<string, string> = { migrated: "Migrated", skipped: "Skipped (changed since review)", failed: "Failed", rolled_back: "Rolled back", ineligible: "Not migrated (ineligible)", not_attempted: "Not attempted" };
 function outcomeTone(o: string): "success" | "warning" | "destructive" | "neutral" {
   if (o === "migrated") return "success";
-  if (o === "skipped" || o === "not_attempted") return "neutral";
+  if (o === "skipped") return "warning";
+  if (o === "ineligible" || o === "not_attempted") return "neutral";
   return "destructive";
+}
+// Batch 43 (Task 1A) — the server's ONE classification of an executed migration.
+const STATUS_LABEL: Record<string, string> = {
+  complete: "Complete",
+  partial: "Partial",
+  concurrently_changed: "Not applied — data changed since the review",
+  failed: "Failed",
+  rolled_back: "Rolled back",
+  dry_run: "Dry run",
+};
+const INCOMPLETE_REASON_LABEL: Record<string, string> = {
+  concurrently_changed: "some tenants changed between the review and their own transaction (skipped, never guessed)",
+  failed: "an unexpected error rolled a tenant's transaction back",
+  rolled_back: "the post-change verification failed for a tenant (rolled back)",
+};
+function statusTone(s: string): "success" | "warning" | "destructive" | "neutral" {
+  if (s === "complete") return "success";
+  if (s === "partial" || s === "concurrently_changed") return "warning";
+  if (s === "failed" || s === "rolled_back") return "destructive";
+  return "neutral";
 }
 function parseCompanyIds(raw: string): number[] {
   const ids = raw
@@ -80,6 +101,9 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
   const [result, setResult] = useState<PlatformMigrationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Batch 43 (Task 2): executing is a two-step action — the button arms an inline confirmation that
+  // states the consequence (immediate, audited, no automatic undo) before the request is sent.
+  const [armed, setArmed] = useState(false);
 
   const sources = useMemo(() => versions.filter((v) => v.id !== target.id && v.state !== "draft"), [versions, target.id]);
   const companyIds = useMemo(() => parseCompanyIds(companyIdsRaw), [companyIdsRaw]);
@@ -96,12 +120,14 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
 
   // Any change of the reviewed inputs invalidates the reviewed dry run.
   const invalidate = () => {
+    setArmed(false);
     setDryRun(null);
     setResult(null);
     setError(null);
   };
 
   const runDry = async () => {
+    setArmed(false);
     setBusy(true);
     setError(null);
     setResult(null);
@@ -123,7 +149,8 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
     try {
       const r = await migrate.mutateAsync({ planId, versionId: target.id, data: body(true) });
       setResult(r);
-      toast({ title: r.complete ? `Migration complete: ${r.summary.migrated} migrated` : `Migration finished with failures: ${r.summary.migrated} migrated, ${r.summary.failed} failed, ${r.summary.rolledBack} rolled back`, variant: r.complete ? "default" : "destructive" });
+      const counts = `${r.summary.migrated} migrated · ${r.summary.concurrentlyChanged} changed since review · ${r.summary.failed} failed · ${r.summary.rolledBack} rolled back · ${r.summary.ineligible} ineligible`;
+      toast({ title: `Migration ${STATUS_LABEL[r.status] ?? r.status}`, description: counts, variant: r.status === "complete" ? "default" : "destructive" });
       await invalidatePlanQueries(queryClient);
       invalidateCompanyQueries(queryClient);
       for (const row of r.rows) invalidateCompanyQueries(queryClient, row.companyId);
@@ -132,6 +159,7 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
       // A stale digest means the data changed since the review: the reviewed dry run is no longer valid.
       if (err instanceof Error && /DRY_RUN_STALE/.test(errMessage(err))) setDryRun(null);
     } finally {
+      setArmed(false);
       setBusy(false);
     }
   };
@@ -153,12 +181,12 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 text-sm">
+        <div className="space-y-4 text-sm" aria-busy={busy}>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Scope</Label>
+              <Label htmlFor="migrate-scope">Scope</Label>
               <Select value={scopeMode} onValueChange={(v) => { setScopeMode(v as "source" | "companies"); invalidate(); }}>
-                <SelectTrigger data-testid="migrate-scope"><SelectValue /></SelectTrigger>
+                <SelectTrigger id="migrate-scope" data-testid="migrate-scope"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="source">Every tenant on a source version</SelectItem>
                   <SelectItem value="companies">Specific companies (ids)</SelectItem>
@@ -167,9 +195,9 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
             </div>
             {scopeMode === "source" ? (
               <div className="space-y-1.5">
-                <Label>Source version</Label>
+                <Label htmlFor="migrate-source">Source version</Label>
                 <Select value={sourceId} onValueChange={(v) => { setSourceId(v); invalidate(); }}>
-                  <SelectTrigger data-testid="migrate-source"><SelectValue placeholder="Pick the version to migrate from" /></SelectTrigger>
+                  <SelectTrigger id="migrate-source" data-testid="migrate-source"><SelectValue placeholder="Pick the version to migrate from" /></SelectTrigger>
                   <SelectContent>
                     {sources.map((v) => (
                       <SelectItem key={v.id} value={String(v.id)}>{versionLabel(v)} · {stateLabel(v)} · {v.subscribers} subscriber{v.subscribers === 1 ? "" : "s"}</SelectItem>
@@ -197,15 +225,32 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => void runDry()} disabled={busy || !scopeReady} data-testid="migrate-dry-run">{busy && !dryRun ? "Evaluating…" : "Dry run (read-only)"}</Button>
-            <Button onClick={() => void execute()} disabled={busy || !dryRun || !!result || dryRun.summary.eligible === 0} data-testid="migrate-execute">
+            <Button onClick={() => setArmed(true)} disabled={busy || armed || !dryRun || !!result || dryRun.summary.eligible === 0} aria-expanded={armed} data-testid="migrate-execute">
               {busy && dryRun ? "Migrating…" : dryRun ? `Execute reviewed migration (${dryRun.summary.eligible} tenant${dryRun.summary.eligible === 1 ? "" : "s"})` : "Execute (dry run first)"}
             </Button>
             {dryRun && !result && <span className="font-mono text-xs text-muted-foreground" data-testid="migrate-digest">review {dryRun.digest.slice(0, 16)}…</span>}
           </div>
-          {error && <p className="text-destructive" data-testid="migrate-error">{error}</p>}
+          {armed && dryRun && !result && (
+            <div role="group" aria-labelledby="migrate-execute-confirm-title" className="rounded-md border border-amber-300/60 bg-amber-50/60 p-3 dark:border-amber-700/60 dark:bg-amber-950/30" data-testid="migrate-execute-confirm-panel">
+              <p id="migrate-execute-confirm-title" className="font-medium">
+                Migrate {dryRun.summary.eligible} tenant{dryRun.summary.eligible === 1 ? "" : "s"} to {versionLabel(target)} now?
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Entitlements change immediately for every eligible tenant of the reviewed set. The server re-checks each tenant inside its own
+                transaction and skips any that changed since the review. Every change is audited; there is no automatic undo.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button variant="destructive" size="sm" onClick={() => void execute()} disabled={busy} data-testid="migrate-execute-confirm">
+                  {busy ? "Migrating…" : `Confirm and migrate ${dryRun.summary.eligible}`}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setArmed(false)} disabled={busy} data-testid="migrate-execute-cancel">Cancel</Button>
+              </div>
+            </div>
+          )}
+          {error && <p className="text-destructive" role="alert" data-testid="migrate-error">{error}</p>}
 
           {shown && (
-            <div className="space-y-2" data-testid={result ? "migrate-result" : "migrate-review"}>
+            <div className="space-y-2" data-testid={result ? "migrate-result" : "migrate-review"} aria-live="polite">
               <div className="flex flex-wrap items-center gap-2" data-testid="migrate-summary">
                 <Badge variant="secondary">{shown.summary.total} in scope</Badge>
                 <StatusBadge tone={shown.summary.eligible > 0 ? "success" : "neutral"}>{shown.summary.eligible} eligible</StatusBadge>
@@ -218,14 +263,23 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
                   <>
                     <StatusBadge tone="success">{result.summary.migrated} migrated</StatusBadge>
                     <StatusBadge tone="neutral">{result.summary.skipped} skipped</StatusBadge>
+                    {result.summary.concurrentlyChanged > 0 && <StatusBadge tone="warning">{result.summary.concurrentlyChanged} changed since review</StatusBadge>}
                     {result.summary.failed > 0 && <StatusBadge tone="destructive">{result.summary.failed} failed</StatusBadge>}
                     {result.summary.rolledBack > 0 && <StatusBadge tone="destructive">{result.summary.rolledBack} rolled back</StatusBadge>}
+                    {result.summary.ineligible > 0 && <StatusBadge tone="neutral">{result.summary.ineligible} ineligible</StatusBadge>}
                     {result.summary.notAttempted > 0 && <StatusBadge tone="warning">{result.summary.notAttempted} not attempted</StatusBadge>}
-                    <Badge variant={result.complete ? "default" : "destructive"} data-testid="migrate-complete">{result.complete ? "complete" : "incomplete"}</Badge>
+                    <span data-testid="migrate-complete" data-status={result.status} data-complete={result.complete ? "true" : "false"}>
+                      <StatusBadge tone={statusTone(result.status)}>{STATUS_LABEL[result.status] ?? result.status}</StatusBadge>
+                    </span>
                     {result.migrationId && <span className="font-mono text-xs text-muted-foreground">migration {result.migrationId.slice(0, 8)}</span>}
                   </>
                 )}
               </div>
+              {result && result.status !== "complete" && (
+                <p className="rounded-md border border-amber-300/60 bg-amber-50/60 p-2 text-xs text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200" role="status" data-testid="migrate-incomplete-note">
+                  Not every eligible tenant was migrated: {result.incompleteReasons.map((r) => INCOMPLETE_REASON_LABEL[r] ?? r).join("; ")}. Nothing was guessed or retried; run a new dry run to review the tenants that were not migrated.
+                </p>
+              )}
               <div className="overflow-x-auto">
                 <Table data-testid="migrate-rows">
                   <TableHeader>
@@ -238,7 +292,9 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {shown.rows.map((r: PlatformMigrationRow) => (
+                    {shown.rows.length === 0 ? (
+                      <TableRow><TableCell colSpan={result ? 5 : 4} className="text-muted-foreground" data-testid="migrate-rows-empty">No tenant in scope — nothing to migrate.</TableCell></TableRow>
+                    ) : shown.rows.map((r: PlatformMigrationRow) => (
                       <TableRow key={r.companyId} data-testid={`migrate-row-${r.companyId}`} data-reason={r.reason} data-outcome={r.outcome}>
                         <TableCell>{r.companyName ?? `Company #${r.companyId}`}<span className="ml-1 text-xs text-muted-foreground">#{r.companyId}</span></TableCell>
                         <TableCell className="text-xs">{planRef(r.currentPlan, r.currentVersion)}{r.currentReferenceValid ? "" : " (invalid reference)"}{r.status ? ` · ${r.status}` : ""}</TableCell>
@@ -253,7 +309,8 @@ export function MigrateTenantsDialog({ open, onClose, planId, target, versions }
                         {result && (
                           <TableCell className="text-xs">
                             <StatusBadge tone={outcomeTone(r.outcome)}>{OUTCOME_LABEL[r.outcome] ?? r.outcome}</StatusBadge>
-                            {r.outcomeReason && r.outcome !== "migrated" && <div className="text-muted-foreground">{r.outcomeReason}</div>}
+                            {r.outcomeReason && r.outcome !== "migrated" && <div className="text-muted-foreground">{r.outcome === "ineligible" ? (REASON_LABEL[r.outcomeReason] ?? r.outcomeReason) : r.outcomeReason}</div>}
+                            {r.changedSinceReview.length > 0 && <div className="text-muted-foreground" data-testid={`migrate-changed-${r.companyId}`}>changed since review: {r.changedSinceReview.join(", ")}</div>}
                           </TableCell>
                         )}
                       </TableRow>

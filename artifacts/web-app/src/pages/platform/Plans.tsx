@@ -499,7 +499,10 @@ export default function PlatformPlans() {
               {tenants.isLoading ? (
                 <p className="p-3 text-sm text-muted-foreground">Searching…</p>
               ) : tenants.isError ? (
-                <p className="p-3 text-sm text-destructive">{errMessage(tenants.error)}</p>
+                <div className="flex flex-wrap items-center gap-2 p-3 text-sm" role="alert">
+                  <span className="text-destructive">{errMessage(tenants.error)}</span>
+                  <Button variant="outline" size="sm" onClick={() => void tenants.refetch()} data-testid="preview-tenants-retry">Retry</Button>
+                </div>
               ) : (tenants.data?.subscriptions.length ?? 0) === 0 ? (
                 <p className="p-3 text-sm text-muted-foreground">No tenant matches.</p>
               ) : (

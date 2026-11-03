@@ -29,7 +29,12 @@ export interface PlatformMigrationRow {
   unmeasurable: string[];
   lostFeatures: string[];
   tightenedLimits: string[];
+  /** Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run) */
   outcome: PlatformMigrationRowOutcome;
   /** @nullable */
   outcomeReason: string | null;
+  /** sha-256 over every material eligibility input of THIS tenant as reviewed (reference, status, billing source, overrides, measured usage, target limits, feature matrices, trial / allowance targets, transition, reason); the execution re-computes it inside the tenant's transaction and skips on any difference */
+  reviewDigest: string;
+  /** On a skipped tenant, the top-level review inputs that differ from the reviewed row (empty otherwise) */
+  changedSinceReview: string[];
 }

@@ -7,6 +7,7 @@
  */
 import type { PlatformPlanHistoryCurrent } from './platformPlanHistoryCurrent';
 import type { PlatformPlanHistoryEntry } from './platformPlanHistoryEntry';
+import type { PlatformPlanHistoryOrder } from './platformPlanHistoryOrder';
 import type { PlatformPlanHistoryOriginal } from './platformPlanHistoryOriginal';
 
 export interface PlatformPlanHistory {
@@ -15,8 +16,19 @@ export interface PlatformPlanHistory {
   companyName: string | null;
   original: PlatformPlanHistoryOriginal;
   current: PlatformPlanHistoryCurrent;
+  /** One page of the tenant's relevant plan-change events in the requested order (stable keyset order over createdAt + auditId) */
   entries: PlatformPlanHistoryEntry[];
+  /** The number of relevant plan-change events of the tenant across the whole history (not only this page) */
   total: number;
+  /** true when the response does not carry the whole history (= hasMore; kept for compatibility) */
   truncated: boolean;
   generatedAt: Date;
+  pageSize: number;
+  order: PlatformPlanHistoryOrder;
+  /**
+     * The cursor to request the next page in the same order; null when this page ends the history
+     * @nullable
+     */
+  nextCursor: string | null;
+  hasMore: boolean;
 }

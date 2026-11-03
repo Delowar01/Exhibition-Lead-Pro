@@ -296,6 +296,7 @@ import type {
   PlatformSubscriptionDetail,
   PlatformSubscriptionList,
   PlatformSubscriptionMetrics,
+  PlatformSubscriptionPlanHistoryParams,
   PlatformSuspendSubscriptionInput,
   PlatformSyncResult,
   PlatformUpdateDraftInput,
@@ -3960,20 +3961,29 @@ export const usePlatformPreviewSubscriptionPlanChange = <TError = ErrorType<Erro
       return useMutation(getPlatformPreviewSubscriptionPlanChangeMutationOptions(options));
     }
 
-export const getPlatformSubscriptionPlanHistoryUrl = (companyId: number,) => {
+export const getPlatformSubscriptionPlanHistoryUrl = (companyId: number,
+    params?: PlatformSubscriptionPlanHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/platform/subscriptions/${companyId}/plan-history`
+  return stringifiedParams.length > 0 ? `/api/platform/subscriptions/${companyId}/plan-history?${stringifiedParams}` : `/api/platform/subscriptions/${companyId}/plan-history`
 }
 
 /**
- * @summary The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+ * @summary The tenant's plan / version history projected from the audit trail (Batch 42; Batch 43 adds stable server-side cursor pagination over the relevant plan-change events) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
  */
-export const platformSubscriptionPlanHistory = async (companyId: number, options?: RequestInit): Promise<PlatformPlanHistory> => {
+export const platformSubscriptionPlanHistory = async (companyId: number,
+    params?: PlatformSubscriptionPlanHistoryParams, options?: RequestInit): Promise<PlatformPlanHistory> => {
 
-  return customFetch<PlatformPlanHistory>(getPlatformSubscriptionPlanHistoryUrl(companyId),
+  return customFetch<PlatformPlanHistory>(getPlatformSubscriptionPlanHistoryUrl(companyId,params),
   {
     ...options,
     method: 'GET'
@@ -3986,23 +3996,25 @@ export const platformSubscriptionPlanHistory = async (companyId: number, options
 
 
 
-export const getPlatformSubscriptionPlanHistoryQueryKey = (companyId: number,) => {
+export const getPlatformSubscriptionPlanHistoryQueryKey = (companyId: number,
+    params?: PlatformSubscriptionPlanHistoryParams,) => {
     return [
-    `/api/platform/subscriptions/${companyId}/plan-history`
+    `/api/platform/subscriptions/${companyId}/plan-history`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getPlatformSubscriptionPlanHistoryQueryOptions = <TData = Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError = ErrorType<unknown>>(companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getPlatformSubscriptionPlanHistoryQueryOptions = <TData = Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError = ErrorType<unknown>>(companyId: number,
+    params?: PlatformSubscriptionPlanHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getPlatformSubscriptionPlanHistoryQueryKey(companyId);
+  const queryKey =  queryOptions?.queryKey ?? getPlatformSubscriptionPlanHistoryQueryKey(companyId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>> = ({ signal }) => platformSubscriptionPlanHistory(companyId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>> = ({ signal }) => platformSubscriptionPlanHistory(companyId,params, { signal, ...requestOptions });
 
 
 
@@ -4016,15 +4028,16 @@ export type PlatformSubscriptionPlanHistoryQueryError = ErrorType<unknown>
 
 
 /**
- * @summary The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+ * @summary The tenant's plan / version history projected from the audit trail (Batch 42; Batch 43 adds stable server-side cursor pagination over the relevant plan-change events) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
  */
 
 export function usePlatformSubscriptionPlanHistory<TData = Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError = ErrorType<unknown>>(
- companyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ companyId: number,
+    params?: PlatformSubscriptionPlanHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof platformSubscriptionPlanHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getPlatformSubscriptionPlanHistoryQueryOptions(companyId,options)
+  const queryOptions = getPlatformSubscriptionPlanHistoryQueryOptions(companyId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

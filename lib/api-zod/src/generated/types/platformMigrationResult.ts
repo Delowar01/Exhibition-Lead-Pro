@@ -5,8 +5,10 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlatformMigrationResultIncompleteReasonsItem } from './platformMigrationResultIncompleteReasonsItem';
 import type { PlatformMigrationResultScope } from './platformMigrationResultScope';
 import type { PlatformMigrationResultSource } from './platformMigrationResultSource';
+import type { PlatformMigrationResultStatus } from './platformMigrationResultStatus';
 import type { PlatformMigrationResultSummary } from './platformMigrationResultSummary';
 import type { PlatformMigrationResultTarget } from './platformMigrationResultTarget';
 import type { PlatformMigrationRow } from './platformMigrationRow';
@@ -18,7 +20,7 @@ export interface PlatformMigrationResult {
   source: PlatformMigrationResultSource;
   scope: PlatformMigrationResultScope;
   confirmFeatureDowngrade: boolean;
-  /** sha256 over the reviewed rows (target, source, confirmation flag, per-tenant current reference + reason + blockers + lost features) */
+  /** sha256 over the canonical serialization of the reviewed scope (target plan / version / state, source, confirmation flag, scope kind) and every tenant's reviewDigest inputs; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same value */
   digest: string;
   generatedAt: Date;
   dryRun: boolean;
@@ -27,8 +29,12 @@ export interface PlatformMigrationResult {
   rows: PlatformMigrationRow[];
   summary: PlatformMigrationResultSummary;
   /**
-     * null for a dry run; true only when nothing failed or rolled back
+     * null for a dry run; true only when status is `complete` — every eligible tenant of the reviewed scope was migrated (any skipped, failed or rolled-back eligible tenant makes it false)
      * @nullable
      */
   complete: boolean | null;
+  /** dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error) */
+  status: PlatformMigrationResultStatus;
+  /** Why the execution is not complete (empty for dry runs and complete executions) */
+  incompleteReasons: PlatformMigrationResultIncompleteReasonsItem[];
 }

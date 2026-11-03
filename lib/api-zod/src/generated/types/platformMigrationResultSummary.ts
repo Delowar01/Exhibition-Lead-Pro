@@ -16,4 +16,8 @@ export type PlatformMigrationResultSummary = {
   failed: number;
   rolledBack: number;
   notAttempted: number;
+  /** Tenants deliberately not migrated (reviewed reason other than ELIGIBLE); execution only */
+  ineligible: number;
+  /** Eligible tenants skipped because their data changed between the review and their own transaction (CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING) */
+  concurrentlyChanged: number;
 };

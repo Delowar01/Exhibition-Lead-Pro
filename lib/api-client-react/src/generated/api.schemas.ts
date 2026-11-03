@@ -5230,6 +5230,8 @@ export type PlatformPlanHistoryEntryLimitsAfter = {[key: string]: number | null}
 
 export interface PlatformPlanHistoryEntry {
   auditId: number;
+  /** Opaque position of this entry in the stable (createdAt, auditId) order; pass it as `cursor` to continue after it */
+  cursor: string;
   at: string;
   action: string;
   kind: PlatformPlanHistoryEntryKind;
@@ -5300,16 +5302,35 @@ export type PlatformPlanHistoryCurrent = {
   status: string;
 };
 
+export type PlatformPlanHistoryOrder = typeof PlatformPlanHistoryOrder[keyof typeof PlatformPlanHistoryOrder];
+
+
+export const PlatformPlanHistoryOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
 export interface PlatformPlanHistory {
   companyId: number;
   /** @nullable */
   companyName: string | null;
   original: PlatformPlanHistoryOriginal;
   current: PlatformPlanHistoryCurrent;
+  /** One page of the tenant's relevant plan-change events in the requested order (stable keyset order over createdAt + auditId) */
   entries: PlatformPlanHistoryEntry[];
+  /** The number of relevant plan-change events of the tenant across the whole history (not only this page) */
   total: number;
+  /** true when the response does not carry the whole history (= hasMore; kept for compatibility) */
   truncated: boolean;
   generatedAt: string;
+  pageSize: number;
+  order: PlatformPlanHistoryOrder;
+  /**
+     * The cursor to request the next page in the same order; null when this page ends the history
+     * @nullable
+     */
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 export interface PlatformMigratePlanVersionTenantsInput {
@@ -5352,6 +5373,9 @@ export const PlatformMigrationRowReason = {
   SUBSCRIPTION_MISSING: 'SUBSCRIPTION_MISSING',
 } as const;
 
+/**
+ * Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run)
+ */
 export type PlatformMigrationRowOutcome = typeof PlatformMigrationRowOutcome[keyof typeof PlatformMigrationRowOutcome];
 
 
@@ -5360,6 +5384,7 @@ export const PlatformMigrationRowOutcome = {
   skipped: 'skipped',
   failed: 'failed',
   rolled_back: 'rolled_back',
+  ineligible: 'ineligible',
   not_attempted: 'not_attempted',
 } as const;
 
@@ -5383,9 +5408,14 @@ export interface PlatformMigrationRow {
   unmeasurable: string[];
   lostFeatures: string[];
   tightenedLimits: string[];
+  /** Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run) */
   outcome: PlatformMigrationRowOutcome;
   /** @nullable */
   outcomeReason: string | null;
+  /** sha-256 over every material eligibility input of THIS tenant as reviewed (reference, status, billing source, overrides, measured usage, target limits, feature matrices, trial / allowance targets, transition, reason); the execution re-computes it inside the tenant's transaction and skips on any difference */
+  reviewDigest: string;
+  /** On a skipped tenant, the top-level review inputs that differ from the reviewed row (empty otherwise) */
+  changedSinceReview: string[];
 }
 
 export type PlatformMigrationResultTarget = {
@@ -5421,7 +5451,35 @@ export type PlatformMigrationResultSummary = {
   failed: number;
   rolledBack: number;
   notAttempted: number;
+  /** Tenants deliberately not migrated (reviewed reason other than ELIGIBLE); execution only */
+  ineligible: number;
+  /** Eligible tenants skipped because their data changed between the review and their own transaction (CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING) */
+  concurrentlyChanged: number;
 };
+
+/**
+ * dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error)
+ */
+export type PlatformMigrationResultStatus = typeof PlatformMigrationResultStatus[keyof typeof PlatformMigrationResultStatus];
+
+
+export const PlatformMigrationResultStatus = {
+  dry_run: 'dry_run',
+  complete: 'complete',
+  partial: 'partial',
+  concurrently_changed: 'concurrently_changed',
+  failed: 'failed',
+  rolled_back: 'rolled_back',
+} as const;
+
+export type PlatformMigrationResultIncompleteReasonsItem = typeof PlatformMigrationResultIncompleteReasonsItem[keyof typeof PlatformMigrationResultIncompleteReasonsItem];
+
+
+export const PlatformMigrationResultIncompleteReasonsItem = {
+  concurrently_changed: 'concurrently_changed',
+  failed: 'failed',
+  rolled_back: 'rolled_back',
+} as const;
 
 export interface PlatformMigrationResult {
   planId: string;
@@ -5430,7 +5488,7 @@ export interface PlatformMigrationResult {
   source: PlatformMigrationResultSource;
   scope: PlatformMigrationResultScope;
   confirmFeatureDowngrade: boolean;
-  /** sha256 over the reviewed rows (target, source, confirmation flag, per-tenant current reference + reason + blockers + lost features) */
+  /** sha256 over the canonical serialization of the reviewed scope (target plan / version / state, source, confirmation flag, scope kind) and every tenant's reviewDigest inputs; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same value */
   digest: string;
   generatedAt: string;
   dryRun: boolean;
@@ -5439,10 +5497,14 @@ export interface PlatformMigrationResult {
   rows: PlatformMigrationRow[];
   summary: PlatformMigrationResultSummary;
   /**
-     * null for a dry run; true only when nothing failed or rolled back
+     * null for a dry run; true only when status is `complete` — every eligible tenant of the reviewed scope was migrated (any skipped, failed or rolled-back eligible tenant makes it false)
      * @nullable
      */
   complete: boolean | null;
+  /** dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error) */
+  status: PlatformMigrationResultStatus;
+  /** Why the execution is not complete (empty for dry runs and complete executions) */
+  incompleteReasons: PlatformMigrationResultIncompleteReasonsItem[];
 }
 
 export interface PlatformStartTrialInput {
@@ -8582,6 +8644,31 @@ export type PlatformListSubscriptionsBillingSource = typeof PlatformListSubscrip
 export const PlatformListSubscriptionsBillingSource = {
   manual: 'manual',
   stripe: 'stripe',
+} as const;
+
+export type PlatformSubscriptionPlanHistoryParams = {
+/**
+ * Page size (1–200, default 50) over the RELEVANT plan-change events only (ordinary audit rows never consume the page)
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+/**
+ * Opaque cursor of the last entry of the previous page (nextCursor); omitted = the first page
+ */
+cursor?: string;
+/**
+ * asc = oldest first (chronology), desc = newest first (the latest changes are reachable immediately)
+ */
+order?: PlatformSubscriptionPlanHistoryOrder;
+};
+
+export type PlatformSubscriptionPlanHistoryOrder = typeof PlatformSubscriptionPlanHistoryOrder[keyof typeof PlatformSubscriptionPlanHistoryOrder];
+
+
+export const PlatformSubscriptionPlanHistoryOrder = {
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 
 export type ListCompaniesParams = {

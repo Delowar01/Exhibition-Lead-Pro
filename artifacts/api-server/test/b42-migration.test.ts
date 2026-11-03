@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq, inArray, like } from "drizzle-orm";
 import { db, companiesTable, usersTable, contactsTable, subscriptionsTable, auditLogsTable, plansTable, planVersionsTable } from "@workspace/db";
 import { runVersionBackfill } from "../src/lib/billing/version-backfill.js";
-import { migrateTenants } from "../src/services/plan-migration.service.js";
+import { migrateTenants, classifyExecution, summarize, type MigrationRow } from "../src/services/plan-migration.service.js";
 import { __setBillingFaultsForTests } from "../src/lib/billing/test-faults.js";
 import { AppError } from "../src/middlewares/errorHandler.js";
 
@@ -35,7 +35,11 @@ let v1 = 0;
 let v2 = 0;
 let v3 = 0; // draft
 let freeV1 = 0;
+let G = 0; // Batch 43: review-integrity tenant (v1)
+let H = 0; // Batch 43: concurrently-changed tenant (v1)
+let I = 0; // Batch 43: partial-migration tenant (v1)
 const companyIds: number[] = [];
+const ACTOR = { userId: 0, userName: "test:b43", ipAddress: null as string | null };
 
 function headers(token: string | null) {
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -66,7 +70,8 @@ async function migrationAudit(cid: number) {
   return db.select().from(auditLogsTable).where(and(eq(auditLogsTable.companyId, cid), eq(auditLogsTable.action, "subscription.migrate_version"))).orderBy(auditLogsTable.id);
 }
 async function summaryAudit() {
-  return db.select().from(auditLogsTable).where(and(eq(auditLogsTable.action, "plan_version.migrate"), eq(auditLogsTable.entityId, String(v2))));
+  // Ordered explicitly: a heap scan carries no insertion-order guarantee (run 2 of the Batch 43 iteration proved it).
+  return db.select().from(auditLogsTable).where(and(eq(auditLogsTable.action, "plan_version.migrate"), eq(auditLogsTable.entityId, String(v2)))).orderBy(auditLogsTable.id);
 }
 async function createCompany(name: string) {
   const res = await api("POST", "/companies", platformToken, { name, plan: "free" });
@@ -97,7 +102,11 @@ beforeAll(async () => {
   D = await createCompany(`QA B42 Mig D ${SUFFIX}`);
   E = await createCompany(`QA B42 Mig E ${SUFFIX}`);
   F = await createCompany(`QA B42 Mig F ${SUFFIX}`);
-  for (const cid of [A, B, C, D]) expect((await setPlanOf(cid, { plan: PLAN, planVersionId: v1 })).status).toBe(200);
+  G = await createCompany(`QA B43 Mig G ${SUFFIX}`);
+  H = await createCompany(`QA B43 Mig H ${SUFFIX}`);
+  I = await createCompany(`QA B43 Mig I ${SUFFIX}`);
+  ACTOR.userId = adminId;
+  for (const cid of [A, B, C, D, G, H, I]) expect((await setPlanOf(cid, { plan: PLAN, planVersionId: v1 })).status).toBe(200);
   expect((await setPlanOf(F, { plan: PLAN, planVersionId: v2, confirmFeatureDowngrade: true })).status).toBe(200);
   const user = await api("POST", "/users", platformToken, { email: `cadmin@${DOMAIN}`, name: "cadmin", role: "primary_admin", companyId: C, password: PW });
   expect(user.status, user.text).toBe(201);
@@ -171,14 +180,19 @@ describe("dry run (read-only, deterministic digest)", () => {
   it("evaluates every tenant on the source version with its reason; provider-managed and blocked tenants are reported, never migrated", async () => {
     const res = await migrate(v2, { dryRun: true, sourceVersionId: v1 });
     expect(res.status, res.text).toBe(200);
-    expect(res.body).toMatchObject({ planId: PLAN, dryRun: true, migrationId: null, complete: null, scope: "source_version", confirmFeatureDowngrade: false, target: { versionId: v2, version: 2 }, source: { versionId: v1, version: 1, planId: PLAN } });
+    expect(res.body).toMatchObject({ planId: PLAN, dryRun: true, migrationId: null, complete: null, status: "dry_run", incompleteReasons: [], scope: "source_version", confirmFeatureDowngrade: false, target: { versionId: v2, version: 2 }, source: { versionId: v1, version: 1, planId: PLAN } });
     expect(res.body.digest).toMatch(/^[a-f0-9]{64}$/);
-    expect(res.body.rows.map((r: any) => r.companyId)).toEqual([A, B, C, D].sort((a, b) => a - b));
+    expect(res.body.rows.map((r: any) => r.companyId)).toEqual([A, B, C, D, G, H, I].sort((a, b) => a - b));
+    for (const r of res.body.rows as any[]) {
+      expect(r.reviewDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(r.changedSinceReview).toEqual([]);
+    }
+    expect(new Set((res.body.rows as any[]).map((r) => r.reviewDigest)).size).toBe(res.body.rows.length);
     expect(rowOf(res, A)).toMatchObject({ reason: "FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED", lostFeatures: ["documents"], blocking: [], billingSource: "manual", currentPlan: PLAN, currentPlanVersionId: v1, currentVersion: 1, currentReferenceValid: true, outcome: "not_attempted", outcomeReason: null });
     expect(rowOf(res, C)).toMatchObject({ reason: "DOWNGRADE_BLOCKED", blocking: [{ resource: "contacts", used: 3, limit: 2 }], tightenedLimits: expect.arrayContaining(["contacts"]) });
     expect(rowOf(res, D)).toMatchObject({ reason: "PROVIDER_MANAGED", billingSource: "stripe" });
-    expect(res.body.summary).toMatchObject({ total: 4, eligible: 0, migrated: 0, skipped: 0, failed: 0, rolledBack: 0, notAttempted: 4 });
-    expect(res.body.summary.byReason).toMatchObject({ FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED: 2, DOWNGRADE_BLOCKED: 1, PROVIDER_MANAGED: 1 });
+    expect(res.body.summary).toMatchObject({ total: 7, eligible: 0, migrated: 0, skipped: 0, failed: 0, rolledBack: 0, notAttempted: 7, ineligible: 0, concurrentlyChanged: 0 });
+    expect(res.body.summary.byReason).toMatchObject({ FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED: 5, DOWNGRADE_BLOCKED: 1, PROVIDER_MANAGED: 1 });
     // Deterministic and write-free.
     const again = await migrate(v2, { dryRun: true, sourceVersionId: v1 });
     expect(again.body.digest).toBe(res.body.digest);
@@ -192,7 +206,10 @@ describe("dry run (read-only, deterministic digest)", () => {
     expect(rowOf(confirmed, B).reason).toBe("ELIGIBLE");
     expect(rowOf(confirmed, C).reason).toBe("DOWNGRADE_BLOCKED");
     expect(rowOf(confirmed, D).reason).toBe("PROVIDER_MANAGED");
-    expect(confirmed.body.summary.eligible).toBe(2);
+    expect(confirmed.body.summary.eligible).toBe(5);
+    // Batch 43 (1B): the per-tenant review digest covers the reason / confirmation, so it moves with the review.
+    expect(rowOf(confirmed, A).reviewDigest).not.toBe(rowOf(res, A).reviewDigest);
+    expect(rowOf(confirmed, C).reviewDigest).toBe(rowOf(res, C).reviewDigest);
   });
 
   it("an explicit company scope reports not-on-source, already-on-target and missing tenants exactly", async () => {
@@ -243,10 +260,23 @@ describe("execution bound to the reviewed dry run", () => {
       expect(r.body.migrationId).toMatch(/^[0-9a-f-]{36}$/);
       expect(r.body.digest).toBe(review.body.digest);
       expect(r.body.summary.failed + r.body.summary.rolledBack).toBe(0);
-      expect(r.body.complete).toBe(true);
+      // Batch 43 (1A): complete ONLY when every eligible tenant was migrated by THIS execution.
+      if (r.body.summary.migrated === r.body.summary.eligible) {
+        expect(r.body).toMatchObject({ complete: true, status: "complete", incompleteReasons: [] });
+      } else {
+        expect(r.body.complete).toBe(false);
+        expect(["partial", "concurrently_changed"]).toContain(r.body.status);
+        expect(r.body.incompleteReasons).toEqual(["concurrently_changed"]);
+        expect(r.body.summary.concurrentlyChanged).toBe(r.body.summary.skipped);
+      }
       for (const row of r.body.rows) {
         expect(["migrated", "skipped"]).toContain(row.outcome);
-        if (row.outcome === "skipped") expect(row.outcomeReason).toBe("CHANGED_SINCE_DRY_RUN");
+        if (row.outcome === "skipped") {
+          expect(row.outcomeReason).toBe("CHANGED_SINCE_DRY_RUN");
+          expect(row.changedSinceReview.length).toBeGreaterThan(0);
+        } else {
+          expect(row.changedSinceReview).toEqual([]);
+        }
       }
     }
     for (const cid of [A, B]) {
@@ -257,6 +287,7 @@ describe("execution bound to the reviewed dry run", () => {
       expect(rows[0].userId).toBe(adminId);
       expect(m).toMatchObject({ planChangeSource: "migration", sourceVersionId: null, dryRunDigest: review.body.digest, reason: "Batch upgrade", confirmFeatureDowngrade: true, changeKind: "version_change", previousPlanVersionId: v1, planVersionId: v2, lostFeatures: ["documents"], featureEnforcementAfter: "enforced" });
       expect(m.migrationId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(m.reviewDigest).toBe(rowOf(review, cid).reviewDigest);
       expect(m.before.planVersionId).toBe(v1);
       expect(m.after.planVersionId).toBe(v2);
       expect(m.changed).toContain("planVersionId");
@@ -264,7 +295,7 @@ describe("execution bound to the reviewed dry run", () => {
     const summaries = await summaryAudit();
     expect(summaries).toHaveLength(ok.length);
     const s = summaries.find((x) => (x.metadata as any).summary.migrated > 0)!.metadata as Record<string, any>;
-    expect(s).toMatchObject({ planId: PLAN, targetVersionId: v2, dryRunDigest: review.body.digest, scope: "companies", reason: "Batch upgrade", confirmFeatureDowngrade: true, complete: true });
+    expect(s).toMatchObject({ planId: PLAN, targetVersionId: v2, dryRunDigest: review.body.digest, scope: "companies", reason: "Batch upgrade", confirmFeatureDowngrade: true, complete: true, status: "complete", incompleteReasons: [] });
     expect(s.companies.map((c: any) => c.companyId).sort()).toEqual([A, B].sort());
     // A later execution with the consumed digest is stale (the migrated rows changed the review).
     const replay = await migrate(v2, body);
@@ -299,13 +330,13 @@ describe("execution bound to the reviewed dry run", () => {
       __setBillingFaultsForTests({});
     }
     expect(result.rows[0]).toMatchObject({ companyId: C, outcome: "rolled_back", outcomeReason: "PLAN_CHANGE_VERIFICATION_FAILED" });
-    expect(result.summary).toMatchObject({ migrated: 0, rolledBack: 1, failed: 0, skipped: 0 });
-    expect(result.complete).toBe(false);
+    expect(result.summary).toMatchObject({ migrated: 0, rolledBack: 1, failed: 0, skipped: 0, concurrentlyChanged: 0, ineligible: 0 });
+    expect(result).toMatchObject({ complete: false, status: "rolled_back", incompleteReasons: ["rolled_back"] });
     expect((await subRow(C)).planVersionId).toBe(v1);
     expect(await migrationAudit(C)).toHaveLength(0);
     const summaries = await summaryAudit();
     expect(summaries).toHaveLength(summariesBefore + 1);
-    expect((summaries[summaries.length - 1].metadata as any)).toMatchObject({ complete: false, companies: [{ companyId: C, reason: "ELIGIBLE", outcome: "rolled_back", outcomeReason: "PLAN_CHANGE_VERIFICATION_FAILED" }] });
+    expect((summaries[summaries.length - 1].metadata as any)).toMatchObject({ complete: false, status: "rolled_back", incompleteReasons: ["rolled_back"], companies: [{ companyId: C, reason: "ELIGIBLE", outcome: "rolled_back", outcomeReason: "PLAN_CHANGE_VERIFICATION_FAILED", changedSinceReview: [] }] });
     // Without the fault the same reviewed migration succeeds.
     const fresh = await migrate(v2, { dryRun: true, companyIds: [C], confirmFeatureDowngrade: true });
     const done = await migrate(v2, { dryRun: false, companyIds: [C], confirmFeatureDowngrade: true, confirmDigest: fresh.body.digest });
@@ -313,6 +344,128 @@ describe("execution bound to the reviewed dry run", () => {
     expect(done.body.summary.migrated).toBe(1);
     expect((await subRow(C))).toMatchObject({ planVersionId: v2, limitOverrides: { contacts: 10 } });
     expect((await api("GET", "/subscriptions/current", cToken)).body.entitlements.features.documents).toBe(false);
+  });
+
+  // ── Batch 43 (PB-5, Task 1) ─────────────────────────────────────────────────
+  it("1B: every material review input is in the digest — an override change or new usage after the review makes the execution stale", async () => {
+    const review = await migrate(v2, { dryRun: true, companyIds: [G], confirmFeatureDowngrade: true });
+    expect(rowOf(review, G).reason).toBe("ELIGIBLE");
+    // A tenant override changes the comparison (override precedence) → the per-tenant review digest and the dry-run digest move.
+    expect((await api("PUT", `/platform/subscriptions/${G}/limits`, platformToken, { limits: { contacts: 5 } })).status).toBe(200);
+    const stale = await migrate(v2, { dryRun: false, companyIds: [G], confirmFeatureDowngrade: true, confirmDigest: review.body.digest });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe("DRY_RUN_STALE");
+    const ctx = stale.body.context ?? stale.body.details;
+    expect(ctx.rows.find((r: any) => r.companyId === G).reviewDigest).not.toBe(rowOf(review, G).reviewDigest);
+    expect((await subRow(G)).planVersionId).toBe(v1);
+    expect(await migrationAudit(G)).toHaveLength(0);
+    // Measured usage is reviewed too: one new contact after the second review makes it stale again.
+    const review2 = await migrate(v2, { dryRun: true, companyIds: [G], confirmFeatureDowngrade: true });
+    expect(review2.body.digest).not.toBe(review.body.digest);
+    const gUser = await api("POST", "/users", platformToken, { email: `gadmin@${DOMAIN}`, name: "gadmin", role: "primary_admin", companyId: G, password: PW });
+    expect(gUser.status, gUser.text).toBe(201);
+    const gToken = await login(`gadmin@${DOMAIN}`);
+    expect((await api("POST", "/contacts", gToken, { firstName: "Usage", lastName: `B43-${SUFFIX}`, email: `g-usage-${SUFFIX}@example.test` })).status).toBe(201);
+    const stale2 = await migrate(v2, { dryRun: false, companyIds: [G], confirmFeatureDowngrade: true, confirmDigest: review2.body.digest });
+    expect(stale2.status).toBe(409);
+    expect(stale2.body.code).toBe("DRY_RUN_STALE");
+    // The fresh review executes and is complete.
+    const review3 = await migrate(v2, { dryRun: true, companyIds: [G], confirmFeatureDowngrade: true });
+    const done = await migrate(v2, { dryRun: false, companyIds: [G], confirmFeatureDowngrade: true, confirmDigest: review3.body.digest });
+    expect(done.status, done.text).toBe(200);
+    expect(done.body).toMatchObject({ status: "complete", complete: true, incompleteReasons: [], summary: { migrated: 1, eligible: 1, skipped: 0, concurrentlyChanged: 0, ineligible: 0 } });
+    expect((await subRow(G))).toMatchObject({ planVersionId: v2, limitOverrides: { contacts: 5 } });
+  });
+
+  it("1A/1B: a tenant whose data changes between the review and its own transaction is skipped with the changed inputs — none migrated = concurrently_changed, never complete", async () => {
+    const review = await migrate(v2, { dryRun: true, companyIds: [H], confirmFeatureDowngrade: true });
+    expect(rowOf(review, H).reason).toBe("ELIGIBLE");
+    const summariesBefore = (await summaryAudit()).length;
+    let hooks = 0;
+    __setBillingFaultsForTests({
+      "migration.beforeTenant": async () => {
+        hooks++;
+        await db.update(subscriptionsTable).set({ limitOverrides: { contacts: 7 } }).where(eq(subscriptionsTable.companyId, H));
+      },
+    });
+    let result: any;
+    try {
+      result = await migrateTenants(ACTOR, PLAN, v2, { dryRun: false, companyIds: [H], confirmFeatureDowngrade: true, confirmDigest: review.body.digest });
+    } finally {
+      __setBillingFaultsForTests({});
+    }
+    expect(hooks).toBe(1);
+    expect(result.rows[0]).toMatchObject({ companyId: H, reason: "ELIGIBLE", outcome: "skipped", outcomeReason: "CHANGED_SINCE_DRY_RUN", reviewDigest: rowOf(review, H).reviewDigest });
+    expect(result.rows[0].changedSinceReview).toEqual(expect.arrayContaining(["limitOverrides", "limits"]));
+    expect(result.summary).toMatchObject({ total: 1, eligible: 1, migrated: 0, skipped: 1, concurrentlyChanged: 1, failed: 0, rolledBack: 0, ineligible: 0 });
+    expect(result).toMatchObject({ complete: false, status: "concurrently_changed", incompleteReasons: ["concurrently_changed"] });
+    expect((await subRow(H))).toMatchObject({ planVersionId: v1, limitOverrides: { contacts: 7 } });
+    expect(await migrationAudit(H)).toHaveLength(0);
+    const summaries = await summaryAudit();
+    expect(summaries).toHaveLength(summariesBefore + 1);
+    expect(summaries[summaries.length - 1].metadata as any).toMatchObject({ complete: false, status: "concurrently_changed", incompleteReasons: ["concurrently_changed"], summary: { migrated: 0, concurrentlyChanged: 1 }, companies: [{ companyId: H, outcome: "skipped", outcomeReason: "CHANGED_SINCE_DRY_RUN" }] });
+    expect((summaries[summaries.length - 1].metadata as any).companies[0].changedSinceReview).toEqual(expect.arrayContaining(["limitOverrides"]));
+  });
+
+  it("1A: some migrated and one concurrently changed = partial (complete false); ineligible tenants are reported as such; the summary audit matches", async () => {
+    const review = await migrate(v2, { dryRun: true, companyIds: [D, F, H, I], confirmFeatureDowngrade: true, reason: "Wave 2" });
+    expect(review.body.summary).toMatchObject({ eligible: 2, byReason: { ELIGIBLE: 2, PROVIDER_MANAGED: 1, ALREADY_ON_VERSION: 1 } });
+    let first = true;
+    __setBillingFaultsForTests({
+      "migration.beforeTenant": async () => {
+        if (!first) return;
+        first = false;
+        // Before the FIRST eligible tenant (H) is locked, the SECOND one (I) changes.
+        await db.update(subscriptionsTable).set({ limitOverrides: { events: 3 } }).where(eq(subscriptionsTable.companyId, I));
+      },
+    });
+    let result: any;
+    try {
+      result = await migrateTenants(ACTOR, PLAN, v2, { dryRun: false, companyIds: [D, F, H, I], confirmFeatureDowngrade: true, confirmDigest: review.body.digest, reason: "Wave 2" });
+    } finally {
+      __setBillingFaultsForTests({});
+    }
+    const byId = Object.fromEntries(result.rows.map((r: MigrationRow) => [r.companyId, r]));
+    expect(byId[D]).toMatchObject({ outcome: "ineligible", outcomeReason: "PROVIDER_MANAGED", changedSinceReview: [] });
+    expect(byId[F]).toMatchObject({ outcome: "ineligible", outcomeReason: "ALREADY_ON_VERSION" });
+    expect(byId[H]).toMatchObject({ outcome: "migrated", outcomeReason: null });
+    expect(byId[I]).toMatchObject({ outcome: "skipped", outcomeReason: "CHANGED_SINCE_DRY_RUN" });
+    expect(byId[I].changedSinceReview).toEqual(expect.arrayContaining(["limitOverrides"]));
+    expect(result.summary).toMatchObject({ total: 4, eligible: 2, migrated: 1, skipped: 1, concurrentlyChanged: 1, ineligible: 2, failed: 0, rolledBack: 0, notAttempted: 0 });
+    expect(result).toMatchObject({ complete: false, status: "partial", incompleteReasons: ["concurrently_changed"] });
+    expect((await subRow(H)).planVersionId).toBe(v2);
+    expect((await subRow(I)).planVersionId).toBe(v1);
+    expect(await migrationAudit(H)).toHaveLength(1);
+    expect(await migrationAudit(I)).toHaveLength(0);
+    const s = (await summaryAudit()).pop()!.metadata as any;
+    expect(s).toMatchObject({ status: "partial", complete: false, incompleteReasons: ["concurrently_changed"], summary: result.summary });
+    expect(s.companies.map((c: any) => [c.companyId, c.outcome])).toEqual(expect.arrayContaining([[D, "ineligible"], [F, "ineligible"], [H, "migrated"], [I, "skipped"]]));
+    // The same approval cannot be replayed (H moved → stale); a fresh review migrates I and is complete with the ineligible rows still reported.
+    const replay = await migrate(v2, { dryRun: false, companyIds: [D, F, H, I], confirmFeatureDowngrade: true, confirmDigest: review.body.digest, reason: "Wave 2" });
+    expect(replay.status).toBe(409);
+    expect(replay.body.code).toBe("DRY_RUN_STALE");
+    const review2 = await migrate(v2, { dryRun: true, companyIds: [D, F, H, I], confirmFeatureDowngrade: true });
+    expect(review2.body.summary.eligible).toBe(1);
+    const done = await migrate(v2, { dryRun: false, companyIds: [D, F, H, I], confirmFeatureDowngrade: true, confirmDigest: review2.body.digest });
+    expect(done.status, done.text).toBe(200);
+    expect(done.body).toMatchObject({ status: "complete", complete: true, summary: { eligible: 1, migrated: 1, ineligible: 3, skipped: 0 } });
+    expect(rowOf(done, H)).toMatchObject({ outcome: "ineligible", outcomeReason: "ALREADY_ON_VERSION" });
+    expect((await subRow(I)).planVersionId).toBe(v2);
+  });
+
+  it("1A: the classification is a pure function of the per-tenant outcomes (summary ⇔ status ⇔ complete)", () => {
+    const row = (reason: MigrationRow["reason"], outcome: MigrationRow["outcome"], outcomeReason: string | null = null): MigrationRow =>
+      ({ companyId: 1, companyName: null, currentPlan: PLAN, currentPlanVersionId: v1, currentVersion: 1, currentReferenceValid: true, billingSource: "manual", status: "active", reason, blocking: [], unmeasurable: [], lostFeatures: [], tightenedLimits: [], outcome, outcomeReason, reviewDigest: "0".repeat(64), changedSinceReview: [] });
+    const c = (rows: MigrationRow[]) => classifyExecution(summarize(rows));
+    expect(c([row("ELIGIBLE", "migrated"), row("PROVIDER_MANAGED", "ineligible", "PROVIDER_MANAGED")])).toEqual({ status: "complete", incompleteReasons: [], complete: true });
+    expect(c([row("ELIGIBLE", "migrated"), row("ELIGIBLE", "skipped", "CHANGED_SINCE_DRY_RUN")])).toEqual({ status: "partial", incompleteReasons: ["concurrently_changed"], complete: false });
+    expect(c([row("ELIGIBLE", "migrated"), row("ELIGIBLE", "failed", "ERROR"), row("ELIGIBLE", "rolled_back", "PLAN_CHANGE_VERIFICATION_FAILED")])).toEqual({ status: "partial", incompleteReasons: ["failed", "rolled_back"], complete: false });
+    expect(c([row("ELIGIBLE", "skipped", "CHANGED_SINCE_DRY_RUN"), row("ELIGIBLE", "skipped", "SUBSCRIPTION_MISSING")])).toEqual({ status: "concurrently_changed", incompleteReasons: ["concurrently_changed"], complete: false });
+    expect(c([row("ELIGIBLE", "failed", "ERROR"), row("ELIGIBLE", "skipped", "CHANGED_SINCE_DRY_RUN")])).toEqual({ status: "failed", incompleteReasons: ["concurrently_changed", "failed"], complete: false });
+    expect(c([row("ELIGIBLE", "rolled_back", "PLAN_CHANGE_VERIFICATION_FAILED")])).toEqual({ status: "rolled_back", incompleteReasons: ["rolled_back"], complete: false });
+    // A skipped eligible tenant is never masked by a clean failure count (the Batch 42 defect).
+    expect(c([row("ELIGIBLE", "migrated"), row("ELIGIBLE", "skipped", "CHANGED_SINCE_DRY_RUN")]).complete).toBe(false);
+    expect(summarize([row("ELIGIBLE", "skipped", "CHANGED_SINCE_DRY_RUN")])).toMatchObject({ skipped: 1, concurrentlyChanged: 1, eligible: 1 });
   });
 
   it("a retired version is never a migration target (the per-tenant change stays the explicit path)", async () => {

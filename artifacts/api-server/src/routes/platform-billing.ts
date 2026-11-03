@@ -9,6 +9,7 @@ import {
   PlatformRegisterPriceBody,
   PlatformUpdatePriceBody,
   PlatformPreviewSubscriptionPlanChangeBody,
+  PlatformSubscriptionPlanHistoryQueryParams,
 } from "@workspace/api-zod";
 import { getClientIp } from "../lib/security.js";
 import { AppError } from "../middlewares/errorHandler.js";
@@ -53,8 +54,13 @@ router.get("/platform/subscriptions/:companyId/events", async (req: AuthRequest,
   res.json({ events: await platformBilling.listRecentProviderEvents(companyIdParam(req)) });
 });
 // Batch 42 (PB-4.6): the tenant's plan / version history, projected from the audit trail.
+// Batch 43 (PB-5): cursor-paginated (limit / cursor / order validated by the generated Zod query schema).
 router.get("/platform/subscriptions/:companyId/plan-history", async (req: AuthRequest, res) => {
-  res.json(await planHistory(companyIdParam(req)));
+  const parsed = PlatformSubscriptionPlanHistoryQueryParams.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    throw new AppError(400, "Invalid plan-history query", { code: "INVALID_QUERY", details: { issues: parsed.error.issues.map((i) => ({ path: i.path.map(String).join("."), message: i.message })) } });
+  }
+  res.json(await planHistory(companyIdParam(req), parsed.data));
 });
 
 // ── manual lifecycle ────────────────────────────────────────────────────────

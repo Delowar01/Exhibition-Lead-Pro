@@ -1268,10 +1268,21 @@ export const PlatformPreviewSubscriptionPlanChangeResponse = zod.object({
 
 
 /**
- * @summary The tenant's plan / version history projected from the audit trail (Batch 42) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+ * @summary The tenant's plan / version history projected from the audit trail (Batch 42; Batch 43 adds stable server-side cursor pagination over the relevant plan-change events) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
  */
 export const PlatformSubscriptionPlanHistoryParams = zod.object({
   "companyId": zod.coerce.number()
+})
+
+export const platformSubscriptionPlanHistoryQueryLimitDefault = 50;
+export const platformSubscriptionPlanHistoryQueryLimitMax = 200;
+
+export const platformSubscriptionPlanHistoryQueryOrderDefault = `asc`;
+
+export const PlatformSubscriptionPlanHistoryQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(platformSubscriptionPlanHistoryQueryLimitMax).default(platformSubscriptionPlanHistoryQueryLimitDefault).describe('Page size (1–200, default 50) over the RELEVANT plan-change events only (ordinary audit rows never consume the page)'),
+  "cursor": zod.coerce.string().optional().describe('Opaque cursor of the last entry of the previous page (nextCursor); omitted = the first page'),
+  "order": zod.enum(['asc', 'desc']).default(platformSubscriptionPlanHistoryQueryOrderDefault).describe('asc = oldest first (chronology), desc = newest first (the latest changes are reachable immediately)')
 })
 
 export const PlatformSubscriptionPlanHistoryResponse = zod.object({
@@ -1293,6 +1304,7 @@ export const PlatformSubscriptionPlanHistoryResponse = zod.object({
 }),
   "entries": zod.array(zod.object({
   "auditId": zod.number(),
+  "cursor": zod.string().describe('Opaque position of this entry in the stable (createdAt, auditId) order; pass it as `cursor` to continue after it'),
   "at": zod.coerce.date(),
   "action": zod.string(),
   "kind": zod.enum(['created', 'direct_change', 'version_change', 'repair', 'migration', 'provider_sync', 'backfill_pin', 'other']),
@@ -1323,10 +1335,14 @@ export const PlatformSubscriptionPlanHistoryResponse = zod.object({
   "featureEnforcementAfter": zod.string().nullable(),
   "confirmFeatureDowngrade": zod.boolean().nullable(),
   "repairedInvalidReference": zod.boolean()
-})),
-  "total": zod.number(),
-  "truncated": zod.boolean(),
-  "generatedAt": zod.coerce.date()
+})).describe('One page of the tenant\'s relevant plan-change events in the requested order (stable keyset order over createdAt + auditId)'),
+  "total": zod.number().describe('The number of relevant plan-change events of the tenant across the whole history (not only this page)'),
+  "truncated": zod.boolean().describe('true when the response does not carry the whole history (= hasMore; kept for compatibility)'),
+  "generatedAt": zod.coerce.date(),
+  "pageSize": zod.number(),
+  "order": zod.enum(['asc', 'desc']),
+  "nextCursor": zod.string().nullable().describe('The cursor to request the next page in the same order; null when this page ends the history'),
+  "hasMore": zod.boolean()
 })
 
 
@@ -3807,7 +3823,7 @@ export const PlatformMigratePlanVersionTenantsResponse = zod.object({
 }).nullable(),
   "scope": zod.enum(['companies', 'source_version']),
   "confirmFeatureDowngrade": zod.boolean(),
-  "digest": zod.string().describe('sha256 over the reviewed rows (target, source, confirmation flag, per-tenant current reference + reason + blockers + lost features)'),
+  "digest": zod.string().describe('sha256 over the canonical serialization of the reviewed scope (target plan \/ version \/ state, source, confirmation flag, scope kind) and every tenant\'s reviewDigest inputs; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same value'),
   "generatedAt": zod.coerce.date(),
   "dryRun": zod.boolean(),
   "migrationId": zod.string().nullable(),
@@ -3829,8 +3845,10 @@ export const PlatformMigratePlanVersionTenantsResponse = zod.object({
   "unmeasurable": zod.array(zod.string()),
   "lostFeatures": zod.array(zod.string()),
   "tightenedLimits": zod.array(zod.string()),
-  "outcome": zod.enum(['migrated', 'skipped', 'failed', 'rolled_back', 'not_attempted']),
-  "outcomeReason": zod.string().nullable()
+  "outcome": zod.enum(['migrated', 'skipped', 'failed', 'rolled_back', 'ineligible', 'not_attempted']).describe('Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN \/ SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run)'),
+  "outcomeReason": zod.string().nullable(),
+  "reviewDigest": zod.string().describe('sha-256 over every material eligibility input of THIS tenant as reviewed (reference, status, billing source, overrides, measured usage, target limits, feature matrices, trial \/ allowance targets, transition, reason); the execution re-computes it inside the tenant\'s transaction and skips on any difference'),
+  "changedSinceReview": zod.array(zod.string()).describe('On a skipped tenant, the top-level review inputs that differ from the reviewed row (empty otherwise)')
 })),
   "summary": zod.object({
   "total": zod.number(),
@@ -3840,9 +3858,13 @@ export const PlatformMigratePlanVersionTenantsResponse = zod.object({
   "skipped": zod.number(),
   "failed": zod.number(),
   "rolledBack": zod.number(),
-  "notAttempted": zod.number()
+  "notAttempted": zod.number(),
+  "ineligible": zod.number().describe('Tenants deliberately not migrated (reviewed reason other than ELIGIBLE); execution only'),
+  "concurrentlyChanged": zod.number().describe('Eligible tenants skipped because their data changed between the review and their own transaction (CHANGED_SINCE_DRY_RUN \/ SUBSCRIPTION_MISSING)')
 }),
-  "complete": zod.boolean().nullable().describe('null for a dry run; true only when nothing failed or rolled back')
+  "complete": zod.boolean().nullable().describe('null for a dry run; true only when status is `complete` — every eligible tenant of the reviewed scope was migrated (any skipped, failed or rolled-back eligible tenant makes it false)'),
+  "status": zod.enum(['dry_run', 'complete', 'partial', 'concurrently_changed', 'failed', 'rolled_back']).describe('dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error)'),
+  "incompleteReasons": zod.array(zod.enum(['concurrently_changed', 'failed', 'rolled_back'])).describe('Why the execution is not complete (empty for dry runs and complete executions)')
 })
 
 

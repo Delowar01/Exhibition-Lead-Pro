@@ -365,12 +365,25 @@ test("platform owner: migrate v1 tenants to v2 — dry run with reasons, confirm
   await expect(page.getByTestId("migrate-digest")).toContainText("review");
   await expect(page.getByTestId("migrate-execute")).toBeEnabled();
   await page.getByTestId("migrate-execute").click();
+  // Batch 43: the execute button arms an inline confirmation that states the consequence; nothing is sent yet.
+  const confirmPanel = page.getByTestId("migrate-execute-confirm-panel");
+  await expect(confirmPanel).toBeVisible();
+  await expect(confirmPanel).toContainText("Migrate 2 tenants");
+  await expect(page.getByTestId("migrate-result")).toHaveCount(0);
+  await page.getByTestId("migrate-execute-cancel").click();
+  await expect(confirmPanel).toHaveCount(0);
+  await page.getByTestId("migrate-execute").click();
+  await page.getByTestId("migrate-execute-confirm").click();
   await expect(page.getByTestId("migrate-result")).toBeVisible();
-  await expect(page.getByTestId("migrate-complete")).toHaveText("complete");
+  await expect(page.getByTestId("migrate-complete")).toHaveAttribute("data-status", "complete");
+  await expect(page.getByTestId("migrate-complete")).toHaveAttribute("data-complete", "true");
+  await expect(page.getByTestId("migrate-complete")).toHaveText("Complete");
+  await expect(page.getByTestId("migrate-incomplete-note")).toHaveCount(0);
   await expect(page.getByTestId("migrate-summary")).toContainText("2 migrated");
   await expect(page.getByTestId(`migrate-row-${migA}`)).toHaveAttribute("data-outcome", "migrated");
   await expect(page.getByTestId(`migrate-row-${migB}`)).toHaveAttribute("data-outcome", "migrated");
-  await expect(page.getByTestId(`migrate-row-${migC}`)).toHaveAttribute("data-outcome", "not_attempted");
+  await expect(page.getByTestId(`migrate-row-${migC}`)).toHaveAttribute("data-outcome", "ineligible");
+  await expect(page.getByTestId(`migrate-row-${migC}`)).toContainText("Not migrated (ineligible)");
   await expect(page.getByTestId("migrate-execute")).toBeDisabled();
   await page.getByTestId("migrate-close").click();
   await expect(dialog).toBeHidden();
@@ -403,5 +416,45 @@ test("platform owner: migrate v1 tenants to v2 — dry run with reasons, confirm
   await expect(migrationRow).toHaveAttribute("data-kind", "migration");
   await expect(migrationRow).toContainText("ZE migration");
   await expect(migrationRow).toContainText("(batch)");
+  expect(errors).toEqual([]);
+});
+
+test("platform owner: plan history is paged server-side — the newest changes come first, Load more walks the cursor to the original plan after thousands of entries would otherwise hide it", async ({ page }) => {
+  const errors = trackConsole(page);
+  // migB (on v2 after the migration) receives 30 further direct changes alternating v1 / v2; with the created,
+  // onboarding and migration rows it now has 33 relevant history entries — more than one UI page (25).
+  for (let i = 0; i < 30; i++) {
+    const target = i % 2 === 0 ? v1Id : v2Id;
+    const res = await api("POST", `/platform/subscriptions/${migB}/plan`, { plan: SLUG, planVersionId: target, confirmFeatureDowngrade: true, reason: `ZE page ${i}` }, platform.token);
+    expect(res.status, res.text).toBe(200);
+  }
+  const newest = (await api("GET", `/platform/subscriptions/${migB}/plan-history?order=desc&limit=1`, undefined, platform.token)).json;
+  expect(newest).toMatchObject({ total: 33, pageSize: 1, order: "desc", hasMore: true });
+  expect(newest.entries).toHaveLength(1);
+  expect(newest.entries[0]).toMatchObject({ kind: "version_change", reason: "ZE page 29", toVersionId: v2Id }); // same plan, other version
+  const oldest = (await api("GET", `/platform/subscriptions/${migB}/plan-history?order=asc&limit=1`, undefined, platform.token)).json;
+  expect(oldest.entries[0].kind).toBe("created");
+  await seedAs(page, platform);
+  await page.goto("/platform/subscriptions");
+  await page.getByTestId(`sub-manage-${migB}`).click();
+  await expect(page.getByTestId("sub-detail")).toBeVisible();
+  await expect(page.getByTestId("plan-history-summary")).toContainText("Original free");
+  await expect(page.getByTestId("plan-history-summary")).toContainText("showing 25 of 33");
+  await page.getByTestId("plan-history-toggle").click();
+  const table = page.getByTestId("plan-history-table");
+  await expect(table).toHaveAttribute("data-count", "25");
+  await expect(page.getByTestId(`plan-history-row-${newest.entries[0].auditId}`)).toBeVisible();
+  await expect(page.getByTestId(`plan-history-row-${oldest.entries[0].auditId}`)).toHaveCount(0);
+  // Newest first: the first row is the latest change.
+  await expect(table.locator("tbody tr").first()).toContainText("ZE page 29");
+  const loadMore = page.getByTestId("plan-history-load-more");
+  await expect(loadMore).toContainText("25 of 33");
+  await loadMore.click();
+  await expect(table).toHaveAttribute("data-count", "33");
+  await expect(loadMore).toHaveCount(0);
+  await expect(page.getByTestId("plan-history-summary")).not.toContainText("showing");
+  const createdRow = page.getByTestId(`plan-history-row-${oldest.entries[0].auditId}`);
+  await expect(createdRow).toHaveAttribute("data-kind", "created");
+  await expect(table.locator("tbody tr").last()).toContainText("Created");
   expect(errors).toEqual([]);
 });

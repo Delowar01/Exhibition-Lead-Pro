@@ -220,9 +220,14 @@ export async function verifyAppliedChange(after: SubscriptionRow, e: PlanChangeE
   if (after.plan !== e.target.plan || (after.planVersionId ?? null) !== e.target.planVersionId) throw new AppError(500, "Plan change verification failed; the change was rolled back", { code: "PLAN_CHANGE_VERIFICATION_FAILED", details: { reason: "reference" } });
 }
 
-// Deterministic digest over the facts an owner reviewed (stable key order).
-export function digestOf(value: unknown): string {
+// Deterministic digest over the facts an owner reviewed: a canonical serialization
+// (object keys sorted recursively, array order preserved, `undefined` / NaN /
+// Infinity rendered as null, Dates as ISO instants) hashed with sha-256, so two
+// evaluations of the same data yield the same digest whatever the key order or
+// the JS value provenance (Batch 43, Task 1B).
+export function canonicalJson(value: unknown): string {
   const canonical = (v: unknown): string => {
+    if (v instanceof Date) return JSON.stringify(v.toISOString());
     if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
     if (v && typeof v === "object") {
       const o = v as Record<string, unknown>;
@@ -231,7 +236,48 @@ export function digestOf(value: unknown): string {
         .map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`)
         .join(",")}}`;
     }
+    if (typeof v === "number" && !Number.isFinite(v)) return "null";
     return JSON.stringify(v) ?? "null";
   };
-  return createHash("sha256").update(canonical(value)).digest("hex");
+  return canonical(value);
+}
+export function digestOf(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+// Batch 43 (PB-5, Task 1B) — EVERY material input of a tenant's migration
+// eligibility, as reviewed in the dry run: the current reference (plan, version,
+// validity, billing source, lifecycle status), the tenant's limit overrides, the
+// target reference and state, the transition verdict, the full per-resource
+// comparison (current / target limit, override, measured usage, measurability,
+// exceeds / tightens / loosens), the blockers, the feature matrices on both sides
+// with the enforcement modes and the lost / gained lists, the trial end policies,
+// the AI allowances and the resulting reason. The execution recomputes this
+// object INSIDE the tenant's transaction and skips the tenant on any difference.
+export function reviewInputOf(sub: SubscriptionRow, e: PlanChangeEvaluation, reason: string): Record<string, unknown> {
+  return {
+    companyId: sub.companyId,
+    current: { ...e.current },
+    limitOverrides: sub.limitOverrides ?? null,
+    target: { plan: e.target.plan, planVersionId: e.target.planVersionId, version: e.target.version, state: e.target.state },
+    changeKind: e.changeKind,
+    transition: { ...e.transition },
+    limits: e.limits.map((r) => ({ ...r })),
+    blocking: e.blocking.map((b) => ({ ...b })),
+    unmeasurable: [...e.unmeasurable],
+    tightenedLimits: [...e.tightenedLimits],
+    loosenedLimits: [...e.loosenedLimits],
+    features: { enforcement: { ...e.features.enforcement }, current: { ...e.features.current }, target: { ...e.features.target }, lost: [...e.features.lost], gained: [...e.features.gained] },
+    trialPolicy: { current: { ...e.trialPolicy.current }, target: { ...e.trialPolicy.target } },
+    allowances: { current: { ...e.allowances.current }, target: { ...e.allowances.target } },
+    requiresFeatureConfirmation: e.requiresFeatureConfirmation,
+    eligible: e.eligible,
+    reason,
+  };
+}
+
+// The top-level review inputs whose canonical form differs between two review objects.
+export function changedReviewKeys(reviewed: Record<string, unknown>, fresh: Record<string, unknown>): string[] {
+  const keys = new Set([...Object.keys(reviewed), ...Object.keys(fresh)]);
+  return [...keys].filter((k) => canonicalJson(reviewed[k]) !== canonicalJson(fresh[k])).sort();
 }

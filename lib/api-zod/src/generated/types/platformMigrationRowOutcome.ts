@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run)
+ */
 export type PlatformMigrationRowOutcome = typeof PlatformMigrationRowOutcome[keyof typeof PlatformMigrationRowOutcome];
 
 
@@ -14,5 +17,6 @@ export const PlatformMigrationRowOutcome = {
   skipped: 'skipped',
   failed: 'failed',
   rolled_back: 'rolled_back',
+  ineligible: 'ineligible',
   not_attempted: 'not_attempted',
 } as const;

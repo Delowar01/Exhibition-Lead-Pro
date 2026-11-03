@@ -14,7 +14,7 @@ import {
   type PlanVersionSnapshot,
   type PriceLike,
 } from "../src/lib/billing/plan-versions.js";
-import { digestOf } from "../src/services/plan-change.service.js";
+import { canonicalJson, changedReviewKeys, digestOf } from "../src/services/plan-change.service.js";
 
 // Batch 42 (PB-4) — PURE pricing rules (no database, no HTTP): the canonical
 // period key, the draft's manual price summaries (D2), the publication price
@@ -169,5 +169,18 @@ describe("comparison and digest", () => {
     expect(digestOf({ targetVersionId: 6, rows: [{ companyId: 1, reason: "ELIGIBLE" }, { companyId: 2, reason: "ELIGIBLE" }] })).not.toBe(d1);
     expect(digestOf({ targetVersionId: 5, rows: [{ companyId: 1, reason: "DOWNGRADE_BLOCKED" }, { companyId: 2, reason: "ELIGIBLE" }] })).not.toBe(d1);
     expect(digestOf(null)).toBe(digestOf(undefined));
+  });
+
+  it("Batch 43: the canonical serialization is deterministic across key order, undefined / NaN / Infinity and Dates", () => {
+    expect(canonicalJson({ b: 1, a: { d: [1, { z: 1, y: 2 }], c: null } })).toBe('{"a":{"c":null,"d":[1,{"y":2,"z":1}]},"b":1}');
+    expect(canonicalJson({ a: undefined })).toBe(canonicalJson({ a: null }));
+    expect(canonicalJson({ a: Number.NaN, b: Number.POSITIVE_INFINITY })).toBe(canonicalJson({ a: null, b: null }));
+    expect(canonicalJson(new Date("2026-01-02T03:04:05.006Z"))).toBe('"2026-01-02T03:04:05.006Z"');
+    expect(digestOf({ limits: [{ resource: "contacts", used: 3 }], overrides: { contacts: 5 } })).toBe(digestOf({ overrides: { contacts: 5 }, limits: [{ used: 3, resource: "contacts" }] }));
+    expect(digestOf({ limits: [{ resource: "contacts", used: 3 }] })).not.toBe(digestOf({ limits: [{ resource: "contacts", used: 4 }] }));
+    expect(changedReviewKeys({ a: 1, b: { x: [1, 2] }, c: "same" }, { a: 2, b: { x: [2, 1] }, c: "same", d: 1 })).toEqual(["a", "b", "d"]);
+    // undefined and null are the same canonical value, so a key that only appears as null is not a change.
+    expect(changedReviewKeys({ a: 1 }, { a: 1, d: null })).toEqual([]);
+    expect(changedReviewKeys({ a: { k: 1, j: 2 } }, { a: { j: 2, k: 1 } })).toEqual([]);
   });
 });

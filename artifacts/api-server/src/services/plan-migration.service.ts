@@ -5,8 +5,9 @@ import { logger } from "../lib/logger.js";
 import * as repo from "../repositories/subscriptions.repository.js";
 import type { PlanRow, PlanVersionRow, SubscriptionRow } from "../repositories/subscriptions.repository.js";
 import { sanitizeReason, type AuditActor } from "../lib/billing/audit.js";
+import { billingFault } from "../lib/billing/test-faults.js";
 import { isPlanSlug } from "../lib/billing/plan-versions.js";
-import { digestOf, evaluatePlanChange, type ChangeTarget, type PlanChangeEvaluation } from "./plan-change.service.js";
+import { changedReviewKeys, digestOf, evaluatePlanChange, reviewInputOf, type ChangeTarget, type PlanChangeEvaluation } from "./plan-change.service.js";
 import { applyPlanChange } from "./subscription-lifecycle.service.js";
 
 // Batch 42 (PB-4.5) — safe tenant migration between PUBLISHED versions for
@@ -27,9 +28,25 @@ import { applyPlanChange } from "./subscription-lifecycle.service.js";
 //   • each tenant is migrated in its OWN transaction (row lock, recheck against
 //     the dry-run row, commit, post-change verification → rollback on mismatch)
 //     with one audit row per tenant carrying the migration id and the digest;
-//     an audit summary row records the counts; outcomes are reported per tenant
-//     as migrated / skipped / failed / rolled_back — never a silent partial
-//     success (`complete` is true only when nothing failed or rolled back).
+//     an audit summary row records the counts.
+//
+// Batch 43 (PB-5, Task 1) — corrections of the Batch 42 semantics:
+//   A. completion accuracy — `complete` is true ONLY when every eligible tenant of
+//      the reviewed scope was migrated; a `status` distinguishes complete /
+//      partial / concurrently_changed / failed / rolled_back (with
+//      `incompleteReasons`), the summary counts `ineligible` (deliberately not
+//      migrated, reviewed reason ≠ ELIGIBLE) and `concurrentlyChanged` (eligible
+//      tenants skipped because their data moved between the review and their own
+//      transaction), and every per-tenant outcome + the audit summary carry the
+//      same classification;
+//   B. dry-run integrity — the digest covers EVERY material eligibility input of
+//      every tenant (reference, status, billing source, overrides, measured usage,
+//      target limits, feature matrices, trial / allowance targets, transition,
+//      reason) through a canonical serialization; each tenant carries its own
+//      `reviewDigest`, recomputed INSIDE the tenant's transaction after the row
+//      lock — any difference skips the tenant (CHANGED_SINCE_DRY_RUN with the
+//      changed inputs listed), so a stale approval can never apply a change the
+//      owner did not review.
 
 export const MAX_SCOPE = 200;
 
@@ -43,7 +60,9 @@ export type MigrationReason =
   | "FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED"
   | "SUBSCRIPTION_MISSING";
 
-export type MigrationOutcome = "migrated" | "skipped" | "failed" | "rolled_back" | "not_attempted";
+export type MigrationOutcome = "migrated" | "skipped" | "failed" | "rolled_back" | "ineligible" | "not_attempted";
+export type MigrationStatus = "dry_run" | "complete" | "partial" | "concurrently_changed" | "failed" | "rolled_back";
+export type IncompleteReason = "concurrently_changed" | "failed" | "rolled_back";
 
 export interface MigrationRow {
   companyId: number;
@@ -61,6 +80,21 @@ export interface MigrationRow {
   tightenedLimits: string[];
   outcome: MigrationOutcome;
   outcomeReason: string | null;
+  reviewDigest: string;
+  changedSinceReview: string[];
+}
+
+export interface MigrationSummary {
+  total: number;
+  eligible: number;
+  byReason: Record<string, number>;
+  migrated: number;
+  skipped: number;
+  failed: number;
+  rolledBack: number;
+  notAttempted: number;
+  ineligible: number;
+  concurrentlyChanged: number;
 }
 
 export interface MigrateInput {
@@ -143,11 +177,19 @@ function reasonOf(sub: SubscriptionRow, e: PlanChangeEvaluation, source: PlanVer
   return "ELIGIBLE";
 }
 
-async function evaluateRow(sub: SubscriptionRow, target: ChangeTarget, source: PlanVersionRow | null, confirm: boolean, now: Date, name: string | null): Promise<{ row: MigrationRow; evaluation: PlanChangeEvaluation }> {
+interface EvaluatedRow {
+  row: MigrationRow;
+  evaluation: PlanChangeEvaluation;
+  reviewInput: Record<string, unknown>;
+}
+
+async function evaluateRow(sub: SubscriptionRow, target: ChangeTarget, source: PlanVersionRow | null, confirm: boolean, now: Date, name: string | null): Promise<EvaluatedRow> {
   const evaluation = await evaluatePlanChange(sub, target, now);
   const reason = reasonOf(sub, evaluation, source, confirm);
+  const reviewInput = reviewInputOf(sub, evaluation, reason);
   return {
     evaluation,
+    reviewInput,
     row: {
       companyId: sub.companyId,
       companyName: name,
@@ -164,21 +206,33 @@ async function evaluateRow(sub: SubscriptionRow, target: ChangeTarget, source: P
       tightenedLimits: evaluation.tightenedLimits,
       outcome: "not_attempted",
       outcomeReason: null,
+      reviewDigest: digestOf(reviewInput),
+      changedSinceReview: [],
     },
   };
 }
 
+function missingReviewInput(companyId: number): Record<string, unknown> {
+  return { companyId, subscription: null, reason: "SUBSCRIPTION_MISSING" };
+}
 function missingRow(companyId: number): MigrationRow {
-  return { companyId, companyName: null, currentPlan: null, currentPlanVersionId: null, currentVersion: null, currentReferenceValid: false, billingSource: null, status: null, reason: "SUBSCRIPTION_MISSING", blocking: [], unmeasurable: [], lostFeatures: [], tightenedLimits: [], outcome: "not_attempted", outcomeReason: null };
+  return { companyId, companyName: null, currentPlan: null, currentPlanVersionId: null, currentVersion: null, currentReferenceValid: false, billingSource: null, status: null, reason: "SUBSCRIPTION_MISSING", blocking: [], unmeasurable: [], lostFeatures: [], tightenedLimits: [], outcome: "not_attempted", outcomeReason: null, reviewDigest: digestOf(missingReviewInput(companyId)), changedSinceReview: [] };
 }
 
-// What the owner reviews and what the execution must still see (stable key order).
-function dryRunDigest(targetVersionId: number, sourceVersionId: number | null, confirm: boolean, rows: MigrationRow[]): string {
+// What the owner reviews and what the execution must still see: the scope and
+// the target / source identities plus every tenant's full review digest.
+function dryRunDigest(target: PlanVersionRow, plan: PlanRow, source: PlanVersionRow | null, confirm: boolean, scope: "companies" | "source_version", rows: MigrationRow[]): string {
   return digestOf({
-    targetVersionId,
-    sourceVersionId,
+    targetPlanId: plan.id,
+    targetVersionId: target.id,
+    targetVersion: target.version,
+    targetPublishedAt: target.publishedAt,
+    targetRetiredAt: target.retiredAt,
+    sourceVersionId: source?.id ?? null,
+    sourcePlanId: source?.planId ?? null,
     confirmFeatureDowngrade: confirm,
-    rows: rows.map((r) => ({ companyId: r.companyId, currentPlan: r.currentPlan, currentPlanVersionId: r.currentPlanVersionId, reason: r.reason, blocking: r.blocking, lostFeatures: r.lostFeatures })),
+    scope,
+    rows: rows.map((r) => ({ companyId: r.companyId, reviewDigest: r.reviewDigest })),
   });
 }
 
@@ -186,33 +240,71 @@ async function dryRun(planId: string, versionId: number, p: Parsed, now: Date) {
   const { plan, version } = await resolveTarget(planId, versionId);
   const source = await resolveSource(p.sourceVersionId, version);
   const target: ChangeTarget = { plan, version, explicit: true };
+  const scope = p.companyIds ? ("companies" as const) : ("source_version" as const);
   let subs: SubscriptionRow[];
   const rows: MigrationRow[] = [];
+  const reviewed = new Map<number, Record<string, unknown>>();
   if (p.companyIds) {
     subs = await repo.listSubscriptionsByCompanyIds(p.companyIds);
     const found = new Set(subs.map((s) => s.companyId));
-    for (const id of p.companyIds) if (!found.has(id)) rows.push(missingRow(id));
+    for (const id of p.companyIds) {
+      if (!found.has(id)) {
+        rows.push(missingRow(id));
+        reviewed.set(id, missingReviewInput(id));
+      }
+    }
   } else {
     subs = await repo.listSubscriptionsOnVersion(source!.id, MAX_SCOPE + 1);
     if (subs.length > MAX_SCOPE) throw conflict("SCOPE_TOO_LARGE", `the source version has more than ${MAX_SCOPE} subscribers; migrate explicit company batches instead`, { max: MAX_SCOPE });
   }
-  const evaluations = new Map<number, PlanChangeEvaluation>();
   for (const sub of subs) {
     const company = await repo.findCompany(sub.companyId);
-    const { row, evaluation } = await evaluateRow(sub, target, source, p.confirmFeatureDowngrade, now, company?.name ?? null);
+    const { row, reviewInput } = await evaluateRow(sub, target, source, p.confirmFeatureDowngrade, now, company?.name ?? null);
     rows.push(row);
-    evaluations.set(sub.companyId, evaluation);
+    reviewed.set(sub.companyId, reviewInput);
   }
   rows.sort((a, b) => a.companyId - b.companyId);
-  const digest = dryRunDigest(version.id, source?.id ?? null, p.confirmFeatureDowngrade, rows);
-  return { plan, version, source, target, rows, digest, evaluations };
+  const digest = dryRunDigest(version, plan, source, p.confirmFeatureDowngrade, scope, rows);
+  return { plan, version, source, target, scope, rows, digest, reviewed };
 }
 
-function summarize(rows: MigrationRow[]) {
+export function summarize(rows: MigrationRow[]): MigrationSummary {
   const byReason: Record<string, number> = {};
   for (const r of rows) byReason[r.reason] = (byReason[r.reason] ?? 0) + 1;
   const count = (o: MigrationOutcome) => rows.filter((r) => r.outcome === o).length;
-  return { total: rows.length, eligible: rows.filter((r) => r.reason === "ELIGIBLE").length, byReason, migrated: count("migrated"), skipped: count("skipped"), failed: count("failed"), rolledBack: count("rolled_back"), notAttempted: count("not_attempted") };
+  const skipped = count("skipped");
+  return {
+    total: rows.length,
+    eligible: rows.filter((r) => r.reason === "ELIGIBLE").length,
+    byReason,
+    migrated: count("migrated"),
+    skipped,
+    failed: count("failed"),
+    rolledBack: count("rolled_back"),
+    notAttempted: count("not_attempted"),
+    ineligible: count("ineligible"),
+    // Every skip at execution time is, by construction, a change since the review
+    // (the review digest no longer matches or the subscription vanished).
+    concurrentlyChanged: skipped,
+  };
+}
+
+// Batch 43 (Task 1A) — the ONE classification of an executed migration, derived
+// from the per-tenant outcomes so the summary, the response and the audit row
+// can never disagree.
+export function classifyExecution(s: MigrationSummary): { status: MigrationStatus; incompleteReasons: IncompleteReason[]; complete: boolean } {
+  const incompleteReasons: IncompleteReason[] = [];
+  if (s.concurrentlyChanged > 0) incompleteReasons.push("concurrently_changed");
+  if (s.failed > 0) incompleteReasons.push("failed");
+  if (s.rolledBack > 0) incompleteReasons.push("rolled_back");
+  const allMigrated = s.eligible > 0 && s.migrated === s.eligible && incompleteReasons.length === 0;
+  let status: MigrationStatus;
+  if (allMigrated) status = "complete";
+  else if (s.migrated > 0) status = "partial";
+  else if (s.failed > 0) status = "failed";
+  else if (s.rolledBack > 0) status = "rolled_back";
+  else status = "concurrently_changed";
+  return { status, incompleteReasons, complete: status === "complete" };
 }
 
 export async function migrateTenants(actor: AuditActor, planId: string, versionId: number, input: MigrateInput) {
@@ -223,12 +315,12 @@ export async function migrateTenants(actor: AuditActor, planId: string, versionI
     planId: dr.plan.id,
     target: { versionId: dr.version.id, version: dr.version.version },
     source: dr.source ? { versionId: dr.source.id, version: dr.source.version, planId: dr.source.planId } : null,
-    scope: p.companyIds ? ("companies" as const) : ("source_version" as const),
+    scope: dr.scope,
     confirmFeatureDowngrade: p.confirmFeatureDowngrade,
     digest: dr.digest,
     generatedAt: now.toISOString(),
   };
-  if (p.dryRun) return { ...base, dryRun: true as const, migrationId: null, rows: dr.rows, summary: summarize(dr.rows), complete: null };
+  if (p.dryRun) return { ...base, dryRun: true as const, migrationId: null, rows: dr.rows, summary: summarize(dr.rows), complete: null, status: "dry_run" as const, incompleteReasons: [] as IncompleteReason[] };
 
   // Execution: the owner's digest must match a dry run over the CURRENT data.
   if (p.confirmDigest !== dr.digest) {
@@ -238,28 +330,39 @@ export async function migrateTenants(actor: AuditActor, planId: string, versionI
   if (eligible.length === 0) throw conflict("NOTHING_TO_MIGRATE", "No tenant in the reviewed scope is eligible", { rows: dr.rows, summary: summarize(dr.rows) });
   const migrationId = randomUUID();
   const target = dr.target;
+  // Deliberately ineligible tenants are reported as such (their reviewed reason is the outcome reason).
+  for (const row of dr.rows) {
+    if (row.reason !== "ELIGIBLE") {
+      row.outcome = "ineligible";
+      row.outcomeReason = row.reason;
+    }
+  }
   for (const row of eligible) {
     try {
+      await billingFault("migration.beforeTenant");
       const outcome = await db.transaction(async (tx) => {
         const locked = await repo.lockByCompanyId(row.companyId, tx);
-        if (!locked) return { outcome: "skipped" as const, reason: "SUBSCRIPTION_MISSING" };
-        // Recheck against the reviewed row: anything that moved since the dry run is skipped, never guessed.
-        if (locked.plan !== row.currentPlan || (locked.planVersionId ?? null) !== row.currentPlanVersionId) return { outcome: "skipped" as const, reason: "CHANGED_SINCE_DRY_RUN" };
+        if (!locked) return { outcome: "skipped" as const, reason: "SUBSCRIPTION_MISSING", changed: ["subscription"] };
+        // Recheck EVERY reviewed input against the locked row: anything that moved since the dry run is skipped, never guessed.
         const evaluation = await evaluatePlanChange(locked, target, now, tx);
         const reason = reasonOf(locked, evaluation, dr.source, p.confirmFeatureDowngrade);
-        if (reason !== "ELIGIBLE") return { outcome: "skipped" as const, reason };
+        const fresh = reviewInputOf(locked, evaluation, reason);
+        if (digestOf(fresh) !== row.reviewDigest) return { outcome: "skipped" as const, reason: "CHANGED_SINCE_DRY_RUN", changed: changedReviewKeys(dr.reviewed.get(row.companyId) ?? {}, fresh) };
+        if (reason !== "ELIGIBLE") return { outcome: "skipped" as const, reason, changed: ["reason"] }; // unreachable while the reason is part of the digest; kept as defence in depth
         await applyPlanChange(tx, locked, target, evaluation, "subscription.migrate_version", actor, {
           migrationId,
           dryRunDigest: dr.digest,
+          reviewDigest: row.reviewDigest,
           sourceVersionId: dr.source?.id ?? null,
           reason: p.reason,
           confirmFeatureDowngrade: p.confirmFeatureDowngrade,
           planChangeSource: "migration",
         }, now);
-        return { outcome: "migrated" as const, reason: null };
+        return { outcome: "migrated" as const, reason: null, changed: [] as string[] };
       });
       row.outcome = outcome.outcome;
       row.outcomeReason = outcome.reason;
+      row.changedSinceReview = outcome.changed;
     } catch (err) {
       const code = err instanceof AppError ? (err.code ?? "ERROR") : err instanceof Error ? err.constructor.name : "Error";
       row.outcome = code === "PLAN_CHANGE_VERIFICATION_FAILED" ? "rolled_back" : "failed";
@@ -268,7 +371,7 @@ export async function migrateTenants(actor: AuditActor, planId: string, versionI
     }
   }
   const summary = summarize(dr.rows);
-  const complete = summary.failed === 0 && summary.rolledBack === 0;
+  const { status, incompleteReasons, complete } = classifyExecution(summary);
   await db.insert(auditLogsTable).values({
     companyId: null,
     userId: actor.userId,
@@ -276,9 +379,24 @@ export async function migrateTenants(actor: AuditActor, planId: string, versionI
     action: "plan_version.migrate",
     entityType: "plan_version",
     entityId: String(dr.version.id),
-    metadata: { migrationId, planId: dr.plan.id, targetVersionId: dr.version.id, targetVersion: dr.version.version, sourceVersionId: dr.source?.id ?? null, dryRunDigest: dr.digest, scope: base.scope, reason: p.reason, confirmFeatureDowngrade: p.confirmFeatureDowngrade, summary, complete, companies: dr.rows.map((r) => ({ companyId: r.companyId, reason: r.reason, outcome: r.outcome, outcomeReason: r.outcomeReason })) },
+    metadata: {
+      migrationId,
+      planId: dr.plan.id,
+      targetVersionId: dr.version.id,
+      targetVersion: dr.version.version,
+      sourceVersionId: dr.source?.id ?? null,
+      dryRunDigest: dr.digest,
+      scope: base.scope,
+      reason: p.reason,
+      confirmFeatureDowngrade: p.confirmFeatureDowngrade,
+      summary,
+      status,
+      incompleteReasons,
+      complete,
+      companies: dr.rows.map((r) => ({ companyId: r.companyId, reason: r.reason, outcome: r.outcome, outcomeReason: r.outcomeReason, reviewDigest: r.reviewDigest, changedSinceReview: r.changedSinceReview })),
+    },
     ipAddress: actor.ipAddress,
   });
-  logger.info({ migrationId, planId: dr.plan.id, targetVersionId: dr.version.id, ...summary, complete, actorUserId: actor.userId }, "Tenant migration executed");
-  return { ...base, dryRun: false as const, migrationId, rows: dr.rows, summary, complete };
+  logger.info({ migrationId, planId: dr.plan.id, targetVersionId: dr.version.id, ...summary, status, complete, actorUserId: actor.userId }, "Tenant migration executed");
+  return { ...base, dryRun: false as const, migrationId, rows: dr.rows, summary, complete, status, incompleteReasons };
 }

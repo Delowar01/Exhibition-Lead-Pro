@@ -12,6 +12,8 @@ import type { PlatformPlanHistoryEntryLimitsBefore } from './platformPlanHistory
 
 export interface PlatformPlanHistoryEntry {
   auditId: number;
+  /** Opaque position of this entry in the stable (createdAt, auditId) order; pass it as `cursor` to continue after it */
+  cursor: string;
   at: Date;
   action: string;
   kind: PlatformPlanHistoryEntryKind;

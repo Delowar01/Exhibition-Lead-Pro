@@ -20,6 +20,7 @@ import {
   getPlatformListPlanVersionsQueryKey,
   usePlatformPreviewSubscriptionPlanChange,
   usePlatformSubscriptionPlanHistory,
+  platformSubscriptionPlanHistory,
   getPlatformSubscriptionPlanHistoryQueryKey,
   getPlatformListSubscriptionsQueryKey,
   getPlatformGetSubscriptionQueryKey,
@@ -109,6 +110,8 @@ export const ACTION_LABEL: Record<string, string> = {
   sync_provider: "Sync from provider",
 };
 export const LIMIT_RESOURCES = ["contacts", "events", "admins", "employees", "scans", "storageMb"] as const;
+/** Batch 43 — plan history page size (newest first; older pages are appended on demand). */
+export const HISTORY_PAGE = { order: "desc" as const, limit: 25 };
 export const HISTORY_KIND_LABEL: Record<string, string> = {
   created: "Created",
   direct_change: "Plan changed",
@@ -192,12 +195,35 @@ export function SubscriptionManager({ companyId, onClose, onChanged }: Subscript
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Batch 43 — the history is paginated server-side (newest first); later pages are appended on "Load more".
+  const [historyTail, setHistoryTail] = useState<{ entries: PlatformPlanHistoryEntry[]; nextCursor: string | null } | null>(null);
+  const [historyMoreBusy, setHistoryMoreBusy] = useState(false);
+  const [historyMoreError, setHistoryMoreError] = useState<string | null>(null);
 
   const open = companyId != null;
   const planOptions = usePlanOptions(open);
   const detail = usePlatformGetSubscription(companyId ?? 0, { query: { enabled: open, queryKey: getPlatformGetSubscriptionQueryKey(companyId ?? 0) } });
   const events = usePlatformListSubscriptionEvents(companyId ?? 0, { query: { enabled: open, queryKey: getPlatformListSubscriptionEventsQueryKey(companyId ?? 0) } });
-  const history = usePlatformSubscriptionPlanHistory(companyId ?? 0, { query: { enabled: open, queryKey: getPlatformSubscriptionPlanHistoryQueryKey(companyId ?? 0) } });
+  const history = usePlatformSubscriptionPlanHistory(companyId ?? 0, HISTORY_PAGE, { query: { enabled: open, queryKey: getPlatformSubscriptionPlanHistoryQueryKey(companyId ?? 0, HISTORY_PAGE) } });
+  // A fresh first page (new tenant, refetch after a change) discards the appended tail.
+  useEffect(() => {
+    setHistoryTail(null);
+    setHistoryMoreError(null);
+  }, [companyId, history.dataUpdatedAt]);
+  const loadMoreHistory = async () => {
+    const cursor = historyTail ? historyTail.nextCursor : (history.data?.nextCursor ?? null);
+    if (companyId == null || !cursor || historyMoreBusy) return;
+    setHistoryMoreBusy(true);
+    setHistoryMoreError(null);
+    try {
+      const page = await platformSubscriptionPlanHistory(companyId, { ...HISTORY_PAGE, cursor });
+      setHistoryTail((prev) => ({ entries: [...(prev?.entries ?? []), ...page.entries], nextCursor: page.nextCursor }));
+    } catch (err) {
+      setHistoryMoreError(errMessage(err));
+    } finally {
+      setHistoryMoreBusy(false);
+    }
+  };
   const changingPlan = pending?.verb === "set_plan";
   const targetVersions = usePlatformListPlanVersions(planChoice, { query: { enabled: changingPlan && !!planChoice, queryKey: getPlatformListPlanVersionsQueryKey(planChoice) } });
   const previewMutation = usePlatformPreviewSubscriptionPlanChange();
@@ -332,7 +358,8 @@ export function SubscriptionManager({ companyId, onClose, onChanged }: Subscript
   const assignableVersions = (targetVersions.data?.versions ?? []).filter((x) => x.state !== "draft");
   const confirmBlocked =
     changingPlan && (previewBusy || (preview != null && (!preview.eligible || (preview.requiresFeatureConfirmation && !confirmFeatureDowngrade))));
-  const historyEntries: PlatformPlanHistoryEntry[] = history.data ? [...history.data.entries].reverse() : [];
+  const historyEntries: PlatformPlanHistoryEntry[] = history.data ? [...history.data.entries, ...(historyTail?.entries ?? [])] : [];
+  const historyNextCursor = historyTail ? historyTail.nextCursor : (history.data?.nextCursor ?? null);
 
   return (
     <>
@@ -416,18 +443,21 @@ export function SubscriptionManager({ companyId, onClose, onChanged }: Subscript
                   )}
                 </div>
                 {history.isError ? (
-                  <p className="text-xs text-destructive">{errMessage(history.error)}</p>
+                  <div className="flex flex-wrap items-center gap-2" role="alert">
+                    <span className="text-xs text-destructive">{errMessage(history.error)}</span>
+                    <Button variant="outline" size="sm" onClick={() => void history.refetch()} data-testid="plan-history-retry">Retry</Button>
+                  </div>
                 ) : history.data ? (
                   <>
                     <p className="text-xs text-muted-foreground" data-testid="plan-history-summary">
                       Original {planRef(history.data.original.plan, history.data.original.version)}
                       {history.data.original.at ? ` (${fmtDateTime(history.data.original.at)})` : ""} · now {planRef(history.data.current.plan, history.data.current.version)}
                       {history.data.current.versionState ? ` (${history.data.current.versionState})` : ""} · {history.data.current.billingSource === "stripe" ? "provider-managed" : "manual billing"}
-                      {history.data.truncated ? " · history truncated" : ""}
+                      {history.data.total > historyEntries.length ? ` · showing ${historyEntries.length} of ${history.data.total}` : ""}
                     </p>
                     {historyOpen && (
                       <div className="mt-2 overflow-x-auto">
-                        <Table>
+                        <Table data-testid="plan-history-table" data-count={historyEntries.length}>
                           <TableHeader>
                             <TableRow><TableHead>When</TableHead><TableHead>Change</TableHead><TableHead>From → to</TableHead><TableHead>By</TableHead><TableHead>Details</TableHead></TableRow>
                           </TableHeader>
@@ -461,6 +491,14 @@ export function SubscriptionManager({ companyId, onClose, onChanged }: Subscript
                             )}
                           </TableBody>
                         </Table>
+                        {historyNextCursor && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => void loadMoreHistory()} disabled={historyMoreBusy} data-testid="plan-history-load-more">
+                              {historyMoreBusy ? "Loading…" : `Load more (${historyEntries.length} of ${history.data.total})`}
+                            </Button>
+                            {historyMoreError && <span className="text-xs text-destructive" role="alert">{historyMoreError}</span>}
+                          </div>
+                        )}
                       </div>
                     )}
                   </>

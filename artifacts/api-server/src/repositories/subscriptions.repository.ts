@@ -723,15 +723,43 @@ export async function listSubscriptionsByCompanyIds(ids: number[], tx?: Executor
   if (ids.length === 0) return [];
   return exec(tx).select().from(subscriptionsTable).where(inArray(subscriptionsTable.companyId, ids)).orderBy(asc(subscriptionsTable.companyId));
 }
-// Batch 42: the subscription audit trail of ONE company (append-only rows, oldest first) for the plan history projection.
+// Batch 42: the subscription audit trail of ONE company (append-only rows) for the plan history projection.
+// Batch 43 (PB-5, Task 1C): the projection is paginated server-side over the RELEVANT rows only
+// (plan / version changes), with a stable keyset order (created_at, id) so the latest changes stay
+// reachable however many ordinary audit rows the tenant accumulates.
 export type AuditRow = typeof auditLogsTable.$inferSelect;
-export async function listSubscriptionAuditRows(companyId: number, limit: number, tx?: Executor): Promise<AuditRow[]> {
+export const PLAN_HISTORY_ACTIONS = ["subscription.create", "subscription.repair_create", "subscription.pin_version", "subscription.migrate_version", "subscription.set_plan"] as const;
+function planHistoryWhere(companyId: number): SQL {
+  return and(
+    eq(auditLogsTable.companyId, companyId),
+    eq(auditLogsTable.entityType, "subscription"),
+    or(inArray(auditLogsTable.action, [...PLAN_HISTORY_ACTIONS]), sql`jsonb_typeof(${auditLogsTable.metadata} -> 'changed') = 'array' and jsonb_exists_any(${auditLogsTable.metadata} -> 'changed', array['plan', 'planVersionId'])`),
+  )!;
+}
+export async function countPlanHistoryRows(companyId: number, tx?: Executor): Promise<number> {
+  const [row] = await exec(tx).select({ n: count() }).from(auditLogsTable).where(planHistoryWhere(companyId));
+  return Number(row?.n ?? 0);
+}
+export async function firstPlanHistoryRow(companyId: number, tx?: Executor): Promise<AuditRow | undefined> {
+  const [row] = await exec(tx).select().from(auditLogsTable).where(planHistoryWhere(companyId)).orderBy(asc(auditLogsTable.createdAt), asc(auditLogsTable.id)).limit(1);
+  return row;
+}
+// The anchor of a cursor must itself be a relevant row of the same company (fails closed otherwise).
+export async function findPlanHistoryRow(companyId: number, auditId: number, tx?: Executor): Promise<AuditRow | undefined> {
+  const [row] = await exec(tx).select().from(auditLogsTable).where(and(planHistoryWhere(companyId), eq(auditLogsTable.id, auditId))).limit(1);
+  return row;
+}
+export async function listPlanHistoryRows(companyId: number, opts: { order: "asc" | "desc"; limit: number; afterId: number | null }, tx?: Executor): Promise<AuditRow[]> {
+  // Keyset on the database's own (created_at, id) of the anchor row: exact (no client-side timestamp precision loss).
+  const after = opts.afterId == null ? undefined : opts.order === "asc"
+    ? sql`(${auditLogsTable.createdAt}, ${auditLogsTable.id}) > (select a.created_at, a.id from ${auditLogsTable} a where a.id = ${opts.afterId})`
+    : sql`(${auditLogsTable.createdAt}, ${auditLogsTable.id}) < (select a.created_at, a.id from ${auditLogsTable} a where a.id = ${opts.afterId})`;
   return exec(tx)
     .select()
     .from(auditLogsTable)
-    .where(and(eq(auditLogsTable.companyId, companyId), eq(auditLogsTable.entityType, "subscription")))
-    .orderBy(asc(auditLogsTable.createdAt), asc(auditLogsTable.id))
-    .limit(limit);
+    .where(after ? and(planHistoryWhere(companyId), after) : planHistoryWhere(companyId))
+    .orderBy(...(opts.order === "asc" ? [asc(auditLogsTable.createdAt), asc(auditLogsTable.id)] : [desc(auditLogsTable.createdAt), desc(auditLogsTable.id)]))
+    .limit(opts.limit);
 }
 export async function countSubscriptionsByPlanAndVersion(tx?: Executor): Promise<Array<{ plan: string; planVersionId: number | null; count: number }>> {
   const rows = await exec(tx)

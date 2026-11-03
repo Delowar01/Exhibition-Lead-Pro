@@ -21,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PageHeader, MetricCard, StatusBadge, TableSkeleton, EmptyState, ErrorState } from "@/components/ds";
+import { PageHeader, MetricCard, StatusBadge, TableSkeleton, ListSkeleton, EmptyState, ErrorState } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Search, Building2 } from "lucide-react";
 import { Link } from "wouter";
@@ -270,9 +270,9 @@ export default function PlatformSubscriptions() {
                 <div data-testid="provider-return-url">Billing return URL: {providerStatus.data.returnUrlConfigured ? "configured" : <span className="text-destructive">{RETURN_URL_REASON[providerStatus.data.returnUrlReason ?? ""] ?? "not usable"} — tenant checkout and portal are unavailable until fixed</span>}</div>
               </>
             ) : providerStatus.isError ? (
-              <ErrorState title="Provider status unavailable" description={errMessage(providerStatus.error)} />
+              <ErrorState title="Provider status unavailable" description={errMessage(providerStatus.error)} action={<Button variant="outline" size="sm" onClick={() => void providerStatus.refetch()} data-testid="provider-status-retry">Retry</Button>} />
             ) : (
-              <div className="text-muted-foreground">Loading…</div>
+              <ListSkeleton rows={4} />
             )}
           </CardContent>
         </Card>

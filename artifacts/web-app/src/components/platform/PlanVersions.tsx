@@ -686,7 +686,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                   </div>
 
                   {saveIssues.length > 0 && (
-                    <ul className="text-sm text-destructive lg:col-span-2" data-testid="version-save-errors">
+                    <ul className="text-sm text-destructive lg:col-span-2" role="alert" data-testid="version-save-errors">
                       {saveIssues.map((i, idx) => <li key={idx}>{issueText(i)}</li>)}
                     </ul>
                   )}
@@ -696,7 +696,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
               )}
 
               {validation && (
-                <div className="rounded-md border p-3 text-sm" data-testid="version-validation" data-publishable={validation.publishable ? "true" : "false"}>
+                <div className="rounded-md border p-3 text-sm" role="status" data-testid="version-validation" data-publishable={validation.publishable ? "true" : "false"}>
                   <div className="flex flex-wrap items-center gap-2">
                     {validation.publishable ? <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" /> : <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />}
                     <span className="font-medium" data-testid="version-validation-summary">
@@ -734,7 +734,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                   {impact.isLoading ? (
                     <TableSkeleton rows={3} />
                   ) : impact.isError ? (
-                    <p className="text-sm text-destructive">{errMessage(impact.error)}</p>
+                    <ErrorState title="Tenant impact unavailable" description={errMessage(impact.error)} className="py-6" action={<Button variant="outline" size="sm" onClick={() => void impact.refetch()} data-testid="version-impact-retry">Retry</Button>} />
                   ) : impact.data ? (
                     <ImpactSummary impact={impact.data} changedRows={changedRows} />
                   ) : null}
@@ -757,7 +757,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                       {compareWith && comparison.isLoading ? (
                         <TableSkeleton rows={4} />
                       ) : compareWith && comparison.isError ? (
-                        <p className="text-sm text-destructive">{errMessage(comparison.error)}</p>
+                        <ErrorState title="Comparison unavailable" description={errMessage(comparison.error)} className="py-6" action={<Button variant="outline" size="sm" onClick={() => void comparison.refetch()} data-testid="version-compare-retry">Retry</Button>} />
                       ) : comparison.data ? (
                         <div className="space-y-2" data-testid="compare-result">
                           <div className="flex flex-wrap gap-2 text-xs">
