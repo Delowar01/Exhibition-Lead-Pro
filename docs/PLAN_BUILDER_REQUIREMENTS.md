@@ -1,6 +1,8 @@
 # Subscription & Plan Builder — Platform Owner requirements (PB-1 … PB-5)
 
-**Status: PENDING CORE ROADMAP FEATURE — NOT STARTED.** The dynamic Subscription & Plan Builder is a committed product
+**Status (2026-11-03): CODE COMPLETE ON THE REVIEW BRANCH CHAIN (Batches 39–43) — NOT MERGED, NOT DEPLOYED, NOT RELEASED.** The implementation status of record is `MASTER_ROADMAP.md` §5; the operator-facing behaviour is documented in `docs/PLAN_BUILDER_OPERATOR_GUIDE.md` on the code branch. This document remains the requirements baseline: the recommended defaults U1–U7 and the PB-4 decisions D1–D4 were applied as recommended and are recorded in code and audit; any deviation found in review is a defect against this baseline, not a silent re-interpretation.
+
+**Original status (2026-10-16): PENDING CORE ROADMAP FEATURE — NOT STARTED.** The dynamic Subscription & Plan Builder is a committed product
 capability of Lead Capture Pro, not an optional enhancement. This document is the durable owner-facing requirements
 baseline for it. It defines requirements only: **no schema is created or changed by this document, no production
 subscription is touched, no batch number is assigned (B1–B26 are not renumbered), and nothing here is part of the B25
