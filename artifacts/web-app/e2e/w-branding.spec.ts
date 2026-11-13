@@ -90,10 +90,30 @@ const isDark = (page: Page) => page.evaluate(() => document.documentElement.clas
 const pageOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 const storageKeys = (page: Page) => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("csp_theme")).sort());
 
+/**
+ * Computed colors of an element in its SETTLED state.
+ *
+ * Navigation items, buttons and surfaces carry `transition-colors` (150 ms). Right
+ * after a token change `getComputedStyle` therefore returns an interpolated frame
+ * of that transition, not the color the portal applied — a one-shot read raced
+ * the transition and failed on fast machines. The element's own running CSS
+ * transitions are awaited first (they are finite; the wait is bounded anyway),
+ * then the style is read. Every assertion keeps its expected color and its
+ * tolerance: only the sampling moment is fixed, to the state a user ends up seeing.
+ */
 async function styleOf(page: Page, selector: string): Promise<{ color: string; background: string }> {
-  return page.evaluate((s) => {
+  return page.evaluate(async (s) => {
     const el = document.querySelector(s);
     if (!el) throw new Error(`no element for ${s}`);
+    void getComputedStyle(el).backgroundColor; // flush pending style changes so a just-triggered transition exists
+    // Every running CSS transition of the document, not only the element's own:
+    // an inherited `color` can still be transitioning on an ancestor.
+    const settled = (async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const transitions = document.getAnimations().filter((a) => a instanceof CSSTransition && a.playState !== "finished");
+      await Promise.allSettled(transitions.map((a) => a.finished));
+    })();
+    await Promise.race([settled, new Promise((resolve) => setTimeout(resolve, 2000))]);
     const cs = getComputedStyle(el);
     return { color: cs.color, background: cs.backgroundColor };
   }, selector);
@@ -182,6 +202,24 @@ async function gotoBranding(page: Page) {
   await page.goto("/admin/organization");
   await expect(page.getByTestId("branding-section")).toBeVisible();
   await expect(page.getByTestId("branding-primary-hex")).toBeVisible();
+}
+
+/**
+ * Opens the theme menu from a SETTLED state and proves it is open.
+ *
+ * The menu is a Radix dropdown with a closing animation. A trigger click that
+ * lands while the PREVIOUS menu is still animating out opens the new menu only
+ * sometimes (measured: in every failing run the previous menu was still in the
+ * DOM with data-state="closed" at the moment of the click and no menu was open
+ * afterwards; with the same pre-state other runs did open it) — a race that only
+ * automation hits, two interactions a few milliseconds apart. The helper waits
+ * until the previous menu is gone, clicks the trigger and asserts the menu is
+ * visible; what each test then selects and asserts is unchanged.
+ */
+async function openThemeMenu(page: Page) {
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.getByTestId("theme-toggle").click();
+  await expect(page.getByRole("menu")).toBeVisible();
 }
 
 async function expectPlatformLook(page: Page) {
@@ -390,7 +428,7 @@ test("a member's own theme choice overrides the tenant default and never leaks t
   expect(await storageKeys(page)).toEqual([]);
 
   // An explicit choice wins and is stored per user + company only.
-  await page.getByTestId("theme-toggle").click();
+  await openThemeMenu(page);
   await expect(page.getByTestId("theme-option-default")).toContainText("Organization default (Dark)");
   await page.getByTestId("theme-option-light").click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
@@ -404,13 +442,13 @@ test("a member's own theme choice overrides the tenant default and never leaks t
   await expectBrandedLook(page);
 
   // Back to "Organization default" → dark again, the stored choice is gone.
-  await page.getByTestId("theme-toggle").click();
+  await openThemeMenu(page);
   await page.getByTestId("theme-option-default").click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   expect(await storageKeys(page)).toEqual([]);
 
   // Leave a light preference behind, then boot the OTHER tenant in the same browser storage.
-  await page.getByTestId("theme-toggle").click();
+  await openThemeMenu(page);
   await page.getByTestId("theme-option-light").click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   const other = await page.context().newPage(); // no init script → whatever localStorage holds
@@ -430,7 +468,7 @@ test("a member's own theme choice overrides the tenant default and never leaks t
   await expect(other.locator("html")).not.toHaveClass(/dark/);
   await expectPlatformLook(other);
   expect(await storageKeys(other)).toEqual([scopedKey]); // TechCorp's key untouched, none for the other tenant
-  await other.getByTestId("theme-toggle").click();
+  await openThemeMenu(other);
   await expect(other.getByTestId("theme-option-default")).toHaveCount(0); // no tenant default → no such option
   await other.keyboard.press("Escape");
   await other.close();
@@ -667,7 +705,7 @@ test("branded surfaces stay readable in dark and light mode, on tablet and mobil
   await readable();
 
   // Light mode via the member's own choice.
-  await page.getByTestId("theme-toggle").click();
+  await openThemeMenu(page);
   await page.getByTestId("theme-option-light").click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await expectBrandedLook(page);
@@ -767,7 +805,7 @@ test("the shared login page and the platform-owner portal keep the platform bran
   await expect(platform.getByTestId("link-brand")).toHaveAttribute("data-brand", "platform");
   await expect(platform.getByTestId("brand-logo")).toHaveCount(0);
   await expectPlatformLook(platform);
-  await platform.getByTestId("theme-toggle").click();
+  await openThemeMenu(platform);
   await expect(platform.getByTestId("theme-option-default")).toHaveCount(0);
   await platform.keyboard.press("Escape");
   // Platform operators never receive the tenant self-service branding endpoint.
