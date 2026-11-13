@@ -12954,7 +12954,7 @@ components:
 
     PlatformPlanAllowances:
       type: object
-      description: Batch 41 (U4) — per-version AI/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)
+      description: Batch 41 (U4) — per-version AI/OCR allowances. An allowance is the CAP of the tenant's monthly budget in the Enterprise AI Layer (null = no plan allowance)
       required: [aiTokensPerMonth, aiCostMicroUsdPerMonth]
       properties:
         aiTokensPerMonth:
@@ -13834,7 +13834,7 @@ components:
               $ref: "#/components/schemas/TrialEndPolicyView"
         aiAllowances:
           type: object
-          description: Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)
+          description: Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (the plan allowance caps the tenant's own budget; without an allowance the tenant value applies, or none)
           required: [tenantOverride, preview, current]
           properties:
             tenantOverride:
@@ -15834,11 +15834,11 @@ components:
         monthlyTokenBudget:
           type: integer
           nullable: true
-          description: The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited)
+          description: The EFFECTIVE monthly token budget — the tenant's own budget capped by the pinned plan version's allowance; the allowance when the tenant has none; unlimited when neither exists
         monthlyCostBudgetUsd:
           type: number
           nullable: true
-          description: The EFFECTIVE monthly cost budget in USD (same precedence)
+          description: The EFFECTIVE monthly cost budget in USD (same rule)
         budgetSource:
           type: object
           description: Batch 41 (U4) — where each effective budget comes from

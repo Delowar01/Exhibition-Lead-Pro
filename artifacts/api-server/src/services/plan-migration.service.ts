@@ -7,6 +7,7 @@ import type { PlanRow, PlanVersionRow, SubscriptionRow } from "../repositories/s
 import { sanitizeReason, type AuditActor } from "../lib/billing/audit.js";
 import { billingFault } from "../lib/billing/test-faults.js";
 import { isPlanSlug } from "../lib/billing/plan-versions.js";
+import { resolvePlanAssignment } from "../lib/billing/plan-catalog.js";
 import { changedReviewKeys, digestOf, evaluatePlanChange, reviewInputOf, type ChangeTarget, type PlanChangeEvaluation } from "./plan-change.service.js";
 import { applyPlanChange } from "./subscription-lifecycle.service.js";
 
@@ -156,6 +157,21 @@ async function resolveTarget(planId: string, versionId: number): Promise<{ plan:
   if (!version.publishedAt) throw conflict("TARGET_NOT_PUBLISHED", "The migration target must be a published version; publish the draft first", { versionId: version.id, version: version.version });
   if (version.retiredAt) throw conflict("TARGET_RETIRED", "A retired version is not a migration target; use the per-tenant plan change for an explicit revert", { versionId: version.id, version: version.version });
   return { plan, version };
+}
+
+// Release correction: the reviewed target is re-proven INSIDE every tenant
+// transaction, under the plan row's SHARE lock (archive / publish / retire take
+// FOR UPDATE on it). A target whose plan stopped being published or whose
+// version was retired after the dry run migrates nobody: the tenant is skipped
+// as CHANGED_SINCE_DRY_RUN (changed input: "target"), never moved onto it.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+async function lockLiveTarget(target: ChangeTarget, tx: Tx): Promise<ChangeTarget | null> {
+  if (!target.version) return null;
+  const live = await resolvePlanAssignment(target.plan.id, tx);
+  if (!live) return null;
+  const version = await repo.findPlanVersionById(target.version.id, tx);
+  if (!version || version.planId !== live.plan.id || !version.publishedAt || version.retiredAt) return null;
+  return { plan: live.plan, version, explicit: target.explicit };
 }
 
 async function resolveSource(sourceVersionId: number | null, target: PlanVersionRow): Promise<PlanVersionRow | null> {
@@ -343,13 +359,15 @@ export async function migrateTenants(actor: AuditActor, planId: string, versionI
       const outcome = await db.transaction(async (tx) => {
         const locked = await repo.lockByCompanyId(row.companyId, tx);
         if (!locked) return { outcome: "skipped" as const, reason: "SUBSCRIPTION_MISSING", changed: ["subscription"] };
+        const liveTarget = await lockLiveTarget(target, tx);
+        if (!liveTarget) return { outcome: "skipped" as const, reason: "CHANGED_SINCE_DRY_RUN", changed: ["target"] };
         // Recheck EVERY reviewed input against the locked row: anything that moved since the dry run is skipped, never guessed.
-        const evaluation = await evaluatePlanChange(locked, target, now, tx);
+        const evaluation = await evaluatePlanChange(locked, liveTarget, now, tx);
         const reason = reasonOf(locked, evaluation, dr.source, p.confirmFeatureDowngrade);
         const fresh = reviewInputOf(locked, evaluation, reason);
         if (digestOf(fresh) !== row.reviewDigest) return { outcome: "skipped" as const, reason: "CHANGED_SINCE_DRY_RUN", changed: changedReviewKeys(dr.reviewed.get(row.companyId) ?? {}, fresh) };
         if (reason !== "ELIGIBLE") return { outcome: "skipped" as const, reason, changed: ["reason"] }; // unreachable while the reason is part of the digest; kept as defence in depth
-        await applyPlanChange(tx, locked, target, evaluation, "subscription.migrate_version", actor, {
+        await applyPlanChange(tx, locked, liveTarget, evaluation, "subscription.migrate_version", actor, {
           migrationId,
           dryRunDigest: dr.digest,
           reviewDigest: row.reviewDigest,

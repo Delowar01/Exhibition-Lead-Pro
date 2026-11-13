@@ -129,7 +129,24 @@ describe("AI / OCR allowances (U4)", () => {
     expect(v.errors.map((e) => e.code)).toContain("ALLOWANCE_INVALID");
   });
 
-  it("precedence: a tenant's own (non-null) budget wins, else the plan allowance, else none — per budget independently", () => {
+  it("release correction M1 — the plan allowance is a CAP: a tenant budget above it never applies, a lower one does, and no allowance leaves the tenant value untouched", () => {
+    const plan = { planVersionId: 9, aiTokensPerMonth: 5000, aiCostMicroUsdPerMonth: 1_000_000 };
+    const none = { planVersionId: 3, ...noAllowances() };
+    // above the cap → capped, reported as the PLAN's budget
+    expect(applyPlanAllowance({ monthlyTokenBudget: 50_000, monthlyCostBudgetMicroUsd: 9_000_000 }, plan)).toMatchObject({ monthlyTokenBudget: 5000, monthlyCostBudgetMicroUsd: 1_000_000, budgetSource: { tokens: "plan", cost: "plan" } });
+    // exactly the cap / below the cap → the tenant's own (stricter-or-equal) budget
+    expect(applyPlanAllowance({ monthlyTokenBudget: 5000, monthlyCostBudgetMicroUsd: 1 }, plan)).toMatchObject({ monthlyTokenBudget: 5000, monthlyCostBudgetMicroUsd: 1, budgetSource: { tokens: "tenant", cost: "tenant" } });
+    // a tenant budget of 0 (AI off by budget) is the tenant's choice and stays 0
+    expect(applyPlanAllowance({ monthlyTokenBudget: 0, monthlyCostBudgetMicroUsd: null }, plan)).toMatchObject({ monthlyTokenBudget: 0, budgetSource: { tokens: "tenant", cost: "plan" } });
+    // a plan allowance of 0 cannot be lifted by any tenant value
+    expect(applyPlanAllowance({ monthlyTokenBudget: 10, monthlyCostBudgetMicroUsd: 10 }, { planVersionId: 9, aiTokensPerMonth: 0, aiCostMicroUsdPerMonth: 0 })).toMatchObject({ monthlyTokenBudget: 0, monthlyCostBudgetMicroUsd: 0, budgetSource: { tokens: "plan", cost: "plan" } });
+    // each budget is capped independently
+    expect(applyPlanAllowance({ monthlyTokenBudget: 50_000, monthlyCostBudgetMicroUsd: 5 }, plan)).toMatchObject({ monthlyTokenBudget: 5000, monthlyCostBudgetMicroUsd: 5, budgetSource: { tokens: "plan", cost: "tenant" } });
+    // LEGACY (no allowance): any tenant value applies exactly as before — nothing is capped
+    expect(applyPlanAllowance({ monthlyTokenBudget: 2_000_000_000, monthlyCostBudgetMicroUsd: 2_000_000_000 }, none)).toMatchObject({ monthlyTokenBudget: 2_000_000_000, monthlyCostBudgetMicroUsd: 2_000_000_000, budgetSource: { tokens: "tenant", cost: "tenant" } });
+  });
+
+  it("precedence below the cap: a tenant's own (non-null, not higher) budget applies, else the plan allowance, else none — per budget independently", () => {
     const plan = { planVersionId: 9, aiTokensPerMonth: 5000, aiCostMicroUsdPerMonth: 1_000_000 };
     const tenantWins = applyPlanAllowance({ monthlyTokenBudget: 100, monthlyCostBudgetMicroUsd: 200 }, plan);
     expect(tenantWins).toMatchObject({ monthlyTokenBudget: 100, monthlyCostBudgetMicroUsd: 200, budgetSource: { tokens: "tenant", cost: "tenant" } });

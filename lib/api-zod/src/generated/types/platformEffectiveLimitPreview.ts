@@ -44,7 +44,7 @@ export interface PlatformEffectiveLimitPreview {
   features: PlatformEffectiveFeaturePreviewRow[];
   changedFeatures: string[];
   trialPolicy: PlatformEffectiveLimitPreviewTrialPolicy;
-  /** Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none) */
+  /** Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (the plan allowance caps the tenant's own budget; without an allowance the tenant value applies, or none) */
   aiAllowances: PlatformEffectiveLimitPreviewAiAllowances;
   readOnly: boolean;
   generatedAt: Date;

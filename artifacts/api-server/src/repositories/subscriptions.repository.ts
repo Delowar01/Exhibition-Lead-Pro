@@ -241,6 +241,26 @@ export async function findCurrentCheckoutIntent(companyId: number, tx?: Executor
   return row;
 }
 
+// Release correction M2: LIVE Checkout intents (creating | open) that would move a
+// tenant onto this plan when they complete. An intent stays non-terminal in the
+// table when the tenant simply abandons it (nothing sweeps it), so "live" is
+// bounded by time: until the provider session's own expiry, or — while no expiry
+// is recorded yet — for 24 hours after it was created (the provider's maximum
+// session lifetime). An abandoned intent can therefore never block a plan forever.
+export async function countLiveCheckoutIntentsForPlan(planId: string, tx?: Executor, now: Date = new Date()): Promise<number> {
+  const [{ n }] = await exec(tx)
+    .select({ n: count() })
+    .from(billingCheckoutSessionsTable)
+    .where(
+      and(
+        eq(billingCheckoutSessionsTable.planId, planId),
+        inArray(billingCheckoutSessionsTable.status, ["creating", "open"]),
+        sql`coalesce(${billingCheckoutSessionsTable.expiresAt}, ${billingCheckoutSessionsTable.createdAt} + interval '24 hours') > ${now}`,
+      ),
+    );
+  return Number(n);
+}
+
 export async function findCheckoutSessionById(id: number, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
   const [row] = await exec(tx).select().from(billingCheckoutSessionsTable).where(eq(billingCheckoutSessionsTable.id, id)).limit(1);
   return row;

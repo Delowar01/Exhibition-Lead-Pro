@@ -1250,11 +1250,11 @@ export const PlatformPreviewSubscriptionPlanChangeResponse = zod.object({
   "current": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "target": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)')
 }),
   "requiresFeatureConfirmation": zod.boolean(),
   "eligible": zod.boolean().describe('Transition allowed and nothing blocking (feature confirmation aside)')
@@ -2695,7 +2695,7 @@ export const PlatformPreviewPlanLimitsResponse = zod.object({
   "allowance": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "effectiveTokenBudget": zod.number().nullable(),
   "effectiveCostBudgetMicroUsd": zod.number().nullable(),
   "source": zod.object({
@@ -2707,7 +2707,7 @@ export const PlatformPreviewPlanLimitsResponse = zod.object({
   "allowance": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "effectiveTokenBudget": zod.number().nullable(),
   "effectiveCostBudgetMicroUsd": zod.number().nullable(),
   "source": zod.object({
@@ -2715,7 +2715,7 @@ export const PlatformPreviewPlanLimitsResponse = zod.object({
   "cost": zod.enum(['tenant', 'plan', 'none'])
 })
 })
-}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)'),
+}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (the plan allowance caps the tenant\'s own budget; without an allowance the tenant value applies, or none)'),
   "readOnly": zod.boolean(),
   "generatedAt": zod.coerce.date()
 })
@@ -2903,7 +2903,7 @@ export const PlatformListPlanVersionsResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "manualPrices": zod.array(zod.object({
   "interval": zod.enum(['day', 'week', 'month', 'year']),
   "intervalCount": zod.number().min(1).max(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemIntervalCountMax),
@@ -2924,7 +2924,7 @@ export const PlatformListPlanVersionsResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -3015,7 +3015,7 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "manualPrices": zod.array(zod.object({
   "interval": zod.enum(['day', 'week', 'month', 'year']),
   "intervalCount": zod.number().min(1).max(platformGetPlanVersionResponseOneSnapshotManualPricesItemIntervalCountMax),
@@ -3036,7 +3036,7 @@ export const PlatformGetPlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -3272,7 +3272,7 @@ export const PlatformUpdatePlanDraftResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "manualPrices": zod.array(zod.object({
   "interval": zod.enum(['day', 'week', 'month', 'year']),
   "intervalCount": zod.number().min(1).max(platformUpdatePlanDraftResponseSnapshotManualPricesItemIntervalCountMax),
@@ -3293,7 +3293,7 @@ export const PlatformUpdatePlanDraftResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -3449,7 +3449,7 @@ export const PlatformPublishPlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "manualPrices": zod.array(zod.object({
   "interval": zod.enum(['day', 'week', 'month', 'year']),
   "intervalCount": zod.number().min(1).max(platformPublishPlanVersionResponseSnapshotManualPricesItemIntervalCountMax),
@@ -3470,7 +3470,7 @@ export const PlatformPublishPlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -3532,7 +3532,7 @@ export const PlatformRetirePlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "manualPrices": zod.array(zod.object({
   "interval": zod.enum(['day', 'week', 'month', 'year']),
   "intervalCount": zod.number().min(1).max(platformRetirePlanVersionResponseSnapshotManualPricesItemIntervalCountMax),
@@ -3553,7 +3553,7 @@ export const PlatformRetirePlanVersionResponse = zod.object({
   "allowances": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "subscribers": zod.number(),
   "publishedAt": zod.coerce.date().nullable(),
   "publishedBy": zod.number().nullable(),
@@ -3756,7 +3756,7 @@ export const PlatformPreviewPlanVersionLimitsResponse = zod.object({
   "allowance": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "effectiveTokenBudget": zod.number().nullable(),
   "effectiveCostBudgetMicroUsd": zod.number().nullable(),
   "source": zod.object({
@@ -3768,7 +3768,7 @@ export const PlatformPreviewPlanVersionLimitsResponse = zod.object({
   "allowance": zod.object({
   "aiTokensPerMonth": zod.number().nullable(),
   "aiCostMicroUsdPerMonth": zod.number().nullable()
-}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances. An allowance is the CAP of the tenant\'s monthly budget in the Enterprise AI Layer (null = no plan allowance)'),
   "effectiveTokenBudget": zod.number().nullable(),
   "effectiveCostBudgetMicroUsd": zod.number().nullable(),
   "source": zod.object({
@@ -3776,7 +3776,7 @@ export const PlatformPreviewPlanVersionLimitsResponse = zod.object({
   "cost": zod.enum(['tenant', 'plan', 'none'])
 })
 })
-}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)'),
+}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (the plan allowance caps the tenant\'s own budget; without an allowance the tenant value applies, or none)'),
   "readOnly": zod.boolean(),
   "generatedAt": zod.coerce.date()
 })
@@ -9106,8 +9106,8 @@ export const GetAiSettingsResponse = zod.object({
   "contact_enrichment": zod.boolean(),
   "assignee_recommendation": zod.boolean()
 }),
-  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget (tenant override, else the pinned plan version\'s allowance, else unlimited)'),
-  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same precedence)'),
+  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget — the tenant\'s own budget capped by the pinned plan version\'s allowance; the allowance when the tenant has none; unlimited when neither exists'),
+  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same rule)'),
   "budgetSource": zod.object({
   "tokens": zod.enum(['tenant', 'plan', 'none']),
   "cost": zod.enum(['tenant', 'plan', 'none'])
@@ -9169,8 +9169,8 @@ export const UpdateAiSettingsResponse = zod.object({
   "contact_enrichment": zod.boolean(),
   "assignee_recommendation": zod.boolean()
 }),
-  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget (tenant override, else the pinned plan version\'s allowance, else unlimited)'),
-  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same precedence)'),
+  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget — the tenant\'s own budget capped by the pinned plan version\'s allowance; the allowance when the tenant has none; unlimited when neither exists'),
+  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same rule)'),
   "budgetSource": zod.object({
   "tokens": zod.enum(['tenant', 'plan', 'none']),
   "cost": zod.enum(['tenant', 'plan', 'none'])

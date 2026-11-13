@@ -15,6 +15,30 @@ import { enqueueWorkflowRuns, persistWorkflowRuns } from "../lib/workflows/dispa
 import { contactCreatedEvent, contactUpdatedEvents } from "../lib/workflows/events.js";
 import { db } from "@workspace/db";
 import { assertCapacity } from "./entitlements.service.js";
+import { assertFeatureEntitled, featureDenialError } from "../lib/feature-entitlements.js";
+import { tenantFeatureAllowed } from "../lib/company-access.js";
+
+// Release correction E2 — NFC capture saves through the ordinary contact
+// routes (there is no image, so no scan row and no /scans call). The capture
+// mode is therefore the contact's declared `source`: a contact declared as an
+// NFC capture needs the `nfc.capture` plan feature, exactly like an NFC scan
+// (services/scans.service.ts). Every other source — and a contact with no
+// declared source, i.e. ordinary manual creation — is untouched. Legacy plan
+// versions allow every feature, so grandfathered tenants see no change.
+export function isNfcSource(source: unknown): boolean {
+  return typeof source === "string" && source.trim().toLowerCase() === "nfc";
+}
+
+// A request user carries the entitlements requireAuth resolved for this request.
+// A background principal (a workflow automation updating a contact) carries none:
+// the tenant's own entitlements are resolved on demand, so a legacy tenant's
+// automation keeps working and a denied tenant's automation is refused — the
+// same decision either way, never a blanket denial for lack of a request.
+async function assertNfcEntitled(user: AuthUser, companyId: number): Promise<void> {
+  if (user.entitlements) return assertFeatureEntitled(user, "nfc.capture");
+  const gate = await tenantFeatureAllowed(companyId, "nfc.capture");
+  if (!gate.allowed) throw featureDenialError({ entitlements: null }, "nfc.capture");
+}
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
@@ -174,6 +198,9 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   const companyId = user.companyId ?? null;
   if (!companyId) throw new AppError(400, "No company context");
   const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city, postalCode, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, cardImageUrl, source, scanId, dedupeResolution, matchedContactId } = input;
+  // Decided before anything is read or written: an unentitled NFC capture is
+  // refused outright (also for the add_interaction / create_separate resolutions).
+  if (isNfcSource(source)) await assertNfcEntitled(user, companyId);
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   // organizationId is bound to the CONTACT's own tenant — use refInCompany
@@ -1003,6 +1030,10 @@ export async function updateContact(user: AuthUser, id: number, body: UpdateCont
   const existing = await contactsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Contact not found");
   const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city, postalCode, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId, organizationId, source } = body;
+  // Release correction E2: re-labelling a contact AS an NFC capture needs the
+  // feature. A contact that already carries the NFC source stays editable (an
+  // edit that resends the unchanged value is not a new capture).
+  if (isNfcSource(source) && !isNfcSource(existing.source)) await assertNfcEntitled(user, existing.companyId);
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   // Bind to the contact's OWN tenant (existing.companyId), not the caller's scope.

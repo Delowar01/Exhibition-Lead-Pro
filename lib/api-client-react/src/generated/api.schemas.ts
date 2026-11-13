@@ -3488,7 +3488,7 @@ export interface CalendarInviteResult {
 }
 
 /**
- * Batch 41 (U4) — per-version AI/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)
+ * Batch 41 (U4) — per-version AI/OCR allowances. An allowance is the CAP of the tenant's monthly budget in the Enterprise AI Layer (null = no plan allowance)
  */
 export interface PlatformPlanAllowances {
   /** @nullable */
@@ -4389,7 +4389,7 @@ export interface PlatformAiAllowancePreview {
 }
 
 /**
- * Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)
+ * Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (the plan allowance caps the tenant's own budget; without an allowance the tenant value applies, or none)
  */
 export type PlatformEffectiveLimitPreviewAiAllowances = {
   tenantOverride: PlatformEffectiveLimitPreviewAiAllowancesTenantOverride;
@@ -4441,7 +4441,7 @@ export interface PlatformEffectiveLimitPreview {
   features: PlatformEffectiveFeaturePreviewRow[];
   changedFeatures: string[];
   trialPolicy: PlatformEffectiveLimitPreviewTrialPolicy;
-  /** Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none) */
+  /** Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (the plan allowance caps the tenant's own budget; without an allowance the tenant value applies, or none) */
   aiAllowances: PlatformEffectiveLimitPreviewAiAllowances;
   readOnly: boolean;
   generatedAt: string;
@@ -5957,9 +5957,9 @@ export interface AiSettingsResponse {
   model: string;
   enabled: boolean;
   featureFlags: AiFeatureFlags;
-  /** The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited) */
+  /** The EFFECTIVE monthly token budget — the tenant's own budget capped by the pinned plan version's allowance; the allowance when the tenant has none; unlimited when neither exists */
   monthlyTokenBudget?: number | null;
-  /** The EFFECTIVE monthly cost budget in USD (same precedence) */
+  /** The EFFECTIVE monthly cost budget in USD (same rule) */
   monthlyCostBudgetUsd?: number | null;
   /** Batch 41 (U4) — where each effective budget comes from */
   budgetSource: AiSettingsResponseBudgetSource;

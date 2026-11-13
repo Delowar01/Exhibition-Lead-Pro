@@ -60,6 +60,10 @@ export interface EffectiveAiSettings {
 }
 
 export type BudgetSource = "tenant" | "plan" | "none";
+export const AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE = "AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE";
+export const AI_MODEL_NOT_SUPPORTED = "AI_MODEL_NOT_SUPPORTED";
+// The budget columns are 32-bit integers: a larger value is a client error, not a database error.
+const MAX_BUDGET_INT = 2_147_483_647;
 
 function defaults(companyId: number): EffectiveAiSettings {
   return {
@@ -95,16 +99,34 @@ async function planAllowanceFor(companyId: number): Promise<EffectiveAiSettings[
   return { planVersionId: version.id, aiTokensPerMonth: a.aiTokensPerMonth, aiCostMicroUsdPerMonth: a.aiCostMicroUsdPerMonth };
 }
 
+// Release correction M1 — the plan allowance is a CAP, not a default.
+//   • no allowance on the plan version (every legacy / version-1 snapshot, a
+//     NULL pin, an invalid reference) → the tenant's own budget applies, or
+//     none: exactly the pre-existing behaviour, so grandfathered tenants see
+//     no change;
+//   • an allowance on the pinned version → the effective budget never exceeds
+//     it. A tenant admin may still set a LOWER budget of their own (source
+//     "tenant"); a missing or higher tenant value resolves to the allowance
+//     (source "plan"). Raising a tenant's allowance is a plan-version decision
+//     of the Platform Owner (assign a version with a higher allowance) — never
+//     an ordinary tenant setting.
+// The single budget engine is unchanged: it keeps reading the effective values.
+function capBudget(tenant: number | null, cap: number | null): { value: number | null; source: BudgetSource } {
+  if (cap == null) return { value: tenant, source: tenant != null ? "tenant" : "none" };
+  if (tenant != null && tenant <= cap) return { value: tenant, source: "tenant" };
+  return { value: cap, source: "plan" };
+}
+
 export function applyPlanAllowance(
   base: Pick<EffectiveAiSettings, "monthlyTokenBudget" | "monthlyCostBudgetMicroUsd">,
   allowance: EffectiveAiSettings["planAllowance"],
 ): Pick<EffectiveAiSettings, "monthlyTokenBudget" | "monthlyCostBudgetMicroUsd" | "budgetSource" | "planAllowance"> {
-  const tokens = base.monthlyTokenBudget != null ? "tenant" : allowance.aiTokensPerMonth != null ? "plan" : "none";
-  const cost = base.monthlyCostBudgetMicroUsd != null ? "tenant" : allowance.aiCostMicroUsdPerMonth != null ? "plan" : "none";
+  const tokens = capBudget(base.monthlyTokenBudget, allowance.aiTokensPerMonth);
+  const cost = capBudget(base.monthlyCostBudgetMicroUsd, allowance.aiCostMicroUsdPerMonth);
   return {
-    monthlyTokenBudget: tokens === "tenant" ? base.monthlyTokenBudget : tokens === "plan" ? allowance.aiTokensPerMonth : null,
-    monthlyCostBudgetMicroUsd: cost === "tenant" ? base.monthlyCostBudgetMicroUsd : cost === "plan" ? allowance.aiCostMicroUsdPerMonth : null,
-    budgetSource: { tokens, cost },
+    monthlyTokenBudget: tokens.value,
+    monthlyCostBudgetMicroUsd: cost.value,
+    budgetSource: { tokens: tokens.source, cost: cost.source },
     planAllowance: allowance,
   };
 }
@@ -472,6 +494,7 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
   if (body.monthlyCostBudgetUsd !== undefined) {
     const usd = normalizeBudgetNumber(body.monthlyCostBudgetUsd, "monthlyCostBudgetUsd");
     values.monthlyCostBudgetMicroUsd = usd == null ? null : Math.round(usd * 1_000_000);
+    if (values.monthlyCostBudgetMicroUsd != null && values.monthlyCostBudgetMicroUsd > MAX_BUDGET_INT) throw new AppError(400, `monthlyCostBudgetUsd must not exceed ${microToUsd(MAX_BUDGET_INT)}`);
   }
   if (body.workflowRules !== undefined) {
     if (body.workflowRules === null) {
@@ -497,6 +520,37 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
     }
   }
 
+  // Release correction M1 (independent review): the ledger costs a model the
+  // platform has no price for at 0, which would make every COST budget — a
+  // plan's cost allowance included — unenforceable. A real provider therefore
+  // only accepts a priced model. The deterministic stub provider (registered
+  // outside production only) keeps its test models.
+  if (values.model !== undefined || values.provider !== undefined) {
+    const provider = values.provider ?? current.provider;
+    const model = values.model ?? current.model;
+    if (provider !== "stub" && !hasPricing(model)) {
+      throw new AppError(400, `model must be one of: ${Object.keys(config.ai.pricing).filter((m) => !m.startsWith("stub-")).join(", ")}`, { code: AI_MODEL_NOT_SUPPORTED, details: { provider, model } });
+    }
+  }
+
+  // Release correction M1: a tenant budget above the plan allowance would be
+  // capped at resolution time anyway — refuse it explicitly so the admin gets a
+  // clear answer instead of a silently ignored value. null (no tenant budget)
+  // and any value up to the allowance stay valid.
+  const cap = current.planAllowance;
+  if (values.monthlyTokenBudget != null && cap.aiTokensPerMonth != null && values.monthlyTokenBudget > cap.aiTokensPerMonth) {
+    throw new AppError(400, `monthlyTokenBudget cannot exceed your plan's AI allowance of ${cap.aiTokensPerMonth} tokens per month`, {
+      code: AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE,
+      details: { field: "monthlyTokenBudget", planAllowance: cap.aiTokensPerMonth, planVersionId: cap.planVersionId },
+    });
+  }
+  if (values.monthlyCostBudgetMicroUsd != null && cap.aiCostMicroUsdPerMonth != null && values.monthlyCostBudgetMicroUsd > cap.aiCostMicroUsdPerMonth) {
+    throw new AppError(400, `monthlyCostBudgetUsd cannot exceed your plan's AI allowance of ${microToUsd(cap.aiCostMicroUsdPerMonth)} USD per month`, {
+      code: AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE,
+      details: { field: "monthlyCostBudgetUsd", planAllowance: microToUsd(cap.aiCostMicroUsdPerMonth), planVersionId: cap.planVersionId },
+    });
+  }
+
   if (Object.keys(values).length === 0) throw new AppError(400, "No valid fields to update");
 
   await repo.upsertSettings(companyId, values);
@@ -509,6 +563,7 @@ function normalizeBudgetInt(raw: unknown, field: string): number | null {
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || !Number.isInteger(raw)) {
     throw new AppError(400, `${field} must be a non-negative integer or null`);
   }
+  if (raw > MAX_BUDGET_INT) throw new AppError(400, `${field} must not exceed ${MAX_BUDGET_INT}`);
   return raw;
 }
 

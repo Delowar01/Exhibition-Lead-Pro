@@ -16,9 +16,9 @@ export interface AiSettingsResponse {
   model: string;
   enabled: boolean;
   featureFlags: AiFeatureFlags;
-  /** The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited) */
+  /** The EFFECTIVE monthly token budget — the tenant's own budget capped by the pinned plan version's allowance; the allowance when the tenant has none; unlimited when neither exists */
   monthlyTokenBudget?: number | null;
-  /** The EFFECTIVE monthly cost budget in USD (same precedence) */
+  /** The EFFECTIVE monthly cost budget in USD (same rule) */
   monthlyCostBudgetUsd?: number | null;
   /** Batch 41 (U4) — where each effective budget comes from */
   budgetSource: AiSettingsResponseBudgetSource;

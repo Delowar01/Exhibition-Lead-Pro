@@ -1,17 +1,20 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, inArray, like } from "drizzle-orm";
-import { db, companiesTable, usersTable, contactsTable, auditLogsTable, plansTable, planVersionsTable } from "@workspace/db";
+import { db, companiesTable, usersTable, contactsTable, auditLogsTable, plansTable, planVersionsTable, aiSettingsTable } from "@workspace/db";
 import { runVersionBackfill } from "../src/lib/billing/version-backfill.js";
 
 // Batch 41 (U4) — per-version AI allowances through the EXISTING Enterprise AI
 // Layer (stub provider only; no live Gemini call).
 //
-// A published version may carry an AI token / cost allowance per month. It SEEDS
-// the tenant's monthly budget inside the one existing budget gate: an explicit
-// tenant override in ai_settings keeps precedence, a plan allowance applies when
-// the tenant has none, and a legacy / version-1 tenant keeps "no budget" exactly
-// as before. The same reservation-based admission, dedup, ledger and usage
-// accounting run unchanged — there is no second budget system.
+// A published version may carry an AI token / cost allowance per month. It is the
+// CAP of the tenant's monthly budget inside the one existing budget gate (release
+// correction M1): the plan allowance applies when the tenant has no budget of its
+// own, a tenant admin may set a LOWER budget, and a tenant value above the
+// allowance is refused on write and capped on read — an ordinary tenant setting
+// can never lift the plan's allowance. A legacy / version-1 tenant (no allowance)
+// keeps "no budget unless it sets one" exactly as before. The same
+// reservation-based admission, dedup, ledger and usage accounting run unchanged —
+// there is no second budget system.
 
 const BASE = "http://localhost:80/api";
 const PLATFORM = { email: "admin@cardscannerpro.com", password: "Admin123!" };
@@ -151,24 +154,82 @@ describe("budget precedence inside the Enterprise AI Layer", () => {
     expect(typeof res.body.context.usedTokens).toBe("number");
   });
 
-  it("an explicit tenant override keeps precedence over the plan allowance", async () => {
-    const s = await patchSettings(adminToken, { monthlyTokenBudget: 50_000 });
-    expect(s.monthlyTokenBudget).toBe(50_000);
-    expect(s.budgetSource).toEqual({ tokens: "tenant", cost: "plan" });
-    expect(s.planAllowance.aiTokensPerMonth).toBe(100); // still reported, not applied
-    const ok = await generate(adminToken, "override-allows-1");
-    expect(ok.status, ok.text).toBe(200);
+  it("M1: a tenant admin cannot raise the budget above the plan allowance — the write is refused, nothing is stored and the gate still denies", async () => {
+    const tokens = await api("PATCH", "/ai/settings", adminToken, { monthlyTokenBudget: 50_000 });
+    expect(tokens.status, tokens.text).toBe(400);
+    expect(tokens.body.code).toBe("AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE");
+    expect(tokens.body.context).toEqual({ field: "monthlyTokenBudget", planAllowance: 100, planVersionId: allowV1 });
+    const cost = await api("PATCH", "/ai/settings", adminToken, { monthlyCostBudgetUsd: 9 });
+    expect(cost.status, cost.text).toBe(400);
+    expect(cost.body.code).toBe("AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE");
+    expect(cost.body.context).toEqual({ field: "monthlyCostBudgetUsd", planAllowance: 2.5, planVersionId: allowV1 });
+    // A refused budget takes no other field with it (one atomic validation).
+    const mixed = await api("PATCH", "/ai/settings", adminToken, { enabled: false, monthlyTokenBudget: 101 });
+    expect(mixed.status).toBe(400);
+    const [row] = await db.select().from(aiSettingsTable).where(eq(aiSettingsTable.companyId, companyA));
+    expect(row.monthlyTokenBudget).toBeNull();
+    expect(row.monthlyCostBudgetMicroUsd).toBeNull();
+    expect(row.enabled).toBe(true);
+    const s = await settings(adminToken);
+    expect(s.monthlyTokenBudget).toBe(100);
+    expect(s.budgetSource).toEqual({ tokens: "plan", cost: "plan" });
+    const res = await generate(adminToken, "bypass-attempt-1");
+    expect(res.status, res.text).toBe(429);
+    expect(res.body.code).toBe("AI_BUDGET_EXCEEDED");
   });
 
-  it("clearing the override falls back to the plan allowance again (same gate, same counters)", async () => {
-    const s = await patchSettings(adminToken, { monthlyTokenBudget: null });
+  it("M1: a tenant value already stored above the allowance (written before the plan carried one) is capped on read and never lifts the gate", async () => {
+    await db.update(aiSettingsTable).set({ monthlyTokenBudget: 50_000, monthlyCostBudgetMicroUsd: 9_000_000 }).where(eq(aiSettingsTable.companyId, companyA));
+    // Any accepted settings write invalidates the cached effective settings.
+    const s = await patchSettings(adminToken, { enabled: true });
     expect(s.monthlyTokenBudget).toBe(100);
-    expect(s.budgetSource.tokens).toBe("plan");
+    expect(s.monthlyCostBudgetUsd).toBe(2.5);
+    expect(s.budgetSource).toEqual({ tokens: "plan", cost: "plan" });
+    const res = await generate(adminToken, "bypass-attempt-2");
+    expect(res.status, res.text).toBe(429);
+    expect(res.body.code).toBe("AI_BUDGET_EXCEEDED");
+    // The operator preview reports the same capped result for this tenant.
+    const preview = (await api("GET", `/platform/plans/${ALLOW}/versions/${allowV1}/effective-limits/${companyA}`, platformToken)).body;
+    expect(preview.aiAllowances.current).toMatchObject({ effectiveTokenBudget: 100, source: { tokens: "plan", cost: "plan" } });
+    expect(preview.aiAllowances.tenantOverride).toEqual({ monthlyTokenBudget: 50_000, monthlyCostBudgetMicroUsd: 9_000_000 });
+  });
+
+  it("M1: a LOWER tenant budget is the tenant's own choice and applies; clearing it falls back to the plan allowance (same gate, same counters)", async () => {
+    const lower = await patchSettings(adminToken, { monthlyTokenBudget: 40, monthlyCostBudgetUsd: 1 });
+    expect(lower.monthlyTokenBudget).toBe(40);
+    expect(lower.monthlyCostBudgetUsd).toBe(1);
+    expect(lower.budgetSource).toEqual({ tokens: "tenant", cost: "tenant" });
+    expect(lower.planAllowance.aiTokensPerMonth).toBe(100); // still reported
+    const equal = await patchSettings(adminToken, { monthlyTokenBudget: 100 });
+    expect(equal.budgetSource.tokens).toBe("tenant"); // exactly the allowance is accepted
+    const s = await patchSettings(adminToken, { monthlyTokenBudget: null, monthlyCostBudgetUsd: null });
+    expect(s.monthlyTokenBudget).toBe(100);
+    expect(s.monthlyCostBudgetUsd).toBe(2.5);
+    expect(s.budgetSource).toEqual({ tokens: "plan", cost: "plan" });
     const res = await generate(adminToken, "allowance-deny-2");
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("AI_BUDGET_EXCEEDED");
-    // The usage recorded under the override counts against the allowance (one ledger).
     expect(typeof res.body.context.usedTokens).toBe("number");
+  });
+
+  it("M1: the cost cap cannot be sidestepped through the model setting — a real provider only accepts a model the platform can price", async () => {
+    const before = await settings(adminToken);
+    const unpriced = await api("PATCH", "/ai/settings", adminToken, { provider: "gemini", model: "some-unpriced-model" });
+    expect(unpriced.status, unpriced.text).toBe(400);
+    expect(unpriced.body.code).toBe("AI_MODEL_NOT_SUPPORTED");
+    const after = await settings(adminToken);
+    expect({ provider: after.provider, model: after.model }).toEqual({ provider: before.provider, model: before.model }); // nothing stored
+    // the approved model is accepted for the real provider; the stub provider keeps its test models
+    expect((await api("PATCH", "/ai/settings", adminToken, { provider: "gemini", model: "gemini-2.5-flash" })).status).toBe(200);
+    expect((await api("PATCH", "/ai/settings", adminToken, { model: "another-unpriced-model" })).status).toBe(400);
+    await patchSettings(adminToken, { provider: "stub", model: "stub-model" });
+  });
+
+  it("a budget beyond the stored integer range is a 400, never a database error", async () => {
+    const tokens = await api("PATCH", "/ai/settings", legacyToken, { monthlyTokenBudget: 3_000_000_000 });
+    expect(tokens.status, tokens.text).toBe(400);
+    const cost = await api("PATCH", "/ai/settings", legacyToken, { monthlyCostBudgetUsd: 2500 });
+    expect(cost.status, cost.text).toBe(400);
   });
 
   it("a legacy version-1 tenant keeps no budget (unlimited unless overridden) — behaviour unchanged", async () => {
@@ -179,6 +240,12 @@ describe("budget precedence inside the Enterprise AI Layer", () => {
     expect(typeof s.planAllowance.planVersionId).toBe("number");
     const own = await patchSettings(legacyToken, { monthlyTokenBudget: 100 });
     expect(own.budgetSource.tokens).toBe("tenant");
+    // M1 leaves the legacy tenant alone: with no plan allowance there is no cap, any value is accepted.
+    const large = await patchSettings(legacyToken, { monthlyTokenBudget: 2_000_000_000, monthlyCostBudgetUsd: 2000 });
+    expect(large.monthlyTokenBudget).toBe(2_000_000_000);
+    expect(large.monthlyCostBudgetUsd).toBe(2000);
+    expect(large.budgetSource).toEqual({ tokens: "tenant", cost: "tenant" });
+    await patchSettings(legacyToken, { monthlyCostBudgetUsd: null });
     await patchSettings(legacyToken, { monthlyTokenBudget: null });
     expect((await settings(legacyToken)).budgetSource.tokens).toBe("none");
   });
@@ -189,6 +256,9 @@ describe("budget precedence inside the Enterprise AI Layer", () => {
     const s = await settings(adminToken);
     expect(s.budgetSource).toEqual({ tokens: "none", cost: "none" });
     expect(s.planAllowance.aiTokensPerMonth).toBeNull();
+    // Positive control: the same tenant, the same ledger usage — without an allowance the gate admits the call.
+    const ok = await generate(adminToken, "no-allowance-1");
+    expect(ok.status, ok.text).toBe(200);
     const back = await api("POST", `/platform/subscriptions/${companyA}/plan`, platformToken, { plan: ALLOW });
     expect(back.status, back.text).toBe(200);
     expect((await settings(adminToken)).budgetSource.tokens).toBe("plan");

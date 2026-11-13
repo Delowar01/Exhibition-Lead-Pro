@@ -15,11 +15,20 @@
 -- (artifacts/api-server/scripts/backfill-plan-versions.ts).
 BEGIN;
 
+-- Release correction: fail FAST instead of queueing. ALTER TABLE takes an ACCESS
+-- EXCLUSIVE lock; if it had to wait behind a long-running transaction, every
+-- later reader of `subscriptions` / `plans` (i.e. every authenticated request)
+-- would queue behind it. With a lock timeout the whole transaction aborts and
+-- rolls back untouched — re-run it; nothing is half-applied. SET LOCAL ends with
+-- the transaction and changes no schema object (the fingerprint is unaffected).
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+
 -- plans.status: draft | published | archived (the seeded catalog rows become published).
 ALTER TABLE "plans" ADD COLUMN IF NOT EXISTS "status" text NOT NULL DEFAULT 'published';
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plans_status_chk') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plans_status_chk' AND conrelid = 'public.plans'::regclass) THEN
     ALTER TABLE "plans" ADD CONSTRAINT "plans_status_chk" CHECK (status in ('draft','published','archived'));
   END IF;
 END $$;
@@ -41,7 +50,7 @@ CREATE TABLE IF NOT EXISTS "plan_versions" (
 );
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan_versions_plan_id_plans_id_fk') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan_versions_plan_id_plans_id_fk' AND conrelid = 'public.plan_versions'::regclass) THEN
     ALTER TABLE "plan_versions" ADD CONSTRAINT "plan_versions_plan_id_plans_id_fk"
       FOREIGN KEY ("plan_id") REFERENCES "public"."plans"("id") ON DELETE no action ON UPDATE no action;
   END IF;
@@ -54,7 +63,7 @@ CREATE INDEX IF NOT EXISTS "plan_versions_plan_published_idx" ON "plan_versions"
 ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "plan_version_id" integer;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'subscriptions_plan_version_id_plan_versions_id_fk') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'subscriptions_plan_version_id_plan_versions_id_fk' AND conrelid = 'public.subscriptions'::regclass) THEN
     ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_plan_version_id_plan_versions_id_fk"
       FOREIGN KEY ("plan_version_id") REFERENCES "public"."plan_versions"("id") ON DELETE no action ON UPDATE no action;
   END IF;
@@ -65,7 +74,7 @@ CREATE INDEX IF NOT EXISTS "subscriptions_plan_version_idx" ON "subscriptions" U
 ALTER TABLE "plan_prices" ADD COLUMN IF NOT EXISTS "plan_version_id" integer;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan_prices_plan_version_id_plan_versions_id_fk') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan_prices_plan_version_id_plan_versions_id_fk' AND conrelid = 'public.plan_prices'::regclass) THEN
     ALTER TABLE "plan_prices" ADD CONSTRAINT "plan_prices_plan_version_id_plan_versions_id_fk"
       FOREIGN KEY ("plan_version_id") REFERENCES "public"."plan_versions"("id") ON DELETE no action ON UPDATE no action;
   END IF;

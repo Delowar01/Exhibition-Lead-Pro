@@ -446,6 +446,12 @@ export async function retireVersion(actor: Actor, planId: string, versionId: num
     if (!v.publishedAt) throw conflict("VERSION_NOT_PUBLISHED", "Only a published version can be retired; delete a draft instead");
     if (v.retiredAt) throw conflict("VERSION_RETIRED", "This version is already retired");
     if ((await repo.countPublishedNonRetiredVersions(plan.id, tx)) <= 1) throw conflict("LAST_PUBLISHED_VERSION", "The last published version of a plan cannot be retired; publish a replacement first (or archive the plan)");
+    // Release correction: retiring re-mirrors the plan row from the new current
+    // version, and a subscriber that still references the plan row (legacy NULL
+    // pin) resolves its limits from that row — so retire carries the same guard
+    // as publish and never changes an unpinned subscriber's effective limits.
+    const unpinned = await repo.countUnpinnedSubscriptions(plan.id, tx);
+    if (unpinned > 0) throw conflict("UNPINNED_SUBSCRIBERS", "Subscribers still reference the plan row (legacy); run the version-1 backfill first", { count: unpinned });
     const subscribersKept = await repo.countSubscriptionsOnVersion(v.id, tx);
     const retired = await repo.updatePlanVersion(v.id, { retiredAt: new Date() }, tx);
     const newCurrent = await repo.findCurrentPublishedVersion(plan.id, tx);
@@ -497,6 +503,12 @@ export async function archivePlan(actor: Actor, planId: string): Promise<PlanRow
     if (plan.status === "draft") throw conflict("PLAN_NOT_PUBLISHED", "A draft plan is removed by deleting its draft, not archived");
     const subscribers = await repo.countSubscriptionsOnPlan(plan.id, tx);
     if (subscribers > 0) throw conflict("PLAN_HAS_SUBSCRIBERS", "A plan with subscribers cannot be archived", { count: subscribers });
+    // Release correction M2: a tenant that is mid-checkout for this plan is about
+    // to become a subscriber. Archive waits while a checkout is LIVE (not yet past
+    // its expiry); an abandoned one stops counting when it expires, and provider
+    // reconciliation still honours a completion that slips through.
+    const openCheckouts = await repo.countLiveCheckoutIntentsForPlan(plan.id, tx);
+    if (openCheckouts > 0) throw conflict("PLAN_HAS_OPEN_CHECKOUTS", "A plan with a checkout in progress cannot be archived; wait for it to complete or expire", { count: openCheckouts });
     const draft = await repo.findDraftVersion(plan.id, tx);
     if (draft) throw conflict("DRAFT_EXISTS", "Delete the plan's draft before archiving it", { draftVersionId: draft.id });
     const updated = await repo.updatePlan(plan.id, { status: "archived", isActive: false }, tx);

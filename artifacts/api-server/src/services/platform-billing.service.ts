@@ -6,6 +6,7 @@ import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, PlanPriceRow, PlanVersionRow } from "../repositories/subscriptions.repository.js";
 import { resolveEntitlement, normalizeLegacyStatus, allowedActions, SUBSCRIPTION_STATUSES, BILLING_SOURCES, LIVE_PROVIDER_STATUSES } from "../lib/billing/lifecycle.js";
 import { findPlanRow } from "../lib/billing/plan-catalog.js";
+import { isPlanSlug } from "../lib/billing/plan-versions.js";
 import { getBillingProvider, BillingProviderError } from "../lib/billing/provider.js";
 import { projectSubscription, priceView } from "./subscriptions.service.js";
 import { resolveSubscriptionContext } from "../lib/company-access.js";
@@ -34,7 +35,8 @@ export async function listSubscriptions(params: ListParams) {
   const { page, limit, offset } = parseListQuery(params, { defaultPageSize: 20, maxPageSize: 100 });
   const status = params.status && (SUBSCRIPTION_STATUSES as readonly string[]).includes(params.status) ? params.status : undefined;
   const billingSource = params.billingSource && (BILLING_SOURCES as readonly string[]).includes(params.billingSource) ? params.billingSource : undefined;
-  const plan = params.plan && /^[a-z_]{1,32}$/.test(params.plan) ? params.plan : undefined;
+  // Fixed catalog ids (letters / underscore) and Plan Builder slugs (letters, digits, hyphen) are both valid plan filters.
+  const plan = params.plan && (/^[a-z_]{1,32}$/.test(params.plan) || isPlanSlug(params.plan)) ? params.plan : undefined;
   const { rows, total } = await repo.listWithCompanies({ status, plan, billingSource, search: params.search?.trim() || undefined, limit, offset });
   const now = new Date();
   // Batch 41: accessMode must reflect the version's trial policy (read-only

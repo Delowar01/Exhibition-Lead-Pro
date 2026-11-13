@@ -11,7 +11,7 @@ import { and, eq, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { createNotification } from "../services/notifications.service.js";
 import { resolveSettings } from "../services/ai.service.js";
-import { writableCompanyIds } from "./company-access.js";
+import { tenantFeatureAllowed, writableCompanyIds } from "./company-access.js";
 import {
   detectLeadRisks,
   detectContactRisks,
@@ -211,9 +211,21 @@ async function dispatchCompanyAlerts(companyId: number, risks: SlaRisk[]): Promi
 // (never the legacy companies.status mirror, which maps past_due to "active"):
 // only tenants with `full` access receive alerts — no notifications / emails for
 // read-only or blocked accounts.
+// Release correction E3: the recurring sweep is a Workflow Intelligence
+// capability — a tenant whose plan version denies the feature gets no unattended
+// risk alerts (same gate as the /ai/workflow routes; legacy versions allow
+// everything, an invalid version reference fails closed). Exported so the
+// eligibility decision is testable without running the sweep's side effects.
+export async function alertEligibleCompanyIds(now: Date = new Date()): Promise<number[]> {
+  const out: number[] = [];
+  for (const id of await writableCompanyIds(now)) {
+    if ((await tenantFeatureAllowed(id, "workflow.intelligence", now)).allowed) out.push(id);
+  }
+  return out;
+}
+
 export async function runWorkflowAlerts(): Promise<SweepResult> {
-  const writable = await writableCompanyIds();
-  const companies = [...writable].map((id) => ({ id }));
+  const companies = (await alertEligibleCompanyIds()).map((id) => ({ id }));
 
   const result: SweepResult = { companies: companies.length, notified: 0, skipped: 0 };
   for (const c of companies) {

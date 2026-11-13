@@ -7,7 +7,7 @@
  */
 
 /**
- * Batch 41 (U4) — per-version AI/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)
+ * Batch 41 (U4) — per-version AI/OCR allowances. An allowance is the CAP of the tenant's monthly budget in the Enterprise AI Layer (null = no plan allowance)
  */
 export interface PlatformPlanAllowances {
   /** @nullable */

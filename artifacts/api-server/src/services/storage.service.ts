@@ -92,6 +92,8 @@ import { db, companiesTable, documentsTable, documentVersionsTable, executiveRep
 import { and, eq, isNull } from "drizzle-orm";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
+import { assertFeatureEntitled } from "../lib/feature-entitlements.js";
+import type { PlanFeatureKey } from "../lib/billing/plan-versions.js";
 import { AppError } from "../middlewares/errorHandler.js";
 import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
 import type { Executor } from "../repositories/base.js";
@@ -621,6 +623,36 @@ export function permissionForKind(kind: StorageKind, op: ByteOp): { module: stri
     default:
       return null; // documents: open tenant-scoped reads; scan images / logos: tenant-only
   }
+}
+
+/**
+ * Release correction E1 — the PLAN FEATURE that owns the bytes of an object
+ * kind (null = not a plan-gated feature). The byte routes are a second entry
+ * point to the same data as the feature's own module, so they apply the same
+ * entitlement: a tenant denied `documents` cannot fetch or upload document
+ * bytes through /files, and a tenant denied `executive.intelligence` cannot
+ * fetch a previously generated report. Exports, scan images and logos are not
+ * plan-gated (only export SCHEDULES are, at their own route).
+ *
+ * The decision is made by the BYTE ROUTES (routes/files.ts), for the
+ * authenticated tenant user — like every other plan-feature gate. This service
+ * stays a principal-agnostic storage layer.
+ */
+export function featureForKind(kind: StorageKind): PlanFeatureKey | null {
+  switch (kind) {
+    case "document":
+      return "documents";
+    case "report":
+      return "executive.intelligence";
+    default:
+      return null;
+  }
+}
+
+/** Throws the standard FEATURE_NOT_ENTITLED 403 when the caller's plan denies the feature owning this object kind. */
+export function assertKindEntitled(user: AuthUser, kind: StorageKind): void {
+  const feature = featureForKind(kind);
+  if (feature) assertFeatureEntitled(user, feature);
 }
 
 export function userHasPermission(user: AuthUser, required: { module: string; actions: string[] } | null): boolean {

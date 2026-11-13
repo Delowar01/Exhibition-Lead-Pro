@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { eq, like, and, inArray } from "drizzle-orm";
+import { eq, like, and, inArray, asc } from "drizzle-orm";
 import sharp from "sharp";
 import { db, companiesTable, usersTable, auditLogsTable, loginAttemptsTable, businessCardsTable, subscriptionsTable } from "@workspace/db";
 
@@ -111,8 +111,10 @@ async function branding(token: string) {
   expect(res.status, await res.clone().text()).toBe(200);
   return json(res);
 }
+// Ordered by insertion: the assertions below read "the first replace" (replaces[0]),
+// and an unordered SELECT returns rows in whatever order the heap holds them.
 async function auditActions(companyId: number, action: string) {
-  return db.select().from(auditLogsTable).where(and(eq(auditLogsTable.companyId, companyId), eq(auditLogsTable.action, action)));
+  return db.select().from(auditLogsTable).where(and(eq(auditLogsTable.companyId, companyId), eq(auditLogsTable.action, action))).orderBy(asc(auditLogsTable.id));
 }
 
 describe("default resolution", () => {

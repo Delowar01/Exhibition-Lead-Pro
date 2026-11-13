@@ -5,7 +5,7 @@ import { logger } from "../lib/logger.js";
 import type { Executor } from "../repositories/base.js";
 import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
-import { findAssignablePlan, resolvePlanAssignment } from "../lib/billing/plan-catalog.js";
+import { findAssignablePlan, resolvePlanAssignment, resolveProviderPlanAssignment } from "../lib/billing/plan-catalog.js";
 import {
   checkTransition,
   legacyCompanyStatus,
@@ -527,6 +527,11 @@ export async function applyProviderState(
   // the same plan; a price bound to a draft / foreign version is unmapped. A
   // plan-wide price never moves a same-plan subscriber off its pinned version
   // (grandfathering). The provider is authoritative: no U6 guard here.
+  // Release correction M2: a registered price of an ARCHIVED plan still
+  // reconciles (resolveProviderPlanAssignment) — a purchase made while the plan
+  // was sellable is honoured on the plan's published version and recorded with
+  // `planArchived: true` for the operator. Only a price of a never-published
+  // (draft) or unknown plan stays unmapped.
   let planPatch: Partial<SubscriptionRow> = {};
   let priceBinding: Record<string, unknown> = {};
   if (mappedPrice) {
@@ -535,16 +540,21 @@ export async function applyProviderState(
       const bound = await repo.findPlanVersionById(boundVersionId, tx);
       if (!bound || bound.planId !== mappedPrice.planId || !bound.publishedAt) throw new ProviderPriceUnmappedError();
       if (mappedPrice.planId !== sub.plan || boundVersionId !== sub.planVersionId) {
-        if (!(await resolvePlanAssignment(mappedPrice.planId, tx))) throw new ProviderPriceUnmappedError();
+        const assignment = await resolveProviderPlanAssignment(mappedPrice.planId, tx);
+        if (!assignment) throw new ProviderPriceUnmappedError();
         planPatch = { plan: mappedPrice.planId, planVersionId: boundVersionId };
-        priceBinding = { planChangeSource: "provider_price", priceScope: "version", pricePlanVersionId: boundVersionId, previousPlan: sub.plan, previousPlanVersionId: sub.planVersionId ?? null };
+        priceBinding = { planChangeSource: "provider_price", priceScope: "version", pricePlanVersionId: boundVersionId, previousPlan: sub.plan, previousPlanVersionId: sub.planVersionId ?? null, ...(assignment.archived ? { planArchived: true } : {}) };
       }
     } else if (mappedPrice.planId !== sub.plan) {
-      const assignment = await resolvePlanAssignment(mappedPrice.planId, tx);
+      const assignment = await resolveProviderPlanAssignment(mappedPrice.planId, tx);
       if (!assignment) throw new ProviderPriceUnmappedError();
       planPatch = { plan: mappedPrice.planId, planVersionId: assignment.planVersionId };
-      priceBinding = { planChangeSource: "provider_price", priceScope: "plan", pricePlanVersionId: null, previousPlan: sub.plan, previousPlanVersionId: sub.planVersionId ?? null };
+      priceBinding = { planChangeSource: "provider_price", priceScope: "plan", pricePlanVersionId: null, previousPlan: sub.plan, previousPlanVersionId: sub.planVersionId ?? null, ...(assignment.archived ? { planArchived: true } : {}) };
     }
+  }
+  if (priceBinding.planArchived) {
+    // Visible to the operator beyond the audit row: a paying tenant now sits on an archived plan.
+    logger.warn({ companyId: sub.companyId, subscriptionId: sub.id, planId: planPatch.plan, planVersionId: planPatch.planVersionId ?? null, code: "PROVIDER_PRICE_ON_ARCHIVED_PLAN" }, "Provider event reconciled onto an ARCHIVED plan (the purchase is honoured); move the provider subscription to a price of a current plan");
   }
   const patch: Partial<SubscriptionRow> = {
     ...planPatch,

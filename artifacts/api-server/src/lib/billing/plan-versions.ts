@@ -501,6 +501,13 @@ export function validateVersionForPublish(snapshot: PlanVersionSnapshot, trial: 
   for (const k of featureKeys) if (!(PLAN_FEATURE_KEYS as readonly string[]).includes(k)) errors.push({ code: "FEATURE_UNKNOWN", field: `features.${k}`, message: `"${k}" is not in the fixed feature catalog` });
   // Batch 41: enforcement mode + what it means for the recorded denials.
   if (snapshot.featureEnforcement !== undefined && !(FEATURE_ENFORCEMENT_MODES as readonly string[]).includes(snapshot.featureEnforcement)) errors.push({ code: "FEATURE_ENFORCEMENT_INVALID", field: "featureEnforcement", message: "featureEnforcement must be legacy or enforced" });
+  // Release correction M4: the assistant conversation routes serve BOTH the AI
+  // Assistant (mobile + web) and the web AI Command Center and require both
+  // features (deny wins). Enabling exactly one of the two therefore leaves the
+  // assistant unavailable everywhere — legal, but almost never intended.
+  if (featureEnforcementOf(snapshot) === "enforced" && (snapshot.features?.["ai.assistant"] === true) !== (snapshot.features?.["ai.command_center"] === true)) {
+    warnings.push({ code: "ASSISTANT_FEATURES_COUPLED", field: "features", message: "ai.assistant and ai.command_center are enforced together: with only one of them enabled the AI Assistant is unavailable on web and mobile" });
+  }
   const denied = PLAN_FEATURE_KEYS.filter((k) => snapshot.features?.[k] === false);
   if (denied.length > 0) {
     if (featureEnforcementOf(snapshot) === "enforced") warnings.push({ code: "FEATURES_ENFORCED_DENIALS", field: "features", message: `subscribers of this version will be DENIED: ${denied.join(", ")}` });
