@@ -30,7 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { FONT } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
-import { featureAllowed } from "@/lib/entitlements";
+import { assistantAllowed } from "@/lib/entitlements";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { classifySendError, sendErrorMessageKey, type SendErrorKind } from "@/lib/assistant-error";
@@ -47,7 +47,9 @@ export default function AssistantScreen() {
   const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
   // Batch 41 (PB-3): the plan version's `ai.assistant` entitlement gates the
   // assistant before RBAC (the API refuses /ai/assistant with FEATURE_NOT_ENTITLED).
-  const entitled = featureAllowed(user, "ai.assistant");
+  // Release correction M4: the same routes also need `ai.command_center`
+  // (deny wins on the server), so the screen mirrors both.
+  const entitled = assistantAllowed(user);
   const canUse =
     entitled && (user?.role === "primary_admin" || assistantPerms.includes("use"));
 

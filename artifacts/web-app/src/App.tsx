@@ -153,7 +153,7 @@ function ProtectedRoute({ component: Component, role, layout: Layout }: any) {
 }
 
 function Router() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [, setLocation] = useLocation();
 
   // Register the refresh-on-401 handler: rotate the refresh token, update
@@ -179,6 +179,9 @@ function Router() {
         if (data.refreshToken) {
           localStorage.setItem("csp_refresh_token", data.refreshToken);
         }
+        // M5: a renewed session re-reads the user so the plan entitlements are
+        // current again. Fire-and-forget — it never delays or fails the retry.
+        refreshUser("token-refresh");
         return data.token as string;
       } catch {
         logout();
@@ -186,7 +189,7 @@ function Router() {
       }
     });
     return () => setOnUnauthorized(null);
-  }, [logout]);
+  }, [logout, refreshUser]);
 
   useEffect(() => {
     if (window.location.pathname === "/") {

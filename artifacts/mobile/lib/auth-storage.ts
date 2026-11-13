@@ -76,6 +76,16 @@ export async function saveSession(token: string, user: User): Promise<void> {
   ]);
 }
 
+// M5 (entitlement refresh): replaces ONLY the stored user of the session that
+// owns `token`. The token itself is never written here, so a refresh that
+// answers late can never bring a signed-out session back.
+export async function saveSessionUser(token: string, user: User): Promise<void> {
+  if (cachedToken !== token) return;
+  await setSecureItem(USER_KEY, JSON.stringify(user));
+  // Signed out while the write was in flight: leave nothing behind.
+  if (cachedToken === null) await deleteSecureItem(USER_KEY);
+}
+
 export async function clearSession(): Promise<void> {
   cachedToken = null;
   await Promise.all([

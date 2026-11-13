@@ -24,7 +24,7 @@ const REVIEWED_KEYS: Record<string, { kind: Classification; owner: string; note:
   csp_offline_queue: { kind: "ACCOUNT-SCOPED", owner: "lib/offline-queue.ts", note: "every item stamped with its owner; legacy quarantined (11f14e13)" },
   csp_own_card: { kind: "ACCOUNT-SCOPED", owner: "lib/card-storage.ts", note: "single { owner, card } slot; legacy raw card removed, never attributed" },
   csp_token: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "current session token (secure store); replaced on login, deleted on logout" },
-  csp_user: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "current session user (secure store); replaced on login, deleted on logout" },
+  csp_user: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "current session user (secure store); replaced on login and — for the same session only, never with the token — by the M5 entitlement refresh; deleted on logout" },
   csp_remember_email: { kind: "AUTH/SECURITY", owner: "app/login.tsx", note: "remembered login e-mail (opt-in Remember me, secure store)" },
   csp_biometric_vault: { kind: "AUTH/SECURITY", owner: "lib/biometric.ts", note: "biometric quick sign-in: session of the account that enabled it (secure store, read only after the biometric prompt); cleared when a different account signs in" },
   csp_biometric_account: { kind: "AUTH/SECURITY — NON-SECRET ACCOUNT HINT", owner: "lib/biometric.ts", note: "destination of the biometric action: stable <userId>@<companyId> + masked e-mail only, written/cleared with the vault; no token" },

@@ -541,7 +541,9 @@ export default function CaptureNfcScreen() {
           [data.firstName, data.lastName].filter(Boolean).join(" ") ||
           data.company ||
           t("nfc.contactFallback");
-        if (!enqueueContact({ ...extractedToContact(data), eventId }, { label, source: "nfc", eventId })) {
+        // The capture mode travels WITH the contact (`source: "nfc"`), so the
+        // API applies the `nfc.capture` entitlement when the item syncs.
+        if (!enqueueContact({ ...extractedToContact(data), eventId, source: "nfc" }, { label, source: "nfc", eventId })) {
           Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
           return;
         }
@@ -569,7 +571,7 @@ export default function CaptureNfcScreen() {
     } finally {
       busyRef.current = false;
     }
-  }, [eventId, enqueueContact, isOnline, router]);
+  }, [eventId, enqueueContact, isOnline, nfcEntitled, router, t]);
 
   const handleCancel = useCallback(async () => {
     await cancelNfcScan();

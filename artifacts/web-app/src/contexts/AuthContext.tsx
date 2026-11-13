@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { User } from "@workspace/api-client-react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
+import { User, getMe, setOnFeatureDenied } from "@workspace/api-client-react";
+import { createEntitlementRefresher, type RefreshTrigger, type SessionIdentity } from "@/lib/entitlement-refresh";
 
 // localStorage is synchronous, so the stored session is restored DURING the
 // very first render (lazy useState initializer) instead of in a post-render
@@ -24,6 +25,11 @@ interface AuthContextType {
   token: string | null;
   login: (user: User, token: string, refreshToken?: string | null) => void;
   logout: () => void;
+  /**
+   * M5: re-read the signed-in user (and with it the plan entitlements) from
+   * GET /auth/me. Best effort — it never signs out and never surfaces an error.
+   */
+  refreshUser: (trigger: RefreshTrigger) => void;
   isLoading: boolean;
 }
 
@@ -37,7 +43,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // kept (always false) so consumers like ProtectedRoute keep their contract.
   const isLoading = false;
 
+  // M5 — entitlement refresh. The user stored at sign-in is re-read from
+  // GET /auth/me on session restore, after a token refresh, when the tab comes
+  // back to the front and when the API answers 403 FEATURE_NOT_ENTITLED.
+  // `userRef` / `generationRef` are the session as of NOW (not as of the last
+  // render), which is what the identity guard compares an answer against.
+  const userRef = useRef<User | null>(initialAuth.user);
+  const generationRef = useRef(0);
+  const [refresher] = useState(() =>
+    createEntitlementRefresher<User>({
+      getIdentity: (): SessionIdentity | null => {
+        const current = userRef.current;
+        const stored = readStoredAuth();
+        // Signed out (here or in another tab), or another account now owns the
+        // shared storage: there is nothing to refresh and nothing to apply to.
+        if (!current || !stored.user) return null;
+        if (stored.user.id !== current.id || (stored.user.companyId ?? null) !== (current.companyId ?? null)) return null;
+        return { userId: current.id, companyId: current.companyId ?? null, generation: generationRef.current };
+      },
+      getUser: () => userRef.current,
+      fetchUser: (signal) => getMe({ signal }),
+      applyUser: (fresh) => {
+        userRef.current = fresh;
+        setUser(fresh);
+        try {
+          localStorage.setItem("csp_user", JSON.stringify(fresh));
+        } catch {
+          // Storage unavailable — the in-memory user is still current.
+        }
+      },
+    }),
+  );
+  const refreshUser = useCallback(
+    (trigger: RefreshTrigger) => {
+      void refresher.refresh(trigger);
+    },
+    [refresher],
+  );
+
+  useEffect(() => {
+    refreshUser("restore");
+    const onResume = () => {
+      if (document.visibilityState === "visible") refreshUser("resume");
+    };
+    document.addEventListener("visibilitychange", onResume);
+    window.addEventListener("focus", onResume);
+    setOnFeatureDenied(() => refreshUser("feature-denied"));
+    return () => {
+      document.removeEventListener("visibilitychange", onResume);
+      window.removeEventListener("focus", onResume);
+      setOnFeatureDenied(null);
+    };
+  }, [refreshUser]);
+
   const login = (newUser: User, newToken: string, refreshToken?: string | null) => {
+    userRef.current = newUser;
+    generationRef.current += 1;
     setUser(newUser);
     setToken(newToken);
     localStorage.setItem("csp_token", newToken);
@@ -53,6 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    userRef.current = null;
+    generationRef.current += 1;
     setUser(null);
     setToken(null);
     localStorage.removeItem("csp_token");
@@ -62,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, refreshUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

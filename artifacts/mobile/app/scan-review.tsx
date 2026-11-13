@@ -366,6 +366,10 @@ export default function ScanReviewScreen() {
       // Link the originating scan so the created (or matched) contact records
       // this capture as a permanent interaction.
       scanId: scanId || undefined,
+      // An NFC capture has no scan row, so the contact itself declares the
+      // capture mode: the API enforces the `nfc.capture` entitlement on it and
+      // records the interaction as NFC. Other modes keep their existing payload.
+      ...(params.source === "nfc" ? { source: "nfc" } : {}),
     };
     if (!isOnline) {
       const label =
@@ -702,7 +706,9 @@ export default function ScanReviewScreen() {
           <View style={[styles.errorBox, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="alert-circle" size={15} color={colors.destructive} />
             <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
-              {t("scanReview.saveError")}
+              {createContact.error instanceof ApiError && createContact.error.status === 403 && (createContact.error.data as { code?: string } | undefined)?.code === "FEATURE_NOT_ENTITLED"
+                ? t("nfc.notEntitledSub")
+                : t("scanReview.saveError")}
             </Text>
           </View>
         </Card>

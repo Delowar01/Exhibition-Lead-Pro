@@ -29,6 +29,17 @@ export function featureAllowed(user: EntitlementSource, feature: FeatureKey): bo
   return features[feature] !== false;
 }
 
+/**
+ * Release correction M4 — the AI Assistant runs on the assistant conversation
+ * routes, which the API gates on BOTH `ai.assistant` and `ai.command_center`
+ * (deny wins). The mobile entry points mirror that exact rule, so the
+ * assistant is never offered when the API would refuse it. RBAC is checked
+ * separately by the callers, exactly as before.
+ */
+export function assistantAllowed(user: EntitlementSource): boolean {
+  return featureAllowed(user, "ai.assistant") && featureAllowed(user, "ai.command_center");
+}
+
 export function featureEnforcementOf(user: EntitlementSource): "legacy" | "enforced" | "invalid" | null {
   return user?.entitlements?.featureEnforcement ?? null;
 }

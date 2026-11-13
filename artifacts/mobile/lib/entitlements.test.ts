@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { featureAllowed, featureEnforcementOf } from "./entitlements";
+import { assistantAllowed, featureAllowed, featureEnforcementOf } from "./entitlements";
 
 // Batch 41 (PB-3): the mobile visibility model must mirror the server's
 // decision exactly — deny only on an explicit `false`, never on absence.
@@ -55,5 +55,28 @@ describe("featureAllowed", () => {
     expect(featureEnforcementOf(null)).toBeNull();
     expect(featureEnforcementOf(userWith(allowed, "legacy"))).toBe("legacy");
     expect(featureEnforcementOf(userWith(allowed))).toBe("enforced");
+  });
+});
+
+// Release correction M4: the API gates the assistant routes on BOTH features
+// (deny wins); the mobile entry points must reach the same answer.
+describe("assistantAllowed", () => {
+  it("needs both ai.assistant and ai.command_center — either explicit denial hides the assistant", () => {
+    expect(assistantAllowed(userWith({ "ai.assistant": true, "ai.command_center": true }))).toBe(true);
+    expect(assistantAllowed(userWith({ "ai.assistant": true, "ai.command_center": false }))).toBe(false);
+    expect(assistantAllowed(userWith({ "ai.assistant": false, "ai.command_center": true }))).toBe(false);
+    expect(assistantAllowed(userWith({ "ai.assistant": false, "ai.command_center": false }))).toBe(false);
+  });
+
+  it("a legacy tenant (every feature true) and a session without entitlements keep the assistant", () => {
+    expect(assistantAllowed(userWith({ "ai.assistant": true, "ai.command_center": true }, "legacy"))).toBe(true);
+    expect(assistantAllowed(userWith(null))).toBe(true);
+    expect(assistantAllowed(null)).toBe(true);
+    expect(assistantAllowed(undefined)).toBe(true);
+  });
+
+  it("never invents a denial for a key the server did not resolve", () => {
+    expect(assistantAllowed(userWith({ "ai.assistant": true }))).toBe(true);
+    expect(assistantAllowed(userWith({}))).toBe(true);
   });
 });

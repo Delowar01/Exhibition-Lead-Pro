@@ -21,7 +21,7 @@ import {
 
 import { Avatar, Badge, Card, FONT, ListRow, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
-import { featureAllowed } from "@/lib/entitlements";
+import { assistantAllowed } from "@/lib/entitlements";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
@@ -54,7 +54,7 @@ export default function MoreScreen() {
   const canViewAssistant =
     user?.role !== "platform_owner" &&
     (isFullAccess || assistantPerms.includes("view")) &&
-    featureAllowed(user, "ai.assistant");
+    assistantAllowed(user);
 
   async function applyAvatar(source: AvatarSource) {
     try {
