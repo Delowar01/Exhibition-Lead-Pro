@@ -5,13 +5,23 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { PlatformRegisterPriceInputPlanId } from './platformRegisterPriceInputPlanId';
 
 export interface PlatformRegisterPriceInput {
-  planId: PlatformRegisterPriceInputPlanId;
+  /**
+     * Plan slug (draft or published; never archived)
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  planId: string;
   /**
      * @minLength 6
      * @maxLength 128
      */
   providerPriceId: string;
+  /**
+     * Batch 42 — bind the mapping to this DRAFT version of the plan (omit = plan-wide); a published version's pricing is immutable (409 VERSION_NOT_DRAFT)
+     * @minimum 1
+     */
+  planVersionId?: number;
 }

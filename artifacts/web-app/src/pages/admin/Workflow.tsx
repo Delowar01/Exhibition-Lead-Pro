@@ -29,6 +29,9 @@ import {
   FlaskConical,
 } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
+import { useAuth } from "@/contexts/AuthContext";
+import { featureAllowed } from "@/lib/entitlements";
+import { FeatureUnavailable } from "@/components/FeatureUnavailable";
 import { ListSkeleton } from "@/components/ds";
 
 const RISK_TONE: Record<string, string> = {
@@ -248,7 +251,21 @@ function SimulationTool({ candidates }: { candidates: WorkflowWorkloadEntry[] })
   );
 }
 
+// Batch 41 (PB-3): Workflow Intelligence follows the plan version's
+// `workflow.intelligence` entitlement (the API refuses /ai/workflow too).
 export default function AdminWorkflow() {
+  const { user } = useAuth();
+  if (!featureAllowed(user, "workflow.intelligence")) {
+    return (
+      <AiWorkspaceLayout activeTab="workflow">
+        <FeatureUnavailable feature="workflow.intelligence" />
+      </AiWorkspaceLayout>
+    );
+  }
+  return <AdminWorkflowWorkspace />;
+}
+
+function AdminWorkflowWorkspace() {
   const healthQuery = useGetAiWorkflowHealth(undefined, { query: { queryKey: getGetAiWorkflowHealthQueryKey() } });
   const risksQuery = useGetAiWorkflowSlaRisks(undefined, { query: { queryKey: getGetAiWorkflowSlaRisksQueryKey() } });
   const bottlenecksQuery = useGetAiWorkflowBottlenecks(undefined, {

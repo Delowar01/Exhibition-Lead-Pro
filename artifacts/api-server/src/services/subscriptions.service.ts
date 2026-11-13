@@ -6,12 +6,14 @@ import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, PlanPriceRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
-import { resolveEntitlement, resolveBillingCapabilities, normalizeLegacyStatus, allowedActions } from "../lib/billing/lifecycle.js";
+import { resolveBillingCapabilities, normalizeLegacyStatus, allowedActions } from "../lib/billing/lifecycle.js";
 import { getBillingProvider, BillingProviderError, type ProviderCheckoutSession } from "../lib/billing/provider.js";
 import { billingFault } from "../lib/billing/test-faults.js";
 import { applyProviderState, ProviderModeMismatchError, ProviderPriceUnmappedError } from "./subscription-lifecycle.service.js";
 import { writeSubscriptionAudit, type AuditActor } from "../lib/billing/audit.js";
+import { resolvePlanAssignment } from "../lib/billing/plan-catalog.js";
 import { effectiveLimitsFor, usageReport } from "./entitlements.service.js";
+import { resolveSubscriptionContext, tenantEntitlementsOf } from "../lib/company-access.js";
 
 // Batch 20 — tenant-facing subscription service. READS never write (no lazy
 // insert); the only mutations are provider-side session creation (Checkout,
@@ -46,6 +48,8 @@ export function priceView(p: PlanPriceRow) {
   return {
     id: p.id,
     planId: p.planId,
+    // Batch 42: null = plan-wide; a value = bound to that published version.
+    planVersionId: p.planVersionId ?? null,
     interval: p.interval,
     intervalCount: p.intervalCount,
     currency: p.currency,
@@ -57,7 +61,11 @@ export function priceView(p: PlanPriceRow) {
 
 // Stable projection returned to tenants (and reused by the platform detail view).
 export async function projectSubscription(sub: SubscriptionRow, now = new Date()) {
-  const entitlement = resolveEntitlement(sub, now);
+  // Batch 41: the SAME version-aware decision path as the per-request gate
+  // (trial grace + feature entitlements), so what the client shows is what the
+  // server enforces.
+  const ctx = await resolveSubscriptionContext(sub, now);
+  const entitlement = ctx.entitlement;
   const activePrices = await repo.listPlanPrices({ activeOnly: true });
   const caps = resolveBillingCapabilities(sub, providerContext(activePrices.length), sub.providerStatus);
   const limits = await effectiveLimitsFor(sub);
@@ -94,6 +102,8 @@ export async function projectSubscription(sub: SubscriptionRow, now = new Date()
     },
     limits: limits.map((l) => ({ resource: l.resource, limit: l.limit, source: l.source })),
     usage,
+    planVersionId: sub.planVersionId ?? null,
+    entitlements: tenantEntitlementsOf(ctx),
   };
 }
 
@@ -110,9 +120,15 @@ export async function getUsage(user: AuthUser) {
 }
 
 // Plans + ONLY their active, provider-verified prices. No invented amounts.
+// Batch 42: a tenant is offered the prices of the plan's CURRENT published
+// version — plan-wide mappings plus the mappings bound to exactly that version
+// (a price bound to an older or retired version is never offered to new buyers).
 export async function listPlans() {
   const plans = await repo.listPlans(true);
   const prices = await repo.listPlanPrices({ activeOnly: true });
+  const current = new Map<string, number | null>();
+  for (const p of plans) current.set(p.id, (await repo.findCurrentPublishedVersion(p.id))?.id ?? null);
+  const offered = (pr: PlanPriceRow) => pr.planVersionId == null || pr.planVersionId === current.get(pr.planId);
   return plans.map((p) => ({
     id: p.id,
     name: p.name,
@@ -127,7 +143,7 @@ export async function listPlans() {
       scans: p.scansLimit,
       storageMb: p.storageLimitMb,
     },
-    prices: prices.filter((pr) => pr.planId === p.id).map(priceView),
+    prices: prices.filter((pr) => pr.planId === p.id && offered(pr)).map(priceView),
   }));
 }
 
@@ -336,6 +352,18 @@ export async function createCheckout(user: AuthUser, input: { planPriceId?: unkn
       if (!sub) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
       const price = await repo.findPlanPriceById(planPriceId, tx);
       if (!price || !price.active) throw new AppError(400, "This price is not available.", { code: "PRICE_NOT_AVAILABLE" });
+      // Batch 40: a price can only be bought for a PUBLISHED plan (never a draft / archived one).
+      const assignment = await resolvePlanAssignment(price.planId, tx);
+      if (!assignment) throw new AppError(400, "This price is not available.", { code: "PRICE_NOT_AVAILABLE" });
+      // Batch 42: a version-bound price is purchasable only while ITS version is the plan's
+      // CURRENT published version (exactly what the tenant catalog offers) — the provider
+      // identity then pins the tenant to exactly that version at reconciliation; a draft /
+      // retired / superseded / foreign binding is never sold (no wrong version). Existing
+      // subscribers of an older version keep their price identity (deactivation, never deletion).
+      if (price.planVersionId != null) {
+        const bound = await repo.findPlanVersionById(price.planVersionId, tx);
+        if (!bound || bound.planId !== price.planId || !bound.publishedAt || bound.retiredAt || bound.id !== assignment.planVersionId) throw new AppError(400, "This price is not available.", { code: "PRICE_NOT_AVAILABLE" });
+      }
       if (price.providerMode !== mode) throw new AppError(400, "This price was verified in a different provider mode.", { code: "PRICE_MODE_MISMATCH" });
       const activeCount = (await repo.listPlanPrices({ activeOnly: true }, tx)).length;
       const caps = resolveBillingCapabilities(sub, providerContext(activeCount), sub.providerStatus);

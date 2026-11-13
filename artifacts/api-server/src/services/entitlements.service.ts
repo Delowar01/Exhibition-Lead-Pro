@@ -14,6 +14,7 @@ import {
   type LimitResource,
   type UsageWindow,
 } from "../lib/billing/lifecycle.js";
+import { limitsAsPlanDefaults } from "../lib/billing/plan-versions.js";
 
 // Batch 20 — central entitlement / usage service. This is the ONLY place that
 // compares usage with a limit. Every creation / import / invitation / role-change
@@ -46,27 +47,36 @@ export interface UsageReport {
 // a company without a canonical subscription row, or a subscription that
 // references a plan that no longer exists, is an integrity fault that must surface
 // as a deterministic error — never as "unlimited".
-export type SubscriptionIntegrityCode = "SUBSCRIPTION_MISSING" | "SUBSCRIPTION_PLAN_INVALID";
+export type SubscriptionIntegrityCode = "SUBSCRIPTION_MISSING" | "SUBSCRIPTION_PLAN_INVALID" | "SUBSCRIPTION_PLAN_VERSION_INVALID";
+
+const INTEGRITY_MESSAGES: Record<SubscriptionIntegrityCode, string> = {
+  SUBSCRIPTION_MISSING: "This company has no canonical subscription record. Contact the platform operator.",
+  SUBSCRIPTION_PLAN_INVALID: "This company's subscription references an unknown plan. Contact the platform operator.",
+  SUBSCRIPTION_PLAN_VERSION_INVALID: "This company's subscription references an invalid plan version. Contact the platform operator.",
+};
 
 export class SubscriptionIntegrityError extends AppError {
   constructor(code: SubscriptionIntegrityCode, companyId: number, plan?: string) {
-    super(
-      409,
-      code === "SUBSCRIPTION_MISSING"
-        ? "This company has no canonical subscription record. Contact the platform operator."
-        : "This company's subscription references an unknown plan. Contact the platform operator.",
-      { code, details: plan ? { companyId, plan } : { companyId } },
-    );
+    super(409, INTEGRITY_MESSAGES[code], { code, details: plan ? { companyId, plan } : { companyId } });
     Object.setPrototypeOf(this, SubscriptionIntegrityError.prototype);
   }
 }
 
-// Effective limits of a subscription. Throws SUBSCRIPTION_PLAN_INVALID when the
-// referenced plan row is missing (the DB FK forbids this for new writes; legacy
-// rows are repaired by scripts/repair-subscriptions.ts).
+// Effective limits of a subscription — the ONLY place the plan defaults are read
+// for entitlement. Batch 40: a subscription PINNED to a plan version reads that
+// version's immutable snapshot limits; a NULL reference (legacy, pre-backfill)
+// reads the plan row exactly as before versioning. Both feed the single resolver.
+// Fails closed: a missing plan row (SUBSCRIPTION_PLAN_INVALID) or a pinned version
+// that is missing, unpublished or belongs to another plan
+// (SUBSCRIPTION_PLAN_VERSION_INVALID) is an integrity fault, never "unlimited".
 export async function effectiveLimitsFor(sub: SubscriptionRow, tx?: Executor): Promise<EffectiveLimit[]> {
   const plan = await repo.findPlanById(sub.plan, tx);
   if (!plan) throw new SubscriptionIntegrityError("SUBSCRIPTION_PLAN_INVALID", sub.companyId, sub.plan);
+  if (sub.planVersionId != null) {
+    const version = await repo.findPlanVersionById(sub.planVersionId, tx);
+    if (!version || version.planId !== sub.plan || !version.publishedAt) throw new SubscriptionIntegrityError("SUBSCRIPTION_PLAN_VERSION_INVALID", sub.companyId, sub.plan);
+    return resolveEffectiveLimits(limitsAsPlanDefaults(version.snapshot.limits), sub.limitOverrides);
+  }
   return resolveEffectiveLimits(plan, sub.limitOverrides);
 }
 
@@ -117,25 +127,49 @@ async function countUsage(companyId: number, sub: SubscriptionRow, resource: Cou
   }
 }
 
+// Batch 42 — the measured usage of every resource, INDEPENDENT of the current
+// limits (a plan / version change compares the TARGET limits with this; it must
+// work even when the current version reference is invalid). Storage is reported
+// as unmeasurable, never as a verified zero.
+export interface MeasuredUsage {
+  resource: LimitResource;
+  used: number;
+  measurable: boolean;
+  details?: Record<string, number | string>;
+}
+export async function measureUsage(companyId: number, sub: SubscriptionRow, now = new Date(), tx?: Executor): Promise<MeasuredUsage[]> {
+  const out: MeasuredUsage[] = [];
+  for (const resource of LIMIT_RESOURCES) {
+    if (resource === "storageMb") {
+      out.push({ resource, used: 0, measurable: false });
+      continue;
+    }
+    const { used, details } = await countUsage(companyId, sub, resource, { now }, tx);
+    out.push({ resource, used, measurable: true, details });
+  }
+  return out;
+}
+
 export async function usageReport(companyId: number, sub: SubscriptionRow, now = new Date()): Promise<UsageReport> {
   const limits = await effectiveLimitsFor(sub);
   const window = resolveUsageWindow(sub, now);
+  const measured = await measureUsage(companyId, sub, now);
   const resources: ResourceUsage[] = [];
   for (const l of limits) {
-    if (l.resource === "storageMb") {
+    const m = measured.find((x) => x.resource === l.resource);
+    if (!m || !m.measurable) {
       resources.push({ resource: l.resource, used: 0, limit: l.limit, remaining: null, source: l.source, enforced: false, measurable: false });
       continue;
     }
-    const { used, details } = await countUsage(companyId, sub, l.resource, { now });
     resources.push({
       resource: l.resource,
-      used,
+      used: m.used,
       limit: l.limit,
-      remaining: l.limit == null ? null : Math.max(0, l.limit - used),
+      remaining: l.limit == null ? null : Math.max(0, l.limit - m.used),
       source: l.source,
       enforced: l.limit != null,
       measurable: true,
-      details,
+      details: m.details,
     });
   }
   return { window: { startsAt: window.startsAt.toISOString(), endsAt: window.endsAt.toISOString(), source: window.source }, resources };

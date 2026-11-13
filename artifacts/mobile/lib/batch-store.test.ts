@@ -3,6 +3,7 @@ import {
   clearBatchCaptures,
   getBatchCaptures,
   getBatchOcrResult,
+  getBatchSession,
   getPendingOcrCount,
   setBatchCaptures,
   setBatchOcrResult,
@@ -70,5 +71,69 @@ describe("batch-store", () => {
     setBatchOcrResult("d1", { status: "done", extracted: null, scanId: 2 });
     setBatchOcrResult("e1", { status: "error", extracted: null, scanId: null });
     expect(getPendingOcrCount()).toBe(2);
+  });
+
+  // ── Batch 38: pending-count consistency, OCR transitions and session safety ──
+
+  it("pending count increments per shot and decrements on every completion (done or error)", () => {
+    const session = getBatchSession();
+    setBatchOcrResult("s1", { status: "pending", extracted: null, scanId: null }, session);
+    setBatchOcrResult("s2", { status: "pending", extracted: null, scanId: null }, session);
+    setBatchOcrResult("s3", { status: "pending", extracted: null, scanId: null }, session);
+    expect(getPendingOcrCount()).toBe(3);
+    setBatchOcrResult("s1", { status: "done", extracted: null, scanId: 11 }, session);
+    expect(getPendingOcrCount()).toBe(2);
+    setBatchOcrResult("s2", { status: "error", extracted: null, scanId: null }, session);
+    expect(getPendingOcrCount()).toBe(1);
+    setBatchOcrResult("s3", { status: "done", extracted: null, scanId: 13 }, session);
+    expect(getPendingOcrCount()).toBe(0);
+    // Success and failure are both terminal: the counter never goes negative and
+    // the per-item results stay faithful.
+    expect(getBatchOcrResult("s1")?.status).toBe("done");
+    expect(getBatchOcrResult("s2")?.status).toBe("error");
+    expect(getBatchOcrResult("s3")?.scanId).toBe(13);
+  });
+
+  it("a completion carrying the current session token is accepted", () => {
+    const session = getBatchSession();
+    expect(setBatchOcrResult("c1", { status: "pending", extracted: null, scanId: null }, session)).toBe(true);
+    expect(setBatchOcrResult("c1", { status: "done", extracted: null, scanId: 5 }, session)).toBe(true);
+    expect(getBatchOcrResult("c1")?.scanId).toBe(5);
+  });
+
+  it("batch exit: a late OCR completion from the ended session is ignored and never re-enters the store", () => {
+    const oldSession = getBatchSession();
+    setBatchOcrResult("late", { status: "pending", extracted: null, scanId: null }, oldSession);
+    expect(getPendingOcrCount()).toBe(1);
+    clearBatchCaptures(); // Done → review finished, or the user left the batch
+    expect(getBatchSession()).toBe(oldSession + 1);
+    // The background request finishes afterwards.
+    expect(setBatchOcrResult("late", { status: "done", extracted: null, scanId: 99 }, oldSession)).toBe(false);
+    expect(setBatchOcrResult("late", { status: "error", extracted: null, scanId: null }, oldSession)).toBe(false);
+    expect(getBatchOcrResult("late")).toBeUndefined();
+    expect(getPendingOcrCount()).toBe(0);
+  });
+
+  it("batch re-entry: the new session starts at zero pending and old results never surface", () => {
+    const first = getBatchSession();
+    setBatchOcrResult("old-1", { status: "pending", extracted: null, scanId: null }, first);
+    setBatchOcrResult("old-2", { status: "done", extracted: null, scanId: 1 }, first);
+    clearBatchCaptures(); // entering batch mode again
+    const second = getBatchSession();
+    expect(second).not.toBe(first);
+    expect(getPendingOcrCount()).toBe(0);
+    expect(getBatchOcrResult("old-1")).toBeUndefined();
+    expect(getBatchOcrResult("old-2")).toBeUndefined();
+    // Work of the new session is counted normally.
+    setBatchOcrResult("new-1", { status: "pending", extracted: null, scanId: null }, second);
+    expect(getPendingOcrCount()).toBe(1);
+    // A straggler from the first session cannot disturb the new count.
+    expect(setBatchOcrResult("old-1", { status: "done", extracted: null, scanId: 2 }, first)).toBe(false);
+    expect(getPendingOcrCount()).toBe(1);
+  });
+
+  it("callers without a session token keep the original contract (results always recorded)", () => {
+    setBatchOcrResult("legacy", { status: "done", extracted: null, scanId: 4 });
+    expect(getBatchOcrResult("legacy")?.scanId).toBe(4);
   });
 });

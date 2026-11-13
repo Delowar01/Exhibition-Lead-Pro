@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireFeature } from "../lib/feature-entitlements.js";
 import { auditMutations } from "../lib/audit.js";
 import { microCache } from "../middlewares/microCache.js";
 import * as exec from "../services/executive-intelligence.service.js";
@@ -22,6 +23,8 @@ const router = Router();
 
 router.use("/ai/executive", requireAuth);
 router.use("/ai/executive", requireTenantUser);
+// Batch 41 (PB-3): plan-version feature gate (legacy versions allow everything).
+router.use("/ai/executive", requireFeature("executive.intelligence"));
 router.use("/ai/executive", blockReadOnlyMutations);
 router.use("/ai/executive", auditMutations("ai_executive"));
 

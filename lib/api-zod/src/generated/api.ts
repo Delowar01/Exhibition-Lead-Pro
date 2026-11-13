@@ -188,7 +188,17 @@ export const LoginResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
   "mfaEnrollmentRequired": zod.boolean().optional(),
@@ -249,7 +259,17 @@ export const GetMeResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -384,7 +404,17 @@ export const MfaVerifyLoginResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
   "mfaEnrollmentRequired": zod.boolean().optional(),
@@ -914,6 +944,17 @@ export const PlatformGetSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -962,6 +1003,8 @@ export const PlatformGetSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1014,14 +1057,38 @@ export const PlatformSetSubscriptionPlanParams = zod.object({
   "companyId": zod.coerce.number()
 })
 
+export const platformSetSubscriptionPlanBodyPlanMin = 2;
+export const platformSetSubscriptionPlanBodyPlanMax = 40;
+
+
+export const platformSetSubscriptionPlanBodyPlanRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+
+export const platformSetSubscriptionPlanBodyReasonMax = 200;
+
+
+
 export const PlatformSetSubscriptionPlanBody = zod.object({
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise'])
+  "plan": zod.string().min(platformSetSubscriptionPlanBodyPlanMin).max(platformSetSubscriptionPlanBodyPlanMax).regex(platformSetSubscriptionPlanBodyPlanRegExp).describe('A PUBLISHED plan slug; without planVersionId the tenant is pinned to that plan\'s current published version'),
+  "planVersionId": zod.number().min(1).optional().describe('Batch 42 — an explicit PUBLISHED version of the plan (a retired version is allowed as the owner\'s deliberate choice; a draft never)'),
+  "confirmFeatureDowngrade": zod.boolean().optional().describe('Batch 42 (D3) — required true when the target version removes features the tenant currently has'),
+  "reason": zod.string().max(platformSetSubscriptionPlanBodyReasonMax).optional()
 })
 
 export const PlatformSetSubscriptionPlanResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1070,6 +1137,8 @@ export const PlatformSetSubscriptionPlanResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1095,6 +1164,189 @@ export const PlatformSetSubscriptionPlanResponse = zod.object({
 
 
 /**
+ * @summary Read-only preview of a plan / version change (Batch 42) — the same evaluation the change applies (target limits vs measured usage with the tenant's overrides, U6 blockers, feature gains / losses, trial policy, allowances); nothing is written
+ */
+export const PlatformPreviewSubscriptionPlanChangeParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const platformPreviewSubscriptionPlanChangeBodyPlanMin = 2;
+export const platformPreviewSubscriptionPlanChangeBodyPlanMax = 40;
+
+
+export const platformPreviewSubscriptionPlanChangeBodyPlanRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+
+
+
+export const PlatformPreviewSubscriptionPlanChangeBody = zod.object({
+  "plan": zod.string().min(platformPreviewSubscriptionPlanChangeBodyPlanMin).max(platformPreviewSubscriptionPlanChangeBodyPlanMax).regex(platformPreviewSubscriptionPlanChangeBodyPlanRegExp),
+  "planVersionId": zod.number().min(1).optional()
+})
+
+export const PlatformPreviewSubscriptionPlanChangeResponse = zod.object({
+  "current": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "valid": zod.boolean().describe('false when the current version reference is invalid (fail-closed elsewhere; the change repairs it)'),
+  "legacyReference": zod.boolean(),
+  "billingSource": zod.string(),
+  "status": zod.string()
+}),
+  "target": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "state": zod.enum(['published', 'retired', 'legacy']),
+  "explicit": zod.boolean()
+}),
+  "sameTarget": zod.boolean(),
+  "changeKind": zod.enum(['none', 'plan_change', 'version_change', 'repair']),
+  "transition": zod.object({
+  "ok": zod.boolean(),
+  "code": zod.string().nullable()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.string(),
+  "currentLimit": zod.number().nullable(),
+  "targetLimit": zod.number().nullable(),
+  "targetSource": zod.enum(['override', 'plan', 'unlimited']),
+  "override": zod.number().nullable(),
+  "used": zod.number(),
+  "measurable": zod.boolean(),
+  "exceeds": zod.boolean(),
+  "tightens": zod.boolean(),
+  "loosens": zod.boolean()
+})),
+  "blocking": zod.array(zod.object({
+  "resource": zod.string(),
+  "used": zod.number(),
+  "limit": zod.number()
+})),
+  "unmeasurable": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "loosenedLimits": zod.array(zod.string()),
+  "features": zod.object({
+  "enforcement": zod.object({
+  "current": zod.string(),
+  "target": zod.string()
+}),
+  "current": zod.record(zod.string(), zod.boolean()),
+  "target": zod.record(zod.string(), zod.boolean()),
+  "lost": zod.array(zod.string()),
+  "gained": zod.array(zod.string())
+}),
+  "trialPolicy": zod.object({
+  "current": zod.object({
+  "endOutcome": zod.string(),
+  "readOnlyGraceDays": zod.number()
+}),
+  "target": zod.object({
+  "endOutcome": zod.string(),
+  "readOnlyGraceDays": zod.number()
+})
+}),
+  "allowances": zod.object({
+  "current": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "target": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)')
+}),
+  "requiresFeatureConfirmation": zod.boolean(),
+  "eligible": zod.boolean().describe('Transition allowed and nothing blocking (feature confirmation aside)')
+}).and(zod.object({
+  "companyId": zod.number(),
+  "implicitLegacyKept": zod.boolean().describe('Same plan, legacy NULL reference, no explicit version — the change would move nothing'),
+  "wouldChange": zod.boolean(),
+  "readOnly": zod.boolean(),
+  "generatedAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary The tenant's plan / version history projected from the audit trail (Batch 42; Batch 43 adds stable server-side cursor pagination over the relevant plan-change events) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+ */
+export const PlatformSubscriptionPlanHistoryParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const platformSubscriptionPlanHistoryQueryLimitDefault = 50;
+export const platformSubscriptionPlanHistoryQueryLimitMax = 200;
+
+export const platformSubscriptionPlanHistoryQueryOrderDefault = `asc`;
+
+export const PlatformSubscriptionPlanHistoryQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(platformSubscriptionPlanHistoryQueryLimitMax).default(platformSubscriptionPlanHistoryQueryLimitDefault).describe('Page size (1–200, default 50) over the RELEVANT plan-change events only (ordinary audit rows never consume the page)'),
+  "cursor": zod.coerce.string().optional().describe('Opaque cursor of the last entry of the previous page (nextCursor); omitted = the first page'),
+  "order": zod.enum(['asc', 'desc']).default(platformSubscriptionPlanHistoryQueryOrderDefault).describe('asc = oldest first (chronology), desc = newest first (the latest changes are reachable immediately)')
+})
+
+export const PlatformSubscriptionPlanHistoryResponse = zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "original": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "at": zod.coerce.date().nullable()
+}),
+  "current": zod.object({
+  "plan": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "version": zod.number().nullable(),
+  "versionState": zod.string().nullable(),
+  "billingSource": zod.string(),
+  "status": zod.string()
+}),
+  "entries": zod.array(zod.object({
+  "auditId": zod.number(),
+  "cursor": zod.string().describe('Opaque position of this entry in the stable (createdAt, auditId) order; pass it as `cursor` to continue after it'),
+  "at": zod.coerce.date(),
+  "action": zod.string(),
+  "kind": zod.enum(['created', 'direct_change', 'version_change', 'repair', 'migration', 'provider_sync', 'backfill_pin', 'other']),
+  "actor": zod.object({
+  "userId": zod.number().nullable(),
+  "name": zod.string().nullable()
+}),
+  "reason": zod.string().nullable(),
+  "fromPlan": zod.string().nullable(),
+  "toPlan": zod.string().nullable(),
+  "fromVersionId": zod.number().nullable(),
+  "fromVersion": zod.number().nullable(),
+  "toVersionId": zod.number().nullable(),
+  "toVersion": zod.number().nullable(),
+  "billingSource": zod.string().nullable(),
+  "changedFields": zod.array(zod.string()),
+  "source": zod.string().nullable().describe('direct_change | migration | provider_price | null'),
+  "migrationId": zod.string().nullable(),
+  "dryRunDigest": zod.string().nullable(),
+  "limitsBefore": zod.record(zod.string(), zod.number().nullable()).nullable(),
+  "limitsAfter": zod.record(zod.string(), zod.number().nullable()).nullable(),
+  "changedLimits": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "loosenedLimits": zod.array(zod.string()),
+  "lostFeatures": zod.array(zod.string()),
+  "gainedFeatures": zod.array(zod.string()),
+  "featureEnforcementBefore": zod.string().nullable(),
+  "featureEnforcementAfter": zod.string().nullable(),
+  "confirmFeatureDowngrade": zod.boolean().nullable(),
+  "repairedInvalidReference": zod.boolean()
+})).describe('One page of the tenant\'s relevant plan-change events in the requested order (stable keyset order over createdAt + auditId)'),
+  "total": zod.number().describe('The number of relevant plan-change events of the tenant across the whole history (not only this page)'),
+  "truncated": zod.boolean().describe('true when the response does not carry the whole history (= hasMore; kept for compatibility)'),
+  "generatedAt": zod.coerce.date(),
+  "pageSize": zod.number(),
+  "order": zod.enum(['asc', 'desc']),
+  "nextCursor": zod.string().nullable().describe('The cursor to request the next page in the same order; null when this page ends the history'),
+  "hasMore": zod.boolean()
+})
+
+
+/**
  * @summary Start or extend a manual trial
  */
 export const PlatformStartTrialParams = zod.object({
@@ -1114,6 +1366,17 @@ export const PlatformStartTrialResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1162,6 +1425,8 @@ export const PlatformStartTrialResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1197,6 +1462,17 @@ export const PlatformActivateSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1245,6 +1521,8 @@ export const PlatformActivateSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1280,6 +1558,17 @@ export const PlatformMarkSubscriptionPastDueResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1328,6 +1617,8 @@ export const PlatformMarkSubscriptionPastDueResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1363,6 +1654,17 @@ export const PlatformCancelSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1411,6 +1713,8 @@ export const PlatformCancelSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1446,6 +1750,17 @@ export const PlatformExpireSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1494,6 +1809,8 @@ export const PlatformExpireSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1537,6 +1854,17 @@ export const PlatformSuspendSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1585,6 +1913,8 @@ export const PlatformSuspendSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1620,6 +1950,17 @@ export const PlatformReactivateSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1668,6 +2009,8 @@ export const PlatformReactivateSubscriptionResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1728,6 +2071,17 @@ export const PlatformSetSubscriptionLimitsResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1776,6 +2130,8 @@ export const PlatformSetSubscriptionLimitsResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1811,6 +2167,17 @@ export const PlatformConvertSubscriptionToManualResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1859,6 +2226,8 @@ export const PlatformConvertSubscriptionToManualResponse = zod.object({
 }))
 })
 }).and(zod.object({
+  "planVersionId": zod.number().nullish().describe('Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)'),
+  "planVersion": zod.number().nullish().describe('Version number of the pinned version'),
   "companyName": zod.string().nullable(),
   "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
   "allowedActions": zod.array(zod.string()),
@@ -1896,6 +2265,17 @@ export const PlatformSyncSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -1948,6 +2328,1547 @@ export const PlatformSyncSubscriptionResponse = zod.object({
 
 
 /**
+ * @summary Read-only plan catalog overview — the five fixed plans with their limits, features, trial policy, price mappings and subscription counts (Plan Builder foundation; no mutation endpoint exists)
+ */
+export const PlatformListPlansResponse = zod.object({
+  "plans": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "isActive": zod.boolean(),
+  "seeded": zod.boolean().describe('One of the five fixed catalog identities'),
+  "trialDays": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan row\'s feature flags (mirror of the current published version\'s fixed feature matrix; informational — feature gating is not enforced until PB-3)'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+}))),
+  "activePriceCount": zod.number(),
+  "subscriptions": zod.object({
+  "total": zod.number(),
+  "byStatus": zod.object({
+  "trialing": zod.number(),
+  "active": zod.number(),
+  "past_due": zod.number(),
+  "cancelled": zod.number(),
+  "expired": zod.number(),
+  "suspended": zod.number()
+}),
+  "byBillingSource": zod.object({
+  "manual": zod.number(),
+  "stripe": zod.number()
+}),
+  "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
+}),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('Plan lifecycle state (Batch 40)'),
+  "versioning": zod.enum(['not_versioned', 'versioned']).describe('versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill \/ first publication)'),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "draft": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "versionCount": zod.number(),
+  "publishedVersionCount": zod.number(),
+  "retiredVersionCount": zod.number(),
+  "pinnedSubscriptions": zod.number().describe('Subscribers pinned to a published version of this plan'),
+  "unpinnedSubscriptions": zod.number().describe('Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
+  "limitResources": zod.array(zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb'])),
+  "trialPolicy": zod.object({
+  "defaultTrialDays": zod.number(),
+  "configuredTrialDays": zod.number(),
+  "endOfTrialOutcome": zod.enum(['blocked']).describe('The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace'),
+  "readOnlyGraceDays": zod.number().describe('The platform default grace (0); per-version grace is shown on the version'),
+  "manualTrialExpirySweep": zod.boolean(),
+  "rule": zod.string().describe('The resolver rule of record, stated for display only')
+}),
+  "provider": zod.object({
+  "kind": zod.string(),
+  "available": zod.boolean(),
+  "stripeMode": zod.string().nullable()
+}),
+  "featureCatalog": zod.array(zod.string()).describe('The fixed feature catalog (U2) every version carries'),
+  "readOnly": zod.boolean().describe('false since Batch 40 — plans change through drafts and immutable published versions; published versions are never edited in place'),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Create a new DRAFT plan (new slug; never one of the five fixed ids). Not assignable or visible to tenants until a version is published.
+ */
+export const platformCreatePlanBodyIdMin = 2;
+export const platformCreatePlanBodyIdMax = 40;
+
+
+export const platformCreatePlanBodyIdRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+export const platformCreatePlanBodyNameMax = 80;
+
+export const platformCreatePlanBodyDescriptionMax = 500;
+
+export const platformCreatePlanBodySortOrderMin = 0;
+export const platformCreatePlanBodySortOrderMax = 1000;
+
+export const platformCreatePlanBodyLimitsContactsMin = 0;
+
+export const platformCreatePlanBodyLimitsEventsMin = 0;
+
+export const platformCreatePlanBodyLimitsAdminsMin = 0;
+
+export const platformCreatePlanBodyLimitsEmployeesMin = 0;
+
+export const platformCreatePlanBodyLimitsScansMin = 0;
+
+export const platformCreatePlanBodyLimitsStorageMbMin = 0;
+
+export const platformCreatePlanBodyAllowancesAiTokensPerMonthMin = 0;
+export const platformCreatePlanBodyAllowancesAiTokensPerMonthMax = 1000000000000;
+
+export const platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMin = 0;
+export const platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMax = 1000000000000;
+
+export const platformCreatePlanBodyTrialPolicyTrialDaysMin = 0;
+export const platformCreatePlanBodyTrialPolicyTrialDaysMax = 365;
+
+export const platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMin = 0;
+export const platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMax = 90;
+
+export const platformCreatePlanBodyManualPricesItemIntervalCountMax = 12;
+
+export const platformCreatePlanBodyManualPricesItemCurrencyMin = 3;
+export const platformCreatePlanBodyManualPricesItemCurrencyMax = 3;
+
+export const platformCreatePlanBodyManualPricesItemUnitAmountMinorMin = 0;
+export const platformCreatePlanBodyManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformCreatePlanBodyManualPricesItemLabelMax = 60;
+
+export const platformCreatePlanBodyManualPricesMax = 8;
+
+
+
+export const PlatformCreatePlanBody = zod.object({
+  "id": zod.string().min(platformCreatePlanBodyIdMin).max(platformCreatePlanBodyIdMax).regex(platformCreatePlanBodyIdRegExp).describe('New plan slug; the five fixed ids are reserved'),
+  "name": zod.string().min(1).max(platformCreatePlanBodyNameMax),
+  "description": zod.string().max(platformCreatePlanBodyDescriptionMax).nullish(),
+  "sortOrder": zod.number().min(platformCreatePlanBodySortOrderMin).max(platformCreatePlanBodySortOrderMax).optional(),
+  "limits": zod.object({
+  "contacts": zod.number().min(platformCreatePlanBodyLimitsContactsMin).nullish(),
+  "events": zod.number().min(platformCreatePlanBodyLimitsEventsMin).nullish(),
+  "admins": zod.number().min(platformCreatePlanBodyLimitsAdminsMin).nullish(),
+  "employees": zod.number().min(platformCreatePlanBodyLimitsEmployeesMin).nullish(),
+  "scans": zod.number().min(platformCreatePlanBodyLimitsScansMin).nullish(),
+  "storageMb": zod.number().min(platformCreatePlanBodyLimitsStorageMbMin).nullish()
+}).optional().describe('Partial limits; null = unlimited'),
+  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional(),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().min(platformCreatePlanBodyAllowancesAiTokensPerMonthMin).max(platformCreatePlanBodyAllowancesAiTokensPerMonthMax).nullish(),
+  "aiCostMicroUsdPerMonth": zod.number().min(platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMin).max(platformCreatePlanBodyAllowancesAiCostMicroUsdPerMonthMax).nullish()
+}).optional().describe('Partial allowances; null = no plan allowance for that budget'),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number().min(platformCreatePlanBodyTrialPolicyTrialDaysMin).max(platformCreatePlanBodyTrialPolicyTrialDaysMax).optional(),
+  "eligible": zod.boolean().optional(),
+  "oncePerCompany": zod.boolean().optional(),
+  "endOutcome": zod.enum(['blocked', 'read_only']).optional(),
+  "readOnlyGraceDays": zod.number().min(platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMin).max(platformCreatePlanBodyTrialPolicyReadOnlyGraceDaysMax).optional()
+}).optional(),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformCreatePlanBodyManualPricesItemIntervalCountMax).optional(),
+  "currency": zod.string().min(platformCreatePlanBodyManualPricesItemCurrencyMin).max(platformCreatePlanBodyManualPricesItemCurrencyMax),
+  "unitAmountMinor": zod.number().min(platformCreatePlanBodyManualPricesItemUnitAmountMinorMin).max(platformCreatePlanBodyManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformCreatePlanBodyManualPricesItemLabelMax).nullish()
+})).max(platformCreatePlanBodyManualPricesMax).optional()
+})
+
+
+/**
+ * @summary Read-only detail of one fixed plan including per-resource override counts
+ */
+export const PlatformGetPlanParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const PlatformGetPlanResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "isActive": zod.boolean(),
+  "seeded": zod.boolean().describe('One of the five fixed catalog identities'),
+  "trialDays": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan row\'s feature flags (mirror of the current published version\'s fixed feature matrix; informational — feature gating is not enforced until PB-3)'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+}))),
+  "activePriceCount": zod.number(),
+  "subscriptions": zod.object({
+  "total": zod.number(),
+  "byStatus": zod.object({
+  "trialing": zod.number(),
+  "active": zod.number(),
+  "past_due": zod.number(),
+  "cancelled": zod.number(),
+  "expired": zod.number(),
+  "suspended": zod.number()
+}),
+  "byBillingSource": zod.object({
+  "manual": zod.number(),
+  "stripe": zod.number()
+}),
+  "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
+}),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('Plan lifecycle state (Batch 40)'),
+  "versioning": zod.enum(['not_versioned', 'versioned']).describe('versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill \/ first publication)'),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "draft": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "versionCount": zod.number(),
+  "publishedVersionCount": zod.number(),
+  "retiredVersionCount": zod.number(),
+  "pinnedSubscriptions": zod.number().describe('Subscribers pinned to a published version of this plan'),
+  "unpinnedSubscriptions": zod.number().describe('Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "overrides": zod.object({
+  "tenantsWithAnyOverride": zod.number(),
+  "byResource": zod.object({
+  "contacts": zod.number(),
+  "events": zod.number(),
+  "admins": zod.number(),
+  "employees": zod.number(),
+  "scans": zod.number(),
+  "storageMb": zod.number()
+})
+})
+}))
+
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a plan (the single entitlement resolver with the tenant's own overrides; nothing is changed)
+ */
+export const PlatformPreviewPlanLimitsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformPreviewPlanLimitsResponse = zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "currentPlan": zod.string(),
+  "currentPlanVersionId": zod.number().nullable(),
+  "previewPlan": zod.string(),
+  "previewVersionId": zod.number().nullable().describe('The version whose limits were previewed (the plan\'s current published version by default; null = legacy plan row)'),
+  "previewVersion": zod.number().nullable(),
+  "previewVersionState": zod.string().nullable().describe('draft | published | retired (null = legacy plan row)'),
+  "isCurrentPlan": zod.boolean(),
+  "status": zod.string(),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "billingSource": zod.string(),
+  "rows": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "planDefault": zod.number().nullable().describe('The previewed plan\'s default (null = unlimited)'),
+  "override": zod.number().nullable().describe('The tenant\'s own numeric override (null = none)'),
+  "effective": zod.number().nullable().describe('override ?? plan default ?? unlimited, from the single resolver'),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "currentEffective": zod.number().nullable().describe('The tenant\'s effective limit on its current plan'),
+  "changes": zod.boolean().describe('effective differs from currentEffective'),
+  "used": zod.number(),
+  "measurable": zod.boolean(),
+  "remaining": zod.number().nullable(),
+  "exceeds": zod.boolean().describe('Measured usage already exceeds the previewed effective limit (informational)')
+})),
+  "changedResources": zod.array(zod.string()),
+  "blockingResources": zod.array(zod.string()),
+  "featureEnforcement": zod.object({
+  "preview": zod.enum(['legacy', 'enforced']),
+  "current": zod.enum(['legacy', 'enforced', 'invalid'])
+}).describe('Batch 41 — the previewed version\'s enforcement mode vs the tenant\'s current mode'),
+  "features": zod.array(zod.object({
+  "feature": zod.string(),
+  "label": zod.string(),
+  "recorded": zod.boolean().describe('The flag recorded in the previewed snapshot'),
+  "previewAllowed": zod.boolean().describe('What the previewed version would entitle (all true under legacy enforcement)'),
+  "currentAllowed": zod.boolean().describe('What the tenant is entitled to today'),
+  "changes": zod.boolean()
+})),
+  "changedFeatures": zod.array(zod.string()),
+  "trialPolicy": zod.object({
+  "preview": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+}),
+  "current": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}),
+  "aiAllowances": zod.object({
+  "tenantOverride": zod.object({
+  "monthlyTokenBudget": zod.number().nullable(),
+  "monthlyCostBudgetMicroUsd": zod.number().nullable()
+}),
+  "preview": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+}),
+  "current": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+})
+}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)'),
+  "readOnly": zod.boolean(),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Duplicate a plan into a NEW draft plan (limits, feature matrix and trial policy copied; provider prices are not copied)
+ */
+export const PlatformDuplicatePlanParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const platformDuplicatePlanBodyIdMin = 2;
+export const platformDuplicatePlanBodyIdMax = 40;
+
+
+export const platformDuplicatePlanBodyIdRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+export const platformDuplicatePlanBodyNameMax = 80;
+
+
+
+export const PlatformDuplicatePlanBody = zod.object({
+  "id": zod.string().min(platformDuplicatePlanBodyIdMin).max(platformDuplicatePlanBodyIdMax).regex(platformDuplicatePlanBodyIdRegExp),
+  "name": zod.string().min(1).max(platformDuplicatePlanBodyNameMax).optional()
+})
+
+
+/**
+ * @summary Archive a builder-created plan that has no subscribers and no draft (fixed catalog ids are never archived here and never deleted)
+ */
+export const PlatformArchivePlanParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const PlatformArchivePlanResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "isActive": zod.boolean(),
+  "seeded": zod.boolean().describe('One of the five fixed catalog identities'),
+  "trialDays": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The plan row\'s feature flags (mirror of the current published version\'s fixed feature matrix; informational — feature gating is not enforced until PB-3)'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+}))),
+  "activePriceCount": zod.number(),
+  "subscriptions": zod.object({
+  "total": zod.number(),
+  "byStatus": zod.object({
+  "trialing": zod.number(),
+  "active": zod.number(),
+  "past_due": zod.number(),
+  "cancelled": zod.number(),
+  "expired": zod.number(),
+  "suspended": zod.number()
+}),
+  "byBillingSource": zod.object({
+  "manual": zod.number(),
+  "stripe": zod.number()
+}),
+  "withOverrides": zod.number().describe('Subscriptions on this plan carrying at least one numeric per-tenant limit override')
+}),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('Plan lifecycle state (Batch 40)'),
+  "versioning": zod.enum(['not_versioned', 'versioned']).describe('versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill \/ first publication)'),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "draft": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "versionCount": zod.number(),
+  "publishedVersionCount": zod.number(),
+  "retiredVersionCount": zod.number(),
+  "pinnedSubscriptions": zod.number().describe('Subscribers pinned to a published version of this plan'),
+  "unpinnedSubscriptions": zod.number().describe('Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "overrides": zod.object({
+  "tenantsWithAnyOverride": zod.number(),
+  "byResource": zod.object({
+  "contacts": zod.number(),
+  "events": zod.number(),
+  "admins": zod.number(),
+  "employees": zod.number(),
+  "scans": zod.number(),
+  "storageMb": zod.number()
+})
+})
+}))
+
+
+/**
+ * @summary Version history of a plan (drafts, published and retired versions with subscriber counts)
+ */
+export const PlatformListPlanVersionsParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemLabelMax = 60;
+
+
+
+export const PlatformListPlanVersionsResponse = zod.object({
+  "planId": zod.string(),
+  "planStatus": zod.enum(['draft', 'published', 'archived']),
+  "currentVersionId": zod.number().nullable(),
+  "draftVersionId": zod.number().nullable(),
+  "unpinnedSubscribers": zod.number(),
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMin).max(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformListPlanVersionsResponseVersionsItemSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a new draft pre-filled from the current published version (or a chosen published version). One draft per plan.
+ */
+export const PlatformCreatePlanDraftParams = zod.object({
+  "planId": zod.coerce.string()
+})
+
+export const PlatformCreatePlanDraftBody = zod.object({
+  "sourceVersionId": zod.number().optional().describe('A PUBLISHED version to pre-fill from (default = the current published version)')
+})
+
+
+/**
+ * @summary One plan version with its applicable prices and (for drafts) the publication validation
+ */
+export const PlatformGetPlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformGetPlanVersionResponseOneSnapshotManualPricesItemLabelMax = 60;
+
+export const platformGetPlanVersionResponseTwoManualPricesItemIntervalCountMax = 12;
+
+export const platformGetPlanVersionResponseTwoManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMin = 0;
+export const platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformGetPlanVersionResponseTwoManualPricesItemLabelMax = 60;
+
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemIntervalCountMax = 12;
+
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMin = 0;
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformGetPlanVersionResponseTwoValidationOneManualPricesItemLabelMax = 60;
+
+
+
+export const PlatformGetPlanVersionResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformGetPlanVersionResponseOneSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformGetPlanVersionResponseOneSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMin).max(platformGetPlanVersionResponseOneSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformGetPlanVersionResponseOneSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "priceMappings": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "scope": zod.enum(['plan', 'version']),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean(),
+  "providerMode": zod.string(),
+  "verified": zod.boolean(),
+  "modeMatches": zod.boolean(),
+  "verifiedAt": zod.coerce.date().nullable(),
+  "providerPriceRef": zod.string().nullable()
+}).describe('Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode')).optional().describe('Batch 42 — applicable provider mappings with scope + verification state'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformGetPlanVersionResponseTwoManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformGetPlanVersionResponseTwoManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMin).max(platformGetPlanVersionResponseTwoManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformGetPlanVersionResponseTwoManualPricesItemLabelMax).nullable()
+})).optional(),
+  "validation": zod.union([zod.object({
+  "planId": zod.string(),
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "ok": zod.boolean().describe('Content validation passed (limits consistent, feature keys from the catalog, trial policy complete, prices verified in the configured provider mode)'),
+  "errors": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "blockers": zod.array(zod.object({
+  "code": zod.enum(['VERSION_IMMUTABLE', 'VERSION_RETIRED', 'PLAN_ARCHIVED', 'UNPINNED_SUBSCRIBERS']),
+  "message": zod.string(),
+  "count": zod.number().optional()
+})),
+  "publishable": zod.boolean().describe('ok and no blocker'),
+  "pricesConsidered": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "priceMappings": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "scope": zod.enum(['plan', 'version']),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean(),
+  "providerMode": zod.string(),
+  "verified": zod.boolean(),
+  "modeMatches": zod.boolean(),
+  "verifiedAt": zod.coerce.date().nullable(),
+  "providerPriceRef": zod.string().nullable()
+}).describe('Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode')).optional().describe('Batch 42 — every applicable mapping (active or not) with scope + verification state'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformGetPlanVersionResponseTwoValidationOneManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformGetPlanVersionResponseTwoValidationOneManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMin).max(platformGetPlanVersionResponseTwoValidationOneManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformGetPlanVersionResponseTwoValidationOneManualPricesItemLabelMax).nullable()
+})).optional(),
+  "providerMode": zod.enum(['test', 'live'])
+}),zod.null()])
+}))
+
+
+/**
+ * @summary Edit a DRAFT version (display fields, limits, feature matrix, trial policy). A published version answers 409 VERSION_IMMUTABLE.
+ */
+export const PlatformUpdatePlanDraftParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const platformUpdatePlanDraftBodyNameMax = 80;
+
+export const platformUpdatePlanDraftBodyDescriptionMax = 500;
+
+export const platformUpdatePlanDraftBodySortOrderMin = 0;
+export const platformUpdatePlanDraftBodySortOrderMax = 1000;
+
+export const platformUpdatePlanDraftBodyLimitsContactsMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsEventsMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsAdminsMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsEmployeesMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsScansMin = 0;
+
+export const platformUpdatePlanDraftBodyLimitsStorageMbMin = 0;
+
+export const platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMin = 0;
+export const platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMax = 1000000000000;
+
+export const platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMin = 0;
+export const platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMax = 1000000000000;
+
+export const platformUpdatePlanDraftBodyTrialPolicyTrialDaysMin = 0;
+export const platformUpdatePlanDraftBodyTrialPolicyTrialDaysMax = 365;
+
+export const platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMin = 0;
+export const platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMax = 90;
+
+export const platformUpdatePlanDraftBodyManualPricesItemIntervalCountMax = 12;
+
+export const platformUpdatePlanDraftBodyManualPricesItemCurrencyMin = 3;
+export const platformUpdatePlanDraftBodyManualPricesItemCurrencyMax = 3;
+
+export const platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMin = 0;
+export const platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformUpdatePlanDraftBodyManualPricesItemLabelMax = 60;
+
+export const platformUpdatePlanDraftBodyManualPricesMax = 8;
+
+
+
+export const PlatformUpdatePlanDraftBody = zod.object({
+  "name": zod.string().min(1).max(platformUpdatePlanDraftBodyNameMax).optional(),
+  "description": zod.string().max(platformUpdatePlanDraftBodyDescriptionMax).nullish(),
+  "sortOrder": zod.number().min(platformUpdatePlanDraftBodySortOrderMin).max(platformUpdatePlanDraftBodySortOrderMax).optional(),
+  "limits": zod.object({
+  "contacts": zod.number().min(platformUpdatePlanDraftBodyLimitsContactsMin).nullish(),
+  "events": zod.number().min(platformUpdatePlanDraftBodyLimitsEventsMin).nullish(),
+  "admins": zod.number().min(platformUpdatePlanDraftBodyLimitsAdminsMin).nullish(),
+  "employees": zod.number().min(platformUpdatePlanDraftBodyLimitsEmployeesMin).nullish(),
+  "scans": zod.number().min(platformUpdatePlanDraftBodyLimitsScansMin).nullish(),
+  "storageMb": zod.number().min(platformUpdatePlanDraftBodyLimitsStorageMbMin).nullish()
+}).optional().describe('Partial limits; null = unlimited'),
+  "features": zod.record(zod.string(), zod.boolean()).optional().describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional(),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().min(platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMin).max(platformUpdatePlanDraftBodyAllowancesAiTokensPerMonthMax).nullish(),
+  "aiCostMicroUsdPerMonth": zod.number().min(platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMin).max(platformUpdatePlanDraftBodyAllowancesAiCostMicroUsdPerMonthMax).nullish()
+}).optional().describe('Partial allowances; null = no plan allowance for that budget'),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number().min(platformUpdatePlanDraftBodyTrialPolicyTrialDaysMin).max(platformUpdatePlanDraftBodyTrialPolicyTrialDaysMax).optional(),
+  "eligible": zod.boolean().optional(),
+  "oncePerCompany": zod.boolean().optional(),
+  "endOutcome": zod.enum(['blocked', 'read_only']).optional(),
+  "readOnlyGraceDays": zod.number().min(platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMin).max(platformUpdatePlanDraftBodyTrialPolicyReadOnlyGraceDaysMax).optional()
+}).optional(),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformUpdatePlanDraftBodyManualPricesItemIntervalCountMax).optional(),
+  "currency": zod.string().min(platformUpdatePlanDraftBodyManualPricesItemCurrencyMin).max(platformUpdatePlanDraftBodyManualPricesItemCurrencyMax),
+  "unitAmountMinor": zod.number().min(platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMin).max(platformUpdatePlanDraftBodyManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformUpdatePlanDraftBodyManualPricesItemLabelMax).nullish()
+})).max(platformUpdatePlanDraftBodyManualPricesMax).optional().describe('Batch 42 (D2) — replaces the draft\'s manual price summaries (unique per currency \/ interval \/ count)')
+})
+
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformUpdatePlanDraftResponseSnapshotManualPricesItemLabelMax = 60;
+
+
+
+export const PlatformUpdatePlanDraftResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformUpdatePlanDraftResponseSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformUpdatePlanDraftResponseSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMin).max(platformUpdatePlanDraftResponseSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformUpdatePlanDraftResponseSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a DRAFT version (published versions are never deleted; a version with subscribers is never deleted)
+ */
+export const PlatformDeletePlanDraftParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformDeletePlanDraftResponse = zod.object({
+  "deleted": zod.boolean(),
+  "versionId": zod.number(),
+  "planDeleted": zod.boolean().describe('true when the deleted draft was the only version of a never-published plan (the plan row was removed too)')
+})
+
+
+/**
+ * @summary Publication validation of a version (read-only; nothing is changed)
+ */
+export const PlatformValidatePlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const platformValidatePlanVersionResponseManualPricesItemIntervalCountMax = 12;
+
+export const platformValidatePlanVersionResponseManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMin = 0;
+export const platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformValidatePlanVersionResponseManualPricesItemLabelMax = 60;
+
+
+
+export const PlatformValidatePlanVersionResponse = zod.object({
+  "planId": zod.string(),
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "ok": zod.boolean().describe('Content validation passed (limits consistent, feature keys from the catalog, trial policy complete, prices verified in the configured provider mode)'),
+  "errors": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "field": zod.string(),
+  "message": zod.string()
+})),
+  "blockers": zod.array(zod.object({
+  "code": zod.enum(['VERSION_IMMUTABLE', 'VERSION_RETIRED', 'PLAN_ARCHIVED', 'UNPINNED_SUBSCRIBERS']),
+  "message": zod.string(),
+  "count": zod.number().optional()
+})),
+  "publishable": zod.boolean().describe('ok and no blocker'),
+  "pricesConsidered": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "priceMappings": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "planVersionId": zod.number().nullable(),
+  "scope": zod.enum(['plan', 'version']),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean(),
+  "providerMode": zod.string(),
+  "verified": zod.boolean(),
+  "modeMatches": zod.boolean(),
+  "verifiedAt": zod.coerce.date().nullable(),
+  "providerPriceRef": zod.string().nullable()
+}).describe('Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode')).optional().describe('Batch 42 — every applicable mapping (active or not) with scope + verification state'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformValidatePlanVersionResponseManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformValidatePlanVersionResponseManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMin).max(platformValidatePlanVersionResponseManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformValidatePlanVersionResponseManualPricesItemLabelMax).nullable()
+})).optional(),
+  "providerMode": zod.enum(['test', 'live'])
+})
+
+
+/**
+ * @summary Publish a draft as an immutable version (atomic, re-validated under lock; never moves existing subscribers; refused while legacy unpinned subscribers exist)
+ */
+export const PlatformPublishPlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformPublishPlanVersionResponseSnapshotManualPricesItemLabelMax = 60;
+
+
+
+export const PlatformPublishPlanVersionResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformPublishPlanVersionResponseSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformPublishPlanVersionResponseSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin).max(platformPublishPlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformPublishPlanVersionResponseSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Retire a published version (no longer assignable to new tenants; subscribers keep it; the last published version cannot be retired)
+ */
+export const PlatformRetirePlanVersionParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemIntervalCountMax = 12;
+
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemCurrencyRegExp = new RegExp('^[a-z]{3}$');
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin = 0;
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax = 1000000000;
+
+export const platformRetirePlanVersionResponseSnapshotManualPricesItemLabelMax = 60;
+
+
+
+export const PlatformRetirePlanVersionResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "isCurrent": zod.boolean().describe('The plan\'s current published (newest non-retired) version'),
+  "snapshot": zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}).describe('Plan default limits (null = unlimited \/ not enforced)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('The fixed feature catalog (U2); enforced server-side when the version\'s featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`'),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)'),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "providerMode": zod.string(),
+  "nickname": zod.string().nullable(),
+  "active": zod.boolean()
+})),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).optional().describe('Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).optional().describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "manualPrices": zod.array(zod.object({
+  "interval": zod.enum(['day', 'week', 'month', 'year']),
+  "intervalCount": zod.number().min(1).max(platformRetirePlanVersionResponseSnapshotManualPricesItemIntervalCountMax),
+  "currency": zod.string().regex(platformRetirePlanVersionResponseSnapshotManualPricesItemCurrencyRegExp),
+  "unitAmountMinor": zod.number().min(platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMin).max(platformRetirePlanVersionResponseSnapshotManualPricesItemUnitAmountMinorMax),
+  "label": zod.string().max(platformRetirePlanVersionResponseSnapshotManualPricesItemLabelMax).nullable()
+})).optional().describe('Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)')
+}),
+  "trialPolicy": zod.object({
+  "trialDays": zod.number(),
+  "eligible": zod.boolean(),
+  "oncePerCompany": zod.boolean(),
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number()
+}),
+  "featureEnforcement": zod.enum(['legacy', 'enforced']).describe('Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants'),
+  "effectiveFeatures": zod.record(zod.string(), zod.boolean()).describe('What a tenant pinned to this version is actually allowed (all true under legacy)'),
+  "allowances": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "subscribers": zod.number(),
+  "publishedAt": zod.coerce.date().nullable(),
+  "publishedBy": zod.number().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Tenant impact preview of publishing (draft) or retiring (published) a version — read-only
+ */
+export const PlatformPlanVersionImpactParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+export const PlatformPlanVersionImpactResponse = zod.object({
+  "planId": zod.string(),
+  "planStatus": zod.enum(['draft', 'published', 'archived']),
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "planSubscribers": zod.number(),
+  "unpinnedSubscribers": zod.number(),
+  "subscribersOnVersion": zod.number(),
+  "subscribersByVersion": zod.array(zod.object({
+  "versionId": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "subscribers": zod.number()
+})),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()]),
+  "generatedAt": zod.coerce.date(),
+  "publish": zod.union([zod.object({
+  "subscribersMoved": zod.number().describe('Always 0 — publishing never moves an existing subscriber'),
+  "wouldBecomeCurrent": zod.boolean(),
+  "newTenantsGetThisVersion": zod.boolean(),
+  "diffVsCurrent": zod.array(zod.object({
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances', 'pricing']),
+  "field": zod.string(),
+  "left": zod.unknown().describe('string | number | boolean | null'),
+  "right": zod.unknown().describe('string | number | boolean | null'),
+  "changed": zod.boolean()
+})),
+  "tightenedLimits": zod.array(zod.string()),
+  "tenantsExceedingNewLimits": zod.object({
+  "checked": zod.number(),
+  "sampled": zod.boolean(),
+  "tenants": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "status": zod.string(),
+  "resources": zod.array(zod.object({
+  "resource": zod.string(),
+  "limit": zod.number(),
+  "used": zod.number()
+}))
+}))
+}),
+  "blockers": zod.array(zod.object({
+  "code": zod.enum(['VERSION_IMMUTABLE', 'VERSION_RETIRED', 'PLAN_ARCHIVED', 'UNPINNED_SUBSCRIBERS']),
+  "message": zod.string(),
+  "count": zod.number().optional()
+}))
+}),zod.null()]),
+  "retire": zod.union([zod.object({
+  "subscribersKept": zod.number(),
+  "subscribersByStatus": zod.record(zod.string(), zod.number()),
+  "isCurrent": zod.boolean(),
+  "isLastPublished": zod.boolean(),
+  "alreadyRetired": zod.boolean(),
+  "newCurrentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),zod.null()])
+}),zod.null()])
+})
+
+
+/**
+ * @summary Field-by-field comparison of two versions of a plan
+ */
+export const PlatformComparePlanVersionsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number(),
+  "otherVersionId": zod.coerce.number()
+})
+
+export const PlatformComparePlanVersionsResponse = zod.object({
+  "planId": zod.string(),
+  "left": zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),
+  "right": zod.object({
+  "id": zod.number(),
+  "version": zod.number(),
+  "state": zod.enum(['draft', 'published', 'retired']),
+  "publishedAt": zod.coerce.date().nullable(),
+  "retiredAt": zod.coerce.date().nullable(),
+  "subscribers": zod.number()
+}),
+  "rows": zod.array(zod.object({
+  "group": zod.enum(['display', 'limits', 'features', 'trialPolicy', 'enforcement', 'allowances', 'pricing']),
+  "field": zod.string(),
+  "left": zod.unknown().describe('string | number | boolean | null'),
+  "right": zod.unknown().describe('string | number | boolean | null'),
+  "changed": zod.boolean()
+})),
+  "changedFields": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "loosenedLimits": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Read-only preview of a tenant's effective limits under a specific version (draft or published) — the single resolver with the tenant's own overrides
+ */
+export const PlatformPreviewPlanVersionLimitsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number(),
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformPreviewPlanVersionLimitsResponse = zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "currentPlan": zod.string(),
+  "currentPlanVersionId": zod.number().nullable(),
+  "previewPlan": zod.string(),
+  "previewVersionId": zod.number().nullable().describe('The version whose limits were previewed (the plan\'s current published version by default; null = legacy plan row)'),
+  "previewVersion": zod.number().nullable(),
+  "previewVersionState": zod.string().nullable().describe('draft | published | retired (null = legacy plan row)'),
+  "isCurrentPlan": zod.boolean(),
+  "status": zod.string(),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "billingSource": zod.string(),
+  "rows": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "planDefault": zod.number().nullable().describe('The previewed plan\'s default (null = unlimited)'),
+  "override": zod.number().nullable().describe('The tenant\'s own numeric override (null = none)'),
+  "effective": zod.number().nullable().describe('override ?? plan default ?? unlimited, from the single resolver'),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "currentEffective": zod.number().nullable().describe('The tenant\'s effective limit on its current plan'),
+  "changes": zod.boolean().describe('effective differs from currentEffective'),
+  "used": zod.number(),
+  "measurable": zod.boolean(),
+  "remaining": zod.number().nullable(),
+  "exceeds": zod.boolean().describe('Measured usage already exceeds the previewed effective limit (informational)')
+})),
+  "changedResources": zod.array(zod.string()),
+  "blockingResources": zod.array(zod.string()),
+  "featureEnforcement": zod.object({
+  "preview": zod.enum(['legacy', 'enforced']),
+  "current": zod.enum(['legacy', 'enforced', 'invalid'])
+}).describe('Batch 41 — the previewed version\'s enforcement mode vs the tenant\'s current mode'),
+  "features": zod.array(zod.object({
+  "feature": zod.string(),
+  "label": zod.string(),
+  "recorded": zod.boolean().describe('The flag recorded in the previewed snapshot'),
+  "previewAllowed": zod.boolean().describe('What the previewed version would entitle (all true under legacy enforcement)'),
+  "currentAllowed": zod.boolean().describe('What the tenant is entitled to today'),
+  "changes": zod.boolean()
+})),
+  "changedFeatures": zod.array(zod.string()),
+  "trialPolicy": zod.object({
+  "preview": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+}),
+  "current": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}),
+  "aiAllowances": zod.object({
+  "tenantOverride": zod.object({
+  "monthlyTokenBudget": zod.number().nullable(),
+  "monthlyCostBudgetMicroUsd": zod.number().nullable()
+}),
+  "preview": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+}),
+  "current": zod.object({
+  "allowance": zod.object({
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostMicroUsdPerMonth": zod.number().nullable()
+}).describe('Batch 41 (U4) — per-version AI\/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)'),
+  "effectiveTokenBudget": zod.number().nullable(),
+  "effectiveCostBudgetMicroUsd": zod.number().nullable(),
+  "source": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+})
+})
+}).describe('Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)'),
+  "readOnly": zod.boolean(),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Migrate platform-managed tenants to this PUBLISHED version (Batch 42) — dryRun true evaluates every tenant in scope and returns a digest; dryRun false requires confirmDigest of a dry run over the same current data and migrates each eligible tenant in its own transaction with per-tenant audit rows
+ */
+export const PlatformMigratePlanVersionTenantsParams = zod.object({
+  "planId": zod.coerce.string(),
+  "versionId": zod.coerce.number()
+})
+
+
+
+export const platformMigratePlanVersionTenantsBodyCompanyIdsMax = 200;
+
+export const platformMigratePlanVersionTenantsBodyConfirmDigestMin = 64;
+export const platformMigratePlanVersionTenantsBodyConfirmDigestMax = 64;
+
+export const platformMigratePlanVersionTenantsBodyReasonMax = 200;
+
+
+
+export const PlatformMigratePlanVersionTenantsBody = zod.object({
+  "dryRun": zod.boolean().describe('true = evaluate only (no write) and return the digest; false = execute (requires confirmDigest)'),
+  "sourceVersionId": zod.number().min(1).optional().describe('Scope = every subscription pinned to this PUBLISHED version (any plan)'),
+  "companyIds": zod.array(zod.number().min(1)).min(1).max(platformMigratePlanVersionTenantsBodyCompanyIdsMax).optional().describe('Explicit scope (≤ 200 companies); combined with sourceVersionId every listed company must be on the source'),
+  "confirmDigest": zod.string().min(platformMigratePlanVersionTenantsBodyConfirmDigestMin).max(platformMigratePlanVersionTenantsBodyConfirmDigestMax).optional().describe('The digest of the reviewed dry run; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same digest'),
+  "confirmFeatureDowngrade": zod.boolean().optional().describe('D3 — required true for tenants that would lose features (otherwise they are reported, never migrated)'),
+  "reason": zod.string().max(platformMigratePlanVersionTenantsBodyReasonMax).optional()
+})
+
+export const PlatformMigratePlanVersionTenantsResponse = zod.object({
+  "planId": zod.string(),
+  "target": zod.object({
+  "versionId": zod.number(),
+  "version": zod.number()
+}),
+  "source": zod.object({
+  "versionId": zod.number().optional(),
+  "version": zod.number().optional(),
+  "planId": zod.string().optional()
+}).nullable(),
+  "scope": zod.enum(['companies', 'source_version']),
+  "confirmFeatureDowngrade": zod.boolean(),
+  "digest": zod.string().describe('sha256 over the canonical serialization of the reviewed scope (target plan \/ version \/ state, source, confirmation flag, scope kind) and every tenant\'s reviewDigest inputs; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same value'),
+  "generatedAt": zod.coerce.date(),
+  "dryRun": zod.boolean(),
+  "migrationId": zod.string().nullable(),
+  "rows": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "currentPlan": zod.string().nullable(),
+  "currentPlanVersionId": zod.number().nullable(),
+  "currentVersion": zod.number().nullable(),
+  "currentReferenceValid": zod.boolean(),
+  "billingSource": zod.string().nullable(),
+  "status": zod.string().nullable(),
+  "reason": zod.enum(['ELIGIBLE', 'ALREADY_ON_VERSION', 'PROVIDER_MANAGED', 'TRANSITION_NOT_ALLOWED', 'NOT_ON_SOURCE_VERSION', 'DOWNGRADE_BLOCKED', 'FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED', 'SUBSCRIPTION_MISSING']),
+  "blocking": zod.array(zod.object({
+  "resource": zod.string(),
+  "used": zod.number(),
+  "limit": zod.number()
+})),
+  "unmeasurable": zod.array(zod.string()),
+  "lostFeatures": zod.array(zod.string()),
+  "tightenedLimits": zod.array(zod.string()),
+  "outcome": zod.enum(['migrated', 'skipped', 'failed', 'rolled_back', 'ineligible', 'not_attempted']).describe('Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN \/ SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run)'),
+  "outcomeReason": zod.string().nullable(),
+  "reviewDigest": zod.string().describe('sha-256 over every material eligibility input of THIS tenant as reviewed (reference, status, billing source, overrides, measured usage, target limits, feature matrices, trial \/ allowance targets, transition, reason); the execution re-computes it inside the tenant\'s transaction and skips on any difference'),
+  "changedSinceReview": zod.array(zod.string()).describe('On a skipped tenant, the top-level review inputs that differ from the reviewed row (empty otherwise)')
+})),
+  "summary": zod.object({
+  "total": zod.number(),
+  "eligible": zod.number(),
+  "byReason": zod.record(zod.string(), zod.number()),
+  "migrated": zod.number(),
+  "skipped": zod.number(),
+  "failed": zod.number(),
+  "rolledBack": zod.number(),
+  "notAttempted": zod.number(),
+  "ineligible": zod.number().describe('Tenants deliberately not migrated (reviewed reason other than ELIGIBLE); execution only'),
+  "concurrentlyChanged": zod.number().describe('Eligible tenants skipped because their data changed between the review and their own transaction (CHANGED_SINCE_DRY_RUN \/ SUBSCRIPTION_MISSING)')
+}),
+  "complete": zod.boolean().nullable().describe('null for a dry run; true only when status is `complete` — every eligible tenant of the reviewed scope was migrated (any skipped, failed or rolled-back eligible tenant makes it false)'),
+  "status": zod.enum(['dry_run', 'complete', 'partial', 'concurrently_changed', 'failed', 'rolled_back']).describe('dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error)'),
+  "incompleteReasons": zod.array(zod.enum(['concurrently_changed', 'failed', 'rolled_back'])).describe('Why the execution is not complete (empty for dry runs and complete executions)')
+})
+
+
+/**
  * @summary Provider configuration state (no secret values)
  */
 export const PlatformBillingStatusResponse = zod.object({
@@ -1971,6 +3892,7 @@ export const PlatformListPricesResponse = zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -1978,6 +3900,11 @@ export const PlatformListPricesResponse = zod.object({
   "nickname": zod.string().nullish(),
   "active": zod.boolean()
 }).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
   "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
@@ -1990,14 +3917,21 @@ export const PlatformListPricesResponse = zod.object({
 /**
  * @summary Register a provider price id for a plan (interval/currency/amount are retrieved from the provider, never from the request)
  */
+export const platformRegisterPriceBodyPlanIdMin = 2;
+export const platformRegisterPriceBodyPlanIdMax = 40;
+
+
+export const platformRegisterPriceBodyPlanIdRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
 export const platformRegisterPriceBodyProviderPriceIdMin = 6;
 export const platformRegisterPriceBodyProviderPriceIdMax = 128;
 
 
 
+
 export const PlatformRegisterPriceBody = zod.object({
-  "planId": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
-  "providerPriceId": zod.string().min(platformRegisterPriceBodyProviderPriceIdMin).max(platformRegisterPriceBodyProviderPriceIdMax)
+  "planId": zod.string().min(platformRegisterPriceBodyPlanIdMin).max(platformRegisterPriceBodyPlanIdMax).regex(platformRegisterPriceBodyPlanIdRegExp).describe('Plan slug (draft or published; never archived)'),
+  "providerPriceId": zod.string().min(platformRegisterPriceBodyProviderPriceIdMin).max(platformRegisterPriceBodyProviderPriceIdMax),
+  "planVersionId": zod.number().min(1).optional().describe('Batch 42 — bind the mapping to this DRAFT version of the plan (omit = plan-wide); a published version\'s pricing is immutable (409 VERSION_NOT_DRAFT)')
 })
 
 
@@ -2015,6 +3949,7 @@ export const PlatformUpdatePriceBody = zod.object({
 export const PlatformUpdatePriceResponse = zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -2022,6 +3957,11 @@ export const PlatformUpdatePriceResponse = zod.object({
   "nickname": zod.string().nullish(),
   "active": zod.boolean()
 }).and(zod.object({
+  "scope": zod.enum(['plan', 'version']).optional().describe('Batch 42 — plan-wide or bound to one version (strict identity, immutable)'),
+  "planVersion": zod.number().nullish().describe('Version number of the bound version (null when plan-wide)'),
+  "planVersionState": zod.union([zod.literal('draft'),zod.literal('published'),zod.literal('retired'),zod.literal(null)]).nullish(),
+  "verified": zod.boolean().optional(),
+  "modeMatches": zod.boolean().optional().describe('The price was verified in the provider mode the platform is configured for'),
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
   "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
@@ -2060,7 +4000,7 @@ export const ListCompaniesResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2090,6 +4030,12 @@ export const ListCompaniesResponse = zod.object({
  * @summary Create company
  */
 export const createCompanyBodyPlanDefault = `free`;
+export const createCompanyBodyPlanMin = 2;
+export const createCompanyBodyPlanMax = 40;
+
+
+export const createCompanyBodyPlanRegExp = new RegExp('^[a-z][a-z0-9-]{1,39}$');
+
 
 export const CreateCompanyBody = zod.object({
   "name": zod.string(),
@@ -2104,7 +4050,7 @@ export const CreateCompanyBody = zod.object({
   "currency": zod.string().nullish(),
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']).default(createCompanyBodyPlanDefault)
+  "plan": zod.string().min(createCompanyBodyPlanMin).max(createCompanyBodyPlanMax).regex(createCompanyBodyPlanRegExp).default(createCompanyBodyPlanDefault).describe('A PUBLISHED plan slug (fixed catalog id or builder-created plan)')
 })
 
 
@@ -2130,7 +4076,7 @@ export const GetCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2189,7 +4135,7 @@ export const UpdateCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2474,7 +4420,7 @@ export const SuspendCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2518,7 +4464,7 @@ export const ActivateCompanyResponse = zod.object({
   "primaryContactName": zod.string().nullish(),
   "primaryContactEmail": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "plan": zod.string().describe('Plan slug (one of the fixed catalog ids or a builder-created plan)'),
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
@@ -2614,7 +4560,17 @@ export const ListUsersResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -2690,7 +4646,17 @@ export const UpdateOwnProfileResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -2794,7 +4760,17 @@ export const UpdateUserResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -5642,7 +7618,17 @@ export const ListTeamMembersResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -5724,7 +7710,17 @@ export const ListEmployeeDirectoryResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -6310,6 +8306,17 @@ export const GetCurrentSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "plan": zod.string(),
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "entitlements": zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
   "billingSource": zod.enum(['manual', 'stripe']),
   "accessMode": zod.enum(['full', 'read_only', 'blocked']),
@@ -6402,6 +8409,7 @@ export const ListPlansResponseItem = zod.object({
   "prices": zod.array(zod.object({
   "id": zod.number(),
   "planId": zod.string(),
+  "planVersionId": zod.number().nullish().describe('Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version'),
   "interval": zod.string(),
   "intervalCount": zod.number(),
   "currency": zod.string(),
@@ -7098,8 +9106,17 @@ export const GetAiSettingsResponse = zod.object({
   "contact_enrichment": zod.boolean(),
   "assignee_recommendation": zod.boolean()
 }),
-  "monthlyTokenBudget": zod.number().nullish(),
-  "monthlyCostBudgetUsd": zod.number().nullish(),
+  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget (tenant override, else the pinned plan version\'s allowance, else unlimited)'),
+  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same precedence)'),
+  "budgetSource": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+}).describe('Batch 41 (U4) — where each effective budget comes from'),
+  "planAllowance": zod.object({
+  "planVersionId": zod.number().nullable(),
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostBudgetUsd": zod.number().nullable()
+}),
   "workflowRules": zod.object({
   "stalledDays": zod.number(),
   "stalledHighDays": zod.number(),
@@ -7152,8 +9169,17 @@ export const UpdateAiSettingsResponse = zod.object({
   "contact_enrichment": zod.boolean(),
   "assignee_recommendation": zod.boolean()
 }),
-  "monthlyTokenBudget": zod.number().nullish(),
-  "monthlyCostBudgetUsd": zod.number().nullish(),
+  "monthlyTokenBudget": zod.number().nullish().describe('The EFFECTIVE monthly token budget (tenant override, else the pinned plan version\'s allowance, else unlimited)'),
+  "monthlyCostBudgetUsd": zod.number().nullish().describe('The EFFECTIVE monthly cost budget in USD (same precedence)'),
+  "budgetSource": zod.object({
+  "tokens": zod.enum(['tenant', 'plan', 'none']),
+  "cost": zod.enum(['tenant', 'plan', 'none'])
+}).describe('Batch 41 (U4) — where each effective budget comes from'),
+  "planAllowance": zod.object({
+  "planVersionId": zod.number().nullable(),
+  "aiTokensPerMonth": zod.number().nullable(),
+  "aiCostBudgetUsd": zod.number().nullable()
+}),
   "workflowRules": zod.object({
   "stalledDays": zod.number(),
   "stalledHighDays": zod.number(),
@@ -9554,7 +11580,17 @@ export const EnableUserResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 
@@ -9602,7 +11638,17 @@ export const DisableUserResponse = zod.object({
   "trialExpiresAt": zod.coerce.date().nullish(),
   "currentPeriodEndsAt": zod.coerce.date().nullish(),
   "cancelAtPeriodEnd": zod.boolean()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "entitlements": zod.union([zod.object({
+  "planVersionId": zod.number().nullable().describe('The pinned plan version (null = legacy NULL reference)'),
+  "featureEnforcement": zod.enum(['legacy', 'enforced', 'invalid']).describe('legacy = grandfathered (every catalog feature allowed); enforced = the published version\'s feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)'),
+  "features": zod.record(zod.string(), zod.boolean()).describe('Effective allow\/deny per catalog feature key'),
+  "trialPolicy": zod.object({
+  "endOutcome": zod.enum(['blocked', 'read_only']),
+  "readOnlyGraceDays": zod.number(),
+  "graceEndsAt": zod.coerce.date().nullable().describe('trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise')
+})
+}).describe('Batch 41 (PB-3) — the tenant\'s resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata'),zod.null()]).optional().describe('Batch 41 — null for platform operators and users without a tenant subscription')
 })
 
 

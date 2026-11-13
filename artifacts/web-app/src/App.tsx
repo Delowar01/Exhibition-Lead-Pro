@@ -27,6 +27,7 @@ const PlatformCompanies = lazy(() => import("@/pages/platform/Companies"));
 const PlatformCompanyDetail = lazy(() => import("@/pages/platform/CompanyDetail"));
 const PlatformUsers = lazy(() => import("@/pages/platform/Users"));
 const PlatformSubscriptions = lazy(() => import("@/pages/platform/Subscriptions"));
+const PlatformPlans = lazy(() => import("@/pages/platform/Plans"));
 const PlatformAnalytics = lazy(() => import("@/pages/platform/Analytics"));
 const PlatformActivity = lazy(() => import("@/pages/platform/Activity"));
 const PlatformSettings = lazy(() => import("@/pages/platform/Settings"));
@@ -236,6 +237,9 @@ function Router() {
       </Route>
       <Route path="/platform/subscriptions">
         {() => <ProtectedRoute component={PlatformSubscriptions} role="platform" layout={PlatformLayout} />}
+      </Route>
+      <Route path="/platform/plans">
+        {() => <ProtectedRoute component={PlatformPlans} role="platform" layout={PlatformLayout} />}
       </Route>
       <Route path="/platform/analytics">
         {() => <ProtectedRoute component={PlatformAnalytics} role="platform" layout={PlatformLayout} />}

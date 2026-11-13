@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { sql } from "drizzle-orm";
 import { companiesTable } from "./companies";
 import { plansTable } from "./plans";
+import { planVersionsTable } from "./plan_versions";
 
 // Canonical subscription record (Batch 20). Exactly ONE row per company
 // (company_id is unique) and the ONLY source of truth for plan, billing source,
@@ -35,6 +36,12 @@ export const subscriptionsTable = pgTable(
     // plan catalog is seeded before this constraint is applied (staged activation:
     // additive schema → repair/seed → constrained schema).
     plan: text("plan").notNull().default("free").references(() => plansTable.id),
+    // Batch 40: the PUBLISHED plan version this tenant is pinned to. NULL = legacy
+    // reference ("the plan row as it is today") during the transition; the
+    // version-1 backfill (dry-run first) pins every NULL reference to version 1,
+    // and every later assignment pins explicitly. Nothing moves a tenant between
+    // versions implicitly (grandfathering by default).
+    planVersionId: integer("plan_version_id").references(() => planVersionsTable.id),
     status: text("status").notNull().default("trialing"), // trialing | active | past_due | cancelled | expired | suspended
     billingSource: text("billing_source").notNull().default("manual"), // manual | stripe
 
@@ -88,6 +95,7 @@ export const subscriptionsTable = pgTable(
   (t) => [
     index("subscriptions_status_idx").on(t.status),
     index("subscriptions_billing_source_idx").on(t.billingSource),
+    index("subscriptions_plan_version_idx").on(t.planVersionId),
     // One Stripe customer / subscription can bind to at most one company.
     uniqueIndex("subscriptions_stripe_customer_ux").on(t.stripeCustomerId).where(sql`stripe_customer_id is not null`),
     uniqueIndex("subscriptions_stripe_subscription_ux").on(t.stripeSubscriptionId).where(sql`stripe_subscription_id is not null`),

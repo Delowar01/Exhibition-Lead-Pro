@@ -101,6 +101,8 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   "subscription.provider_sync": "Provider sync",
   "subscription.repair_create": "Repair: subscription created",
   "subscription.repair_update": "Repair: subscription normalised",
+  "subscription.pin_version": "Pinned to plan version (backfill)",
+  "subscription.migrate_version": "Migrated to plan version (batch)",
   "company.post": "Company request",
   "company.patch": "Company profile updated",
   "company.put": "Company branding updated",

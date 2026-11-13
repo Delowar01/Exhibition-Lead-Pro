@@ -11,11 +11,18 @@ import type { SubscriptionBillingCapabilities } from './subscriptionBillingCapab
 import type { SubscriptionBillingSource } from './subscriptionBillingSource';
 import type { SubscriptionStatus } from './subscriptionStatus';
 import type { SubscriptionUsage } from './subscriptionUsage';
+import type { TenantEntitlements } from './tenantEntitlements';
 
 export interface Subscription {
   id: number;
   companyId: number;
   plan: string;
+  /**
+     * The pinned plan version (null = legacy NULL reference)
+     * @nullable
+     */
+  planVersionId: number | null;
+  entitlements: TenantEntitlements;
   status: SubscriptionStatus;
   billingSource: SubscriptionBillingSource;
   accessMode: SubscriptionAccessMode;

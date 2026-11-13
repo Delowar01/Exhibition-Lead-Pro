@@ -8,6 +8,8 @@ import {
   usePlatformListPrices,
   usePlatformRegisterPrice,
   usePlatformUpdatePrice,
+  usePlatformListPlanVersions,
+  getPlatformListPlanVersionsQueryKey,
   getPlatformListSubscriptionsQueryKey,
   getPlatformSubscriptionMetricsQueryKey,
   getPlatformListPricesQueryKey,
@@ -19,11 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PageHeader, MetricCard, StatusBadge, TableSkeleton, EmptyState, ErrorState } from "@/components/ds";
+import { PageHeader, MetricCard, StatusBadge, TableSkeleton, ListSkeleton, EmptyState, ErrorState } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Search, Building2 } from "lucide-react";
 import { Link } from "wouter";
-import { SubscriptionManager, STATUSES, PLANS, STATUS_LABEL, statusTone, fmt, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
+import { SubscriptionManager, STATUSES, usePlanOptions, STATUS_LABEL, statusTone, fmt, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
+import { invalidatePlanQueries } from "@/components/platform/PlanVersions";
+import { StatusBadge as VerifiedBadge } from "@/components/ds";
 
 // Batch 20 — truthful Platform Subscriptions screen. Everything on this page is
 // real API data: canonical subscription rows with filters + pagination, counts by
@@ -75,7 +79,8 @@ export default function PlatformSubscriptions() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<number | null>(() => companyFromSearch(searchString));
   const [busy, setBusy] = useState(false);
-  const [priceForm, setPriceForm] = useState({ planId: "starter", providerPriceId: "" });
+  // Batch 42 — a mapping is plan-wide ("" = every version) or bound to ONE draft version of the plan (immutable once published).
+  const [priceForm, setPriceForm] = useState({ planId: "starter", providerPriceId: "", planVersionId: "" });
   const limit = 20;
 
   // Deep link (Companies list / tenant detail → "Manage subscription").
@@ -105,14 +110,19 @@ export default function PlatformSubscriptions() {
   const prices = usePlatformListPrices({ query: { queryKey: getPlatformListPricesQueryKey() } });
   const registerPriceMutation = usePlatformRegisterPrice();
   const updatePriceMutation = usePlatformUpdatePrice();
+  const planOptions = usePlanOptions();
+  const planVersions = usePlatformListPlanVersions(priceForm.planId, { query: { enabled: !!priceForm.planId, queryKey: getPlatformListPlanVersionsQueryKey(priceForm.planId) } });
+  const draftVersions = (planVersions.data?.versions ?? []).filter((v) => v.state === "draft");
 
   const registerPrice = async () => {
     setBusy(true);
     try {
-      await registerPriceMutation.mutateAsync({ data: { planId: priceForm.planId as (typeof PLANS)[number], providerPriceId: priceForm.providerPriceId.trim() } });
-      toast({ title: "Price registered" });
-      setPriceForm({ ...priceForm, providerPriceId: "" });
+      const versionId = priceForm.planVersionId ? Number(priceForm.planVersionId) : undefined;
+      await registerPriceMutation.mutateAsync({ data: { planId: priceForm.planId, providerPriceId: priceForm.providerPriceId.trim(), ...(versionId ? { planVersionId: versionId } : {}) } });
+      toast({ title: versionId ? "Price registered and bound to the draft version" : "Price registered (plan-wide)" });
+      setPriceForm({ ...priceForm, providerPriceId: "", planVersionId: "" });
       void queryClient.invalidateQueries({ queryKey: getPlatformListPricesQueryKey() });
+      void invalidatePlanQueries(queryClient);
       invalidateCompanyQueries(queryClient);
     } catch (err) {
       toast({ title: "Price registration failed", description: errMessage(err), variant: "destructive" });
@@ -125,6 +135,7 @@ export default function PlatformSubscriptions() {
     try {
       await updatePriceMutation.mutateAsync({ id, data: { active } });
       void queryClient.invalidateQueries({ queryKey: getPlatformListPricesQueryKey() });
+      void invalidatePlanQueries(queryClient);
       invalidateCompanyQueries(queryClient);
     } catch (err) {
       toast({ title: "Price update failed", description: errMessage(err), variant: "destructive" });
@@ -178,7 +189,7 @@ export default function PlatformSubscriptions() {
                 <SelectTrigger className="w-[150px]"><SelectValue placeholder="Plan" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All plans</SelectItem>
-                  {PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
+                  {planOptions.all.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={source} onValueChange={(v) => { setSource(v); setPage(1); }}>
@@ -259,9 +270,9 @@ export default function PlatformSubscriptions() {
                 <div data-testid="provider-return-url">Billing return URL: {providerStatus.data.returnUrlConfigured ? "configured" : <span className="text-destructive">{RETURN_URL_REASON[providerStatus.data.returnUrlReason ?? ""] ?? "not usable"} — tenant checkout and portal are unavailable until fixed</span>}</div>
               </>
             ) : providerStatus.isError ? (
-              <ErrorState title="Provider status unavailable" description={errMessage(providerStatus.error)} />
+              <ErrorState title="Provider status unavailable" description={errMessage(providerStatus.error)} action={<Button variant="outline" size="sm" onClick={() => void providerStatus.refetch()} data-testid="provider-status-retry">Retry</Button>} />
             ) : (
-              <div className="text-muted-foreground">Loading…</div>
+              <ListSkeleton rows={4} />
             )}
           </CardContent>
         </Card>
@@ -269,13 +280,20 @@ export default function PlatformSubscriptions() {
         <Card data-testid="prices-card">
           <CardHeader>
             <CardTitle>Provider price mappings</CardTitle>
-            <CardDescription>Register a provider price id for a plan. Interval, currency and amount are retrieved from the provider — never typed here.</CardDescription>
+            <CardDescription>Register a provider price id for a plan. Interval, currency and amount are retrieved from the provider — never typed here. A mapping is plan-wide or bound to one DRAFT version; a published version's pricing is immutable (deactivate, never delete).</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-2">
-              <Select value={priceForm.planId} onValueChange={(v) => setPriceForm({ ...priceForm, planId: v })}>
+              <Select value={priceForm.planId} onValueChange={(v) => setPriceForm({ ...priceForm, planId: v, planVersionId: "" })}>
                 <SelectTrigger className="sm:w-[160px]" data-testid="price-plan"><SelectValue /></SelectTrigger>
-                <SelectContent>{PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
+                <SelectContent>{planOptions.priceable.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={priceForm.planVersionId || "__plan"} onValueChange={(v) => setPriceForm({ ...priceForm, planVersionId: v === "__plan" ? "" : v })}>
+                <SelectTrigger className="sm:w-[220px]" data-testid="price-version"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__plan">Plan-wide (every version)</SelectItem>
+                  {draftVersions.map((v) => <SelectItem key={v.id} value={String(v.id)}>Bind to draft v{v.version}</SelectItem>)}
+                </SelectContent>
               </Select>
               <Input placeholder="price_…" value={priceForm.providerPriceId} onChange={(e) => setPriceForm({ ...priceForm, providerPriceId: e.target.value })} data-testid="price-id" />
               <Button onClick={() => void registerPrice()} disabled={busy || !providerStatus.data?.available || priceForm.providerPriceId.trim().length < 6} data-testid="price-register">Register</Button>
@@ -288,9 +306,11 @@ export default function PlatformSubscriptions() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Plan</TableHead>
+                      <TableHead>Scope</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Interval</TableHead>
                       <TableHead>Ref</TableHead>
+                      <TableHead>Verified</TableHead>
                       <TableHead className="text-right">Active</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -298,9 +318,15 @@ export default function PlatformSubscriptions() {
                     {prices.data?.prices.map((p) => (
                       <TableRow key={p.id} data-testid={`price-row-${p.id}`}>
                         <TableCell className="capitalize">{p.planId}</TableCell>
+                        <TableCell data-testid={`price-scope-${p.id}`}>{p.planVersionId == null ? "Plan-wide" : `v${p.planVersion ?? "?"} · ${p.planVersionState ?? "version"}`}</TableCell>
                         <TableCell>{money(p.unitAmountMinor, p.currency)}</TableCell>
                         <TableCell>{p.intervalCount > 1 ? `${p.intervalCount} ${p.interval}s` : p.interval}</TableCell>
                         <TableCell className="font-mono text-xs">{p.providerPriceRef ?? "—"}<span className="ml-2 font-sans text-muted-foreground">({p.providerMode})</span></TableCell>
+                        <TableCell data-testid={`price-verified-${p.id}`}>
+                          <VerifiedBadge tone={p.verified === false ? "warning" : p.modeMatches === false ? "warning" : "success"}>
+                            {p.verified === false ? "Unverified" : p.modeMatches === false ? "Mode mismatch" : "Verified"}
+                          </VerifiedBadge>
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => void togglePrice(p.id, !p.active)}>{p.active ? "Deactivate" : "Activate"}</Button>
                         </TableCell>

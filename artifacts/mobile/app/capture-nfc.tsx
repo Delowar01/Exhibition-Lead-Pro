@@ -51,10 +51,12 @@ import Svg, {
 
 import { Feather } from "@/components/icons";
 import { FONT } from "@/components/ui";
+import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useLocale } from "@/hooks/useLocale";
 import { extractedToContact } from "@/lib/contact-parse";
+import { featureAllowed } from "@/lib/entitlements";
 import {
   NfcError,
   cancelNfcScan,
@@ -77,6 +79,7 @@ type Phase =
   | "checking"
   | "unsupported"
   | "disabled"
+  | "not_entitled"
   | "ready"
   | "scanning"
   | "success"
@@ -486,6 +489,10 @@ export default function CaptureNfcScreen() {
   const [phase, setPhase] = useState<Phase>("checking");
   const [errorMsg, setErrorMsg] = useState("");
   const busyRef = useRef(false);
+  // Batch 41 (PB-3): NFC capture follows the plan version's `nfc.capture`
+  // entitlement (the API refuses an NFC scan with FEATURE_NOT_ENTITLED too).
+  const { user } = useAuth();
+  const nfcEntitled = featureAllowed(user, "nfc.capture");
 
   // Screen fade-in
   const screenOpacity = useSharedValue(0);
@@ -499,6 +506,7 @@ export default function CaptureNfcScreen() {
   useEffect(() => {
     let active = true;
     (async () => {
+      if (!nfcEntitled) { setPhase("not_entitled"); return; }
       const support = await getNfcSupport();
       if (!active) return;
       if (!support.supported) setPhase("unsupported");
@@ -509,9 +517,10 @@ export default function CaptureNfcScreen() {
       active = false;
       cancelNfcScan();
     };
-  }, []);
+  }, [nfcEntitled]);
 
   const startScan = useCallback(async () => {
+    if (!nfcEntitled) { setPhase("not_entitled"); return; }
     if (busyRef.current) return;
     busyRef.current = true;
     setPhase("scanning");
@@ -568,11 +577,12 @@ export default function CaptureNfcScreen() {
   }, []);
 
   const handleRetry = useCallback(async () => {
+    if (!nfcEntitled) { setPhase("not_entitled"); return; }
     const support = await getNfcSupport();
     if (!support.supported) { setPhase("unsupported"); return; }
     if (!support.enabled) { setPhase("disabled"); return; }
     setPhase("ready");
-  }, []);
+  }, [nfcEntitled]);
 
   const isScanning = phase === "scanning";
   const isSuccess = phase === "success";
@@ -664,7 +674,7 @@ export default function CaptureNfcScreen() {
             </Pressable>
           </>
         )}
-        {phase === "unsupported" && (
+        {(phase === "unsupported" || phase === "not_entitled") && (
           <PremiumButton
             label={t("nfc.goBack")}
             icon="arrow-left"
@@ -687,6 +697,7 @@ function buildStatus(t: ReturnType<typeof useLocale>["t"]): Record<Phase, { titl
     error:       { title: t("nfc.errorTitle"),         sub: "" },
     disabled:    { title: t("nfc.disabledTitle"),      sub: t("nfc.disabledSub") },
     unsupported: { title: t("nfc.unsupportedTitle"),   sub: t("nfc.unsupportedSub") },
+    not_entitled: { title: t("nfc.notEntitledTitle"),  sub: t("nfc.notEntitledSub") },
   };
 }
 

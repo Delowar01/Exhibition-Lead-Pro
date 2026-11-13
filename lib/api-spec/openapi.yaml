@@ -1191,11 +1191,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlatformSubscriptionDetail"
         "409":
-          description: Transition not allowed (deterministic code)
+          description: Transition not allowed, DOWNGRADE_BLOCKED (U6 — measured usage exceeds a target limit; resources in details.blocking), FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED (D3 — repeat with confirmFeatureDowngrade true) or VERSION_NOT_PUBLISHED (deterministic codes)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/subscriptions/{companyId}/plan/preview:
+    post:
+      operationId: platformPreviewSubscriptionPlanChange
+      tags: [platform]
+      summary: Read-only preview of a plan / version change (Batch 42) — the same evaluation the change applies (target limits vs measured usage with the tenant's overrides, U6 blockers, feature gains / losses, trial policy, allowances); nothing is written
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformPreviewSubscriptionPlanChangeInput"
+      responses:
+        "200":
+          description: Evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanChangePreview"
+        "409":
+          description: VERSION_NOT_PUBLISHED (a draft can never be assigned)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/subscriptions/{companyId}/plan-history:
+    get:
+      operationId: platformSubscriptionPlanHistory
+      tags: [platform]
+      summary: The tenant's plan / version history projected from the audit trail (Batch 42; Batch 43 adds stable server-side cursor pagination over the relevant plan-change events) — original and current plan + version, every change with actor, reason, limit / feature comparison, billing source and migration reference
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+        - name: limit
+          in: query
+          description: Page size (1–200, default 50) over the RELEVANT plan-change events only (ordinary audit rows never consume the page)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: Opaque cursor of the last entry of the previous page (nextCursor); omitted = the first page
+          schema:
+            type: string
+        - name: order
+          in: query
+          description: asc = oldest first (chronology), desc = newest first (the latest changes are reachable immediately)
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanHistory"
 
   /platform/subscriptions/{companyId}/trial:
     post:
@@ -1370,6 +1432,430 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlatformSyncResult"
+
+  /platform/plans:
+    get:
+      operationId: platformListPlans
+      tags: [platform]
+      summary: Read-only plan catalog overview — the five fixed plans with their limits, features, trial policy, price mappings and subscription counts (Plan Builder foundation; no mutation endpoint exists)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanCatalog"
+
+    post:
+      operationId: platformCreatePlan
+      tags: [platform]
+      summary: Create a new DRAFT plan (new slug; never one of the five fixed ids). Not assignable or visible to tenants until a version is published.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformCreatePlanInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanCreateResult"
+
+  /platform/plans/{planId}:
+    get:
+      operationId: platformGetPlan
+      tags: [platform]
+      summary: Read-only detail of one fixed plan including per-resource override counts
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanDetail"
+
+  /platform/plans/{planId}/effective-limits/{companyId}:
+    get:
+      operationId: platformPreviewPlanLimits
+      tags: [platform]
+      summary: Read-only preview of a tenant's effective limits under a plan (the single entitlement resolver with the tenant's own overrides; nothing is changed)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformEffectiveLimitPreview"
+
+  /platform/plans/{planId}/duplicate:
+    post:
+      operationId: platformDuplicatePlan
+      tags: [platform]
+      summary: Duplicate a plan into a NEW draft plan (limits, feature matrix and trial policy copied; provider prices are not copied)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformDuplicatePlanInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanCreateResult"
+
+  /platform/plans/{planId}/archive:
+    post:
+      operationId: platformArchivePlan
+      tags: [platform]
+      summary: Archive a builder-created plan that has no subscribers and no draft (fixed catalog ids are never archived here and never deleted)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanDetail"
+
+  /platform/plans/{planId}/versions:
+    get:
+      operationId: platformListPlanVersions
+      tags: [platform]
+      summary: Version history of a plan (drafts, published and retired versions with subscriber counts)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersionList"
+    post:
+      operationId: platformCreatePlanDraft
+      tags: [platform]
+      summary: Create a new draft pre-filled from the current published version (or a chosen published version). One draft per plan.
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformCreateDraftInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersion"
+
+  /platform/plans/{planId}/versions/{versionId}:
+    get:
+      operationId: platformGetPlanVersion
+      tags: [platform]
+      summary: One plan version with its applicable prices and (for drafts) the publication validation
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersionDetail"
+    patch:
+      operationId: platformUpdatePlanDraft
+      tags: [platform]
+      summary: Edit a DRAFT version (display fields, limits, feature matrix, trial policy). A published version answers 409 VERSION_IMMUTABLE.
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformUpdateDraftInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersion"
+    delete:
+      operationId: platformDeletePlanDraft
+      tags: [platform]
+      summary: Delete a DRAFT version (published versions are never deleted; a version with subscribers is never deleted)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersionDeleted"
+
+  /platform/plans/{planId}/versions/{versionId}/validate:
+    post:
+      operationId: platformValidatePlanVersion
+      tags: [platform]
+      summary: Publication validation of a version (read-only; nothing is changed)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersionValidation"
+
+  /platform/plans/{planId}/versions/{versionId}/publish:
+    post:
+      operationId: platformPublishPlanVersion
+      tags: [platform]
+      summary: Publish a draft as an immutable version (atomic, re-validated under lock; never moves existing subscribers; refused while legacy unpinned subscribers exist)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersion"
+
+  /platform/plans/{planId}/versions/{versionId}/retire:
+    post:
+      operationId: platformRetirePlanVersion
+      tags: [platform]
+      summary: Retire a published version (no longer assignable to new tenants; subscribers keep it; the last published version cannot be retired)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Retired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersion"
+
+  /platform/plans/{planId}/versions/{versionId}/impact:
+    get:
+      operationId: platformPlanVersionImpact
+      tags: [platform]
+      summary: Tenant impact preview of publishing (draft) or retiring (published) a version — read-only
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersionImpact"
+
+  /platform/plans/{planId}/versions/{versionId}/compare/{otherVersionId}:
+    get:
+      operationId: platformComparePlanVersions
+      tags: [platform]
+      summary: Field-by-field comparison of two versions of a plan
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: otherVersionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanVersionComparison"
+
+  /platform/plans/{planId}/versions/{versionId}/effective-limits/{companyId}:
+    get:
+      operationId: platformPreviewPlanVersionLimits
+      tags: [platform]
+      summary: Read-only preview of a tenant's effective limits under a specific version (draft or published) — the single resolver with the tenant's own overrides
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformEffectiveLimitPreview"
+
+  /platform/plans/{planId}/versions/{versionId}/migrate:
+    post:
+      operationId: platformMigratePlanVersionTenants
+      tags: [platform]
+      summary: Migrate platform-managed tenants to this PUBLISHED version (Batch 42) — dryRun true evaluates every tenant in scope and returns a digest; dryRun false requires confirmDigest of a dry run over the same current data and migrates each eligible tenant in its own transaction with per-tenant audit rows
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformMigratePlanVersionTenantsInput"
+      responses:
+        "200":
+          description: Dry run or execution report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformMigrationResult"
+        "409":
+          description: TARGET_NOT_PUBLISHED, TARGET_RETIRED, SOURCE_NOT_PUBLISHED, SOURCE_EQUALS_TARGET, SCOPE_TOO_LARGE, DRY_RUN_STALE (details.expectedDigest + the fresh dry run) or NOTHING_TO_MIGRATE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /platform/billing/status:
     get:
@@ -9157,6 +9643,11 @@ components:
           oneOf:
             - $ref: "#/components/schemas/SubscriptionSummary"
             - type: "null"
+        entitlements:
+          oneOf:
+            - $ref: "#/components/schemas/TenantEntitlements"
+            - type: "null"
+          description: Batch 41 — null for platform operators and users without a tenant subscription
 
     UserList:
       type: object
@@ -10270,7 +10761,7 @@ components:
           type: ["string", "null"]
         plan:
           type: string
-          enum: [free, starter, professional, business, enterprise]
+          description: Plan slug (one of the fixed catalog ids or a builder-created plan)
         status:
           type: string
           enum: [trial, active, suspended, expired, cancelled]
@@ -10338,8 +10829,11 @@ components:
           type: ["string", "null"]
         plan:
           type: string
-          enum: [free, starter, professional, business, enterprise]
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          minLength: 2
+          maxLength: 40
           default: free
+          description: A PUBLISHED plan slug (fixed catalog id or builder-created plan)
 
     CompanyUpdate:
       type: object
@@ -12424,6 +12918,63 @@ components:
         cancelAtPeriodEnd:
           type: boolean
 
+    TenantEntitlements:
+      type: object
+      description: Batch 41 (PB-3) — the tenant's resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata
+      required: [planVersionId, featureEnforcement, features, trialPolicy]
+      properties:
+        planVersionId:
+          type: ["integer", "null"]
+          description: The pinned plan version (null = legacy NULL reference)
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced, invalid]
+          description: legacy = grandfathered (every catalog feature allowed); enforced = the published version's feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
+          description: Effective allow/deny per catalog feature key
+        trialPolicy:
+          $ref: "#/components/schemas/TrialEndPolicyView"
+
+    TrialEndPolicyView:
+      type: object
+      required: [endOutcome, readOnlyGraceDays, graceEndsAt]
+      properties:
+        endOutcome:
+          type: string
+          enum: [blocked, read_only]
+        readOnlyGraceDays:
+          type: integer
+        graceEndsAt:
+          type: ["string", "null"]
+          format: date-time
+          description: trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise
+
+    PlatformPlanAllowances:
+      type: object
+      description: Batch 41 (U4) — per-version AI/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)
+      required: [aiTokensPerMonth, aiCostMicroUsdPerMonth]
+      properties:
+        aiTokensPerMonth:
+          type: ["integer", "null"]
+        aiCostMicroUsdPerMonth:
+          type: ["integer", "null"]
+
+    PlatformPlanAllowancesInput:
+      type: object
+      description: Partial allowances; null = no plan allowance for that budget
+      properties:
+        aiTokensPerMonth:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 1000000000000
+        aiCostMicroUsdPerMonth:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 1000000000000
+
     EffectiveLimit:
       type: object
       required: [resource, limit, source]
@@ -12506,7 +13057,7 @@ components:
 
     Subscription:
       type: object
-      required: [id, companyId, plan, status, billingSource, accessMode, cancelAtPeriodEnd, statusChangedAt, providerLinked, providerSubscriptionLinked, billing, limits, usage]
+      required: [id, companyId, plan, status, billingSource, accessMode, cancelAtPeriodEnd, statusChangedAt, providerLinked, providerSubscriptionLinked, billing, limits, usage, planVersionId, entitlements]
       properties:
         id:
           type: integer
@@ -12514,6 +13065,11 @@ components:
           type: integer
         plan:
           type: string
+        planVersionId:
+          type: ["integer", "null"]
+          description: The pinned plan version (null = legacy NULL reference)
+        entitlements:
+          $ref: "#/components/schemas/TenantEntitlements"
         status:
           type: string
           enum: [trialing, active, past_due, cancelled, expired, suspended]
@@ -12574,6 +13130,9 @@ components:
           type: integer
         planId:
           type: string
+        planVersionId:
+          type: ["integer", "null"]
+          description: Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version
         interval:
           type: string
         intervalCount:
@@ -12720,6 +13279,12 @@ components:
         - type: object
           required: [companyName, limitOverrides, allowedActions]
           properties:
+            planVersionId:
+              type: ["integer", "null"]
+              description: Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)
+            planVersion:
+              type: ["integer", "null"]
+              description: Version number of the pinned version
             companyName:
               type: ["string", "null"]
             limitOverrides:
@@ -12915,6 +13480,21 @@ components:
         - type: object
           required: [verifiedAt, createdAt, providerMode]
           properties:
+            scope:
+              type: string
+              enum: [plan, version]
+              description: Batch 42 — plan-wide or bound to one version (strict identity, immutable)
+            planVersion:
+              type: ["integer", "null"]
+              description: Version number of the bound version (null when plan-wide)
+            planVersionState:
+              type: ["string", "null"]
+              enum: [draft, published, retired, null]
+            verified:
+              type: boolean
+            modeMatches:
+              type: boolean
+              description: The price was verified in the provider mode the platform is configured for
             providerPriceRef:
               type: ["string", "null"]
             providerProductRef:
@@ -12939,13 +13519,1587 @@ components:
           items:
             $ref: "#/components/schemas/PlatformPlanPrice"
 
+    PlatformPlanLimits:
+      type: object
+      description: Plan default limits (null = unlimited / not enforced)
+      required: [contacts, events, admins, employees, scans, storageMb]
+      properties:
+        contacts:
+          type: ["integer", "null"]
+        events:
+          type: ["integer", "null"]
+        admins:
+          type: ["integer", "null"]
+        employees:
+          type: ["integer", "null"]
+        scans:
+          type: ["integer", "null"]
+        storageMb:
+          type: ["integer", "null"]
+
+    PlatformPlanSubscriptionCounts:
+      type: object
+      required: [total, byStatus, byBillingSource, withOverrides]
+      properties:
+        total:
+          type: integer
+        byStatus:
+          type: object
+          required: [trialing, active, past_due, cancelled, expired, suspended]
+          properties:
+            trialing:
+              type: integer
+            active:
+              type: integer
+            past_due:
+              type: integer
+            cancelled:
+              type: integer
+            expired:
+              type: integer
+            suspended:
+              type: integer
+        byBillingSource:
+          type: object
+          required: [manual, stripe]
+          properties:
+            manual:
+              type: integer
+            stripe:
+              type: integer
+        withOverrides:
+          type: integer
+          description: Subscriptions on this plan carrying at least one numeric per-tenant limit override
+
+    PlatformPlanOverview:
+      type: object
+      required: [id, name, description, sortOrder, isActive, seeded, trialDays, limits, features, prices, activePriceCount, subscriptions, status, versioning, currentVersion, draft, versionCount, publishedVersionCount, retiredVersionCount, pinnedSubscriptions, unpinnedSubscriptions, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
+        seeded:
+          type: boolean
+          description: One of the five fixed catalog identities
+        trialDays:
+          type: integer
+        limits:
+          $ref: "#/components/schemas/PlatformPlanLimits"
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
+          description: The plan row's feature flags (mirror of the current published version's fixed feature matrix; informational — feature gating is not enforced until PB-3)
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanPrice"
+        activePriceCount:
+          type: integer
+        subscriptions:
+          $ref: "#/components/schemas/PlatformPlanSubscriptionCounts"
+        status:
+          type: string
+          enum: [draft, published, archived]
+          description: Plan lifecycle state (Batch 40)
+        versioning:
+          type: string
+          enum: [not_versioned, versioned]
+          description: versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill / first publication)
+        currentVersion:
+          oneOf:
+            - $ref: "#/components/schemas/PlatformPlanVersionSummary"
+            - type: "null"
+        draft:
+          oneOf:
+            - $ref: "#/components/schemas/PlatformPlanVersionSummary"
+            - type: "null"
+        versionCount:
+          type: integer
+        publishedVersionCount:
+          type: integer
+        retiredVersionCount:
+          type: integer
+        pinnedSubscriptions:
+          type: integer
+          description: Subscribers pinned to a published version of this plan
+        unpinnedSubscriptions:
+          type: integer
+          description: Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PlatformPlanTrialPolicy:
+      type: object
+      required: [defaultTrialDays, configuredTrialDays, endOfTrialOutcome, readOnlyGraceDays, manualTrialExpirySweep, rule]
+      properties:
+        defaultTrialDays:
+          type: integer
+        configuredTrialDays:
+          type: integer
+        endOfTrialOutcome:
+          type: string
+          enum: [blocked]
+          description: The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace
+        readOnlyGraceDays:
+          type: integer
+          description: The platform default grace (0); per-version grace is shown on the version
+        manualTrialExpirySweep:
+          type: boolean
+        rule:
+          type: string
+          description: The resolver rule of record, stated for display only
+
+    PlatformPlanCatalog:
+      type: object
+      required: [plans, limitResources, trialPolicy, provider, featureCatalog, readOnly, generatedAt]
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanOverview"
+        limitResources:
+          type: array
+          items:
+            type: string
+            enum: [contacts, events, admins, employees, scans, storageMb]
+        trialPolicy:
+          $ref: "#/components/schemas/PlatformPlanTrialPolicy"
+        provider:
+          type: object
+          required: [kind, available, stripeMode]
+          properties:
+            kind:
+              type: string
+            available:
+              type: boolean
+            stripeMode:
+              type: ["string", "null"]
+        featureCatalog:
+          type: array
+          items:
+            type: string
+          description: The fixed feature catalog (U2) every version carries
+        readOnly:
+          type: boolean
+          description: false since Batch 40 — plans change through drafts and immutable published versions; published versions are never edited in place
+        generatedAt:
+          type: string
+          format: date-time
+
+    PlatformPlanDetail:
+      allOf:
+        - $ref: "#/components/schemas/PlatformPlanOverview"
+        - type: object
+          required: [overrides]
+          properties:
+            overrides:
+              type: object
+              required: [tenantsWithAnyOverride, byResource]
+              properties:
+                tenantsWithAnyOverride:
+                  type: integer
+                byResource:
+                  type: object
+                  required: [contacts, events, admins, employees, scans, storageMb]
+                  properties:
+                    contacts:
+                      type: integer
+                    events:
+                      type: integer
+                    admins:
+                      type: integer
+                    employees:
+                      type: integer
+                    scans:
+                      type: integer
+                    storageMb:
+                      type: integer
+
+    PlatformEffectiveLimitPreviewRow:
+      type: object
+      required: [resource, planDefault, override, effective, source, currentEffective, changes, used, measurable, remaining, exceeds]
+      properties:
+        resource:
+          type: string
+          enum: [contacts, events, admins, employees, scans, storageMb]
+        planDefault:
+          type: ["integer", "null"]
+          description: The previewed plan's default (null = unlimited)
+        override:
+          type: ["integer", "null"]
+          description: The tenant's own numeric override (null = none)
+        effective:
+          type: ["integer", "null"]
+          description: override ?? plan default ?? unlimited, from the single resolver
+        source:
+          type: string
+          enum: [override, plan, unlimited]
+        currentEffective:
+          type: ["integer", "null"]
+          description: The tenant's effective limit on its current plan
+        changes:
+          type: boolean
+          description: effective differs from currentEffective
+        used:
+          type: integer
+        measurable:
+          type: boolean
+        remaining:
+          type: ["integer", "null"]
+        exceeds:
+          type: boolean
+          description: Measured usage already exceeds the previewed effective limit (informational)
+
+    PlatformEffectiveLimitPreview:
+      type: object
+      required: [companyId, companyName, currentPlan, currentPlanVersionId, previewPlan, previewVersionId, previewVersion, previewVersionState, isCurrentPlan, status, accessMode, billingSource, rows, changedResources, blockingResources, featureEnforcement, features, changedFeatures, trialPolicy, aiAllowances, readOnly, generatedAt]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: ["string", "null"]
+        currentPlan:
+          type: string
+        currentPlanVersionId:
+          type: ["integer", "null"]
+        previewPlan:
+          type: string
+        previewVersionId:
+          type: ["integer", "null"]
+          description: The version whose limits were previewed (the plan's current published version by default; null = legacy plan row)
+        previewVersion:
+          type: ["integer", "null"]
+        previewVersionState:
+          type: ["string", "null"]
+          description: draft | published | retired (null = legacy plan row)
+        isCurrentPlan:
+          type: boolean
+        status:
+          type: string
+        accessMode:
+          type: string
+          enum: [full, read_only, blocked]
+        billingSource:
+          type: string
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformEffectiveLimitPreviewRow"
+        changedResources:
+          type: array
+          items:
+            type: string
+        blockingResources:
+          type: array
+          items:
+            type: string
+        featureEnforcement:
+          type: object
+          description: Batch 41 — the previewed version's enforcement mode vs the tenant's current mode
+          required: [preview, current]
+          properties:
+            preview:
+              type: string
+              enum: [legacy, enforced]
+            current:
+              type: string
+              enum: [legacy, enforced, invalid]
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformEffectiveFeaturePreviewRow"
+        changedFeatures:
+          type: array
+          items:
+            type: string
+        trialPolicy:
+          type: object
+          required: [preview, current]
+          properties:
+            preview:
+              $ref: "#/components/schemas/TrialEndPolicyView"
+            current:
+              $ref: "#/components/schemas/TrialEndPolicyView"
+        aiAllowances:
+          type: object
+          description: Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)
+          required: [tenantOverride, preview, current]
+          properties:
+            tenantOverride:
+              type: object
+              required: [monthlyTokenBudget, monthlyCostBudgetMicroUsd]
+              properties:
+                monthlyTokenBudget:
+                  type: ["integer", "null"]
+                monthlyCostBudgetMicroUsd:
+                  type: ["integer", "null"]
+            preview:
+              $ref: "#/components/schemas/PlatformAiAllowancePreview"
+            current:
+              $ref: "#/components/schemas/PlatformAiAllowancePreview"
+        readOnly:
+          type: boolean
+        generatedAt:
+          type: string
+          format: date-time
+
+    PlatformEffectiveFeaturePreviewRow:
+      type: object
+      required: [feature, label, recorded, previewAllowed, currentAllowed, changes]
+      properties:
+        feature:
+          type: string
+        label:
+          type: string
+        recorded:
+          type: boolean
+          description: The flag recorded in the previewed snapshot
+        previewAllowed:
+          type: boolean
+          description: What the previewed version would entitle (all true under legacy enforcement)
+        currentAllowed:
+          type: boolean
+          description: What the tenant is entitled to today
+        changes:
+          type: boolean
+
+    PlatformAiAllowancePreview:
+      type: object
+      required: [allowance, effectiveTokenBudget, effectiveCostBudgetMicroUsd, source]
+      properties:
+        allowance:
+          $ref: "#/components/schemas/PlatformPlanAllowances"
+        effectiveTokenBudget:
+          type: ["integer", "null"]
+        effectiveCostBudgetMicroUsd:
+          type: ["integer", "null"]
+        source:
+          type: object
+          required: [tokens, cost]
+          properties:
+            tokens:
+              type: string
+              enum: [tenant, plan, none]
+            cost:
+              type: string
+              enum: [tenant, plan, none]
+
+
+    PlatformPlanLimitsInput:
+      type: object
+      description: Partial limits; null = unlimited
+      properties:
+        contacts:
+          type: ["integer", "null"]
+          minimum: 0
+        events:
+          type: ["integer", "null"]
+          minimum: 0
+        admins:
+          type: ["integer", "null"]
+          minimum: 0
+        employees:
+          type: ["integer", "null"]
+          minimum: 0
+        scans:
+          type: ["integer", "null"]
+          minimum: 0
+        storageMb:
+          type: ["integer", "null"]
+          minimum: 0
+
+    PlatformPlanFeatureMatrix:
+      type: object
+      description: The fixed feature catalog (U2); enforced server-side when the version's featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`
+      additionalProperties:
+        type: boolean
+
+    PlatformPlanTrialPolicySpec:
+      type: object
+      required: [trialDays, eligible, oncePerCompany, endOutcome, readOnlyGraceDays]
+      properties:
+        trialDays:
+          type: integer
+        eligible:
+          type: boolean
+        oncePerCompany:
+          type: boolean
+        endOutcome:
+          type: string
+          enum: [blocked, read_only]
+        readOnlyGraceDays:
+          type: integer
+
+    PlatformPlanTrialPolicyInput:
+      type: object
+      properties:
+        trialDays:
+          type: integer
+          minimum: 0
+          maximum: 365
+        eligible:
+          type: boolean
+        oncePerCompany:
+          type: boolean
+        endOutcome:
+          type: string
+          enum: [blocked, read_only]
+        readOnlyGraceDays:
+          type: integer
+          minimum: 0
+          maximum: 90
+
+    PlatformPlanVersionPrice:
+      type: object
+      required: [id, interval, intervalCount, currency, unitAmountMinor, providerMode, nickname, active]
+      properties:
+        id:
+          type: integer
+        planVersionId:
+          type: ["integer", "null"]
+          description: Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)
+        interval:
+          type: string
+        intervalCount:
+          type: integer
+        currency:
+          type: string
+        unitAmountMinor:
+          type: integer
+        providerMode:
+          type: string
+        nickname:
+          type: ["string", "null"]
+        active:
+          type: boolean
+
+    PlatformPlanVersionSnapshot:
+      type: object
+      required: [name, description, sortOrder, limits, features, prices]
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        sortOrder:
+          type: integer
+        limits:
+          $ref: "#/components/schemas/PlatformPlanLimits"
+        features:
+          $ref: "#/components/schemas/PlatformPlanFeatureMatrix"
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanVersionPrice"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+          description: Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowances"
+        manualPrices:
+          type: array
+          description: Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity)
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPrice"
+
+    PlatformPlanManualPrice:
+      type: object
+      required: [interval, intervalCount, currency, unitAmountMinor, label]
+      properties:
+        interval:
+          type: string
+          enum: [day, week, month, year]
+        intervalCount:
+          type: integer
+          minimum: 1
+          maximum: 12
+        currency:
+          type: string
+          pattern: "^[a-z]{3}$"
+        unitAmountMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+        label:
+          type: ["string", "null"]
+          maxLength: 60
+
+    PlatformPlanManualPriceInput:
+      type: object
+      required: [interval, currency, unitAmountMinor]
+      properties:
+        interval:
+          type: string
+          enum: [day, week, month, year]
+        intervalCount:
+          type: integer
+          minimum: 1
+          maximum: 12
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        unitAmountMinor:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+        label:
+          type: ["string", "null"]
+          maxLength: 60
+
+    PlatformVersionPriceMapping:
+      type: object
+      required: [id, planId, planVersionId, scope, interval, intervalCount, currency, unitAmountMinor, nickname, active, providerMode, verified, modeMatches, verifiedAt, providerPriceRef]
+      description: Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode
+      properties:
+        id:
+          type: integer
+        planId:
+          type: string
+        planVersionId:
+          type: ["integer", "null"]
+        scope:
+          type: string
+          enum: [plan, version]
+        interval:
+          type: string
+        intervalCount:
+          type: integer
+        currency:
+          type: string
+        unitAmountMinor:
+          type: integer
+        nickname:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        providerMode:
+          type: string
+        verified:
+          type: boolean
+        modeMatches:
+          type: boolean
+        verifiedAt:
+          type: ["string", "null"]
+          format: date-time
+        providerPriceRef:
+          type: ["string", "null"]
+
+    PlatformPlanVersionSummary:
+      type: object
+      required: [id, version, state, publishedAt, retiredAt, subscribers]
+      properties:
+        id:
+          type: integer
+        version:
+          type: integer
+        state:
+          type: string
+          enum: [draft, published, retired]
+        publishedAt:
+          type: ["string", "null"]
+          format: date-time
+        retiredAt:
+          type: ["string", "null"]
+          format: date-time
+        subscribers:
+          type: integer
+
+    PlatformPlanVersion:
+      type: object
+      required: [id, planId, version, state, isCurrent, snapshot, trialPolicy, subscribers, publishedAt, publishedBy, retiredAt, createdAt, updatedAt, featureEnforcement, effectiveFeatures, allowances]
+      properties:
+        id:
+          type: integer
+        planId:
+          type: string
+        version:
+          type: integer
+        state:
+          type: string
+          enum: [draft, published, retired]
+        isCurrent:
+          type: boolean
+          description: The plan's current published (newest non-retired) version
+        snapshot:
+          $ref: "#/components/schemas/PlatformPlanVersionSnapshot"
+        trialPolicy:
+          $ref: "#/components/schemas/PlatformPlanTrialPolicySpec"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+          description: Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants
+        effectiveFeatures:
+          $ref: "#/components/schemas/PlatformPlanFeatureMatrix"
+          description: What a tenant pinned to this version is actually allowed (all true under legacy)
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowances"
+        subscribers:
+          type: integer
+        publishedAt:
+          type: ["string", "null"]
+          format: date-time
+        publishedBy:
+          type: ["integer", "null"]
+        retiredAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PlatformFieldIssue:
+      type: object
+      required: [code, field, message]
+      properties:
+        code:
+          type: string
+        field:
+          type: string
+        message:
+          type: string
+
+    PlatformPublishBlocker:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [VERSION_IMMUTABLE, VERSION_RETIRED, PLAN_ARCHIVED, UNPINNED_SUBSCRIBERS]
+        message:
+          type: string
+        count:
+          type: integer
+
+    PlatformPlanVersionValidation:
+      type: object
+      required: [planId, versionId, version, state, ok, errors, warnings, blockers, publishable, pricesConsidered, providerMode]
+      properties:
+        planId:
+          type: string
+        versionId:
+          type: integer
+        version:
+          type: integer
+        state:
+          type: string
+          enum: [draft, published, retired]
+        ok:
+          type: boolean
+          description: Content validation passed (limits consistent, feature keys from the catalog, trial policy complete, prices verified in the configured provider mode)
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformFieldIssue"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformFieldIssue"
+        blockers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPublishBlocker"
+        publishable:
+          type: boolean
+          description: ok and no blocker
+        pricesConsidered:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanVersionPrice"
+        priceMappings:
+          type: array
+          description: Batch 42 — every applicable mapping (active or not) with scope + verification state
+          items:
+            $ref: "#/components/schemas/PlatformVersionPriceMapping"
+        manualPrices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPrice"
+        providerMode:
+          type: string
+          enum: [test, live]
+
+    PlatformPlanVersionDetail:
+      allOf:
+        - $ref: "#/components/schemas/PlatformPlanVersion"
+        - type: object
+          required: [prices, validation]
+          properties:
+            prices:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformPlanVersionPrice"
+            priceMappings:
+              type: array
+              description: Batch 42 — applicable provider mappings with scope + verification state
+              items:
+                $ref: "#/components/schemas/PlatformVersionPriceMapping"
+            manualPrices:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformPlanManualPrice"
+            validation:
+              oneOf:
+                - $ref: "#/components/schemas/PlatformPlanVersionValidation"
+                - type: "null"
+
+    PlatformPlanVersionList:
+      type: object
+      required: [planId, planStatus, currentVersionId, draftVersionId, unpinnedSubscribers, versions]
+      properties:
+        planId:
+          type: string
+        planStatus:
+          type: string
+          enum: [draft, published, archived]
+        currentVersionId:
+          type: ["integer", "null"]
+        draftVersionId:
+          type: ["integer", "null"]
+        unpinnedSubscribers:
+          type: integer
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanVersion"
+
+    PlatformCompareRow:
+      type: object
+      required: [group, field, left, right, changed]
+      properties:
+        group:
+          type: string
+          enum: [display, limits, features, trialPolicy, enforcement, allowances, pricing]
+        field:
+          type: string
+        left:
+          description: string | number | boolean | null
+        right:
+          description: string | number | boolean | null
+        changed:
+          type: boolean
+
+    PlatformPlanVersionComparison:
+      type: object
+      required: [planId, left, right, rows, changedFields, tightenedLimits, loosenedLimits]
+      properties:
+        planId:
+          type: string
+        left:
+          $ref: "#/components/schemas/PlatformPlanVersionSummary"
+        right:
+          $ref: "#/components/schemas/PlatformPlanVersionSummary"
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformCompareRow"
+        changedFields:
+          type: array
+          items:
+            type: string
+        tightenedLimits:
+          type: array
+          items:
+            type: string
+        loosenedLimits:
+          type: array
+          items:
+            type: string
+
+    PlatformExceedingTenant:
+      type: object
+      required: [companyId, companyName, status, resources]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: ["string", "null"]
+        status:
+          type: string
+        resources:
+          type: array
+          items:
+            type: object
+            required: [resource, limit, used]
+            properties:
+              resource:
+                type: string
+              limit:
+                type: integer
+              used:
+                type: integer
+
+    PlatformPlanVersionImpact:
+      type: object
+      required: [planId, planStatus, versionId, version, state, planSubscribers, unpinnedSubscribers, subscribersOnVersion, subscribersByVersion, currentVersion, generatedAt, publish, retire]
+      properties:
+        planId:
+          type: string
+        planStatus:
+          type: string
+          enum: [draft, published, archived]
+        versionId:
+          type: integer
+        version:
+          type: integer
+        state:
+          type: string
+          enum: [draft, published, retired]
+        planSubscribers:
+          type: integer
+        unpinnedSubscribers:
+          type: integer
+        subscribersOnVersion:
+          type: integer
+        subscribersByVersion:
+          type: array
+          items:
+            type: object
+            required: [versionId, version, state, subscribers]
+            properties:
+              versionId:
+                type: integer
+              version:
+                type: integer
+              state:
+                type: string
+                enum: [draft, published, retired]
+              subscribers:
+                type: integer
+        currentVersion:
+          oneOf:
+            - $ref: "#/components/schemas/PlatformPlanVersionSummary"
+            - type: "null"
+        generatedAt:
+          type: string
+          format: date-time
+        publish:
+          oneOf:
+            - type: object
+              required: [subscribersMoved, wouldBecomeCurrent, newTenantsGetThisVersion, diffVsCurrent, tightenedLimits, tenantsExceedingNewLimits, blockers]
+              properties:
+                subscribersMoved:
+                  type: integer
+                  description: Always 0 — publishing never moves an existing subscriber
+                wouldBecomeCurrent:
+                  type: boolean
+                newTenantsGetThisVersion:
+                  type: boolean
+                diffVsCurrent:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/PlatformCompareRow"
+                tightenedLimits:
+                  type: array
+                  items:
+                    type: string
+                tenantsExceedingNewLimits:
+                  type: object
+                  required: [checked, sampled, tenants]
+                  properties:
+                    checked:
+                      type: integer
+                    sampled:
+                      type: boolean
+                    tenants:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/PlatformExceedingTenant"
+                blockers:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/PlatformPublishBlocker"
+            - type: "null"
+        retire:
+          oneOf:
+            - type: object
+              required: [subscribersKept, subscribersByStatus, isCurrent, isLastPublished, alreadyRetired, newCurrentVersion]
+              properties:
+                subscribersKept:
+                  type: integer
+                subscribersByStatus:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                isCurrent:
+                  type: boolean
+                isLastPublished:
+                  type: boolean
+                alreadyRetired:
+                  type: boolean
+                newCurrentVersion:
+                  oneOf:
+                    - $ref: "#/components/schemas/PlatformPlanVersionSummary"
+                    - type: "null"
+            - type: "null"
+
+    PlatformCreatePlanInput:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          minLength: 2
+          maxLength: 40
+          description: New plan slug; the five fixed ids are reserved
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: ["string", "null"]
+          maxLength: 500
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        limits:
+          $ref: "#/components/schemas/PlatformPlanLimitsInput"
+        features:
+          $ref: "#/components/schemas/PlatformPlanFeatureMatrix"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowancesInput"
+        trialPolicy:
+          $ref: "#/components/schemas/PlatformPlanTrialPolicyInput"
+        manualPrices:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPriceInput"
+
+    PlatformDuplicatePlanInput:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          minLength: 2
+          maxLength: 40
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    PlatformCreateDraftInput:
+      type: object
+      properties:
+        sourceVersionId:
+          type: integer
+          description: A PUBLISHED version to pre-fill from (default = the current published version)
+
+    PlatformUpdateDraftInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: ["string", "null"]
+          maxLength: 500
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        limits:
+          $ref: "#/components/schemas/PlatformPlanLimitsInput"
+        features:
+          $ref: "#/components/schemas/PlatformPlanFeatureMatrix"
+        featureEnforcement:
+          type: string
+          enum: [legacy, enforced]
+        allowances:
+          $ref: "#/components/schemas/PlatformPlanAllowancesInput"
+        trialPolicy:
+          $ref: "#/components/schemas/PlatformPlanTrialPolicyInput"
+        manualPrices:
+          type: array
+          description: Batch 42 (D2) — replaces the draft's manual price summaries (unique per currency / interval / count)
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/PlatformPlanManualPriceInput"
+
+    PlatformPlanCreateResult:
+      type: object
+      required: [plan, draft]
+      properties:
+        plan:
+          $ref: "#/components/schemas/PlatformPlanDetail"
+        draft:
+          $ref: "#/components/schemas/PlatformPlanVersion"
+
+    PlatformPlanVersionDeleted:
+      type: object
+      required: [deleted, versionId, planDeleted]
+      properties:
+        deleted:
+          type: boolean
+        versionId:
+          type: integer
+        planDeleted:
+          type: boolean
+          description: true when the deleted draft was the only version of a never-published plan (the plan row was removed too)
+
     PlatformSetSubscriptionPlanInput:
       type: object
       required: [plan]
       properties:
         plan:
           type: string
-          enum: [free, starter, professional, business, enterprise]
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          minLength: 2
+          maxLength: 40
+          description: A PUBLISHED plan slug; without planVersionId the tenant is pinned to that plan's current published version
+        planVersionId:
+          type: integer
+          minimum: 1
+          description: Batch 42 — an explicit PUBLISHED version of the plan (a retired version is allowed as the owner's deliberate choice; a draft never)
+        confirmFeatureDowngrade:
+          type: boolean
+          description: Batch 42 (D3) — required true when the target version removes features the tenant currently has
+        reason:
+          type: string
+          maxLength: 200
+
+    PlatformPreviewSubscriptionPlanChangeInput:
+      type: object
+      required: [plan]
+      properties:
+        plan:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          minLength: 2
+          maxLength: 40
+        planVersionId:
+          type: integer
+          minimum: 1
+
+    PlatformLimitComparisonRow:
+      type: object
+      required: [resource, currentLimit, targetLimit, targetSource, override, used, measurable, exceeds, tightens, loosens]
+      properties:
+        resource:
+          type: string
+        currentLimit:
+          type: ["integer", "null"]
+        targetLimit:
+          type: ["integer", "null"]
+        targetSource:
+          type: string
+          enum: [override, plan, unlimited]
+        override:
+          type: ["integer", "null"]
+        used:
+          type: integer
+        measurable:
+          type: boolean
+        exceeds:
+          type: boolean
+        tightens:
+          type: boolean
+        loosens:
+          type: boolean
+
+    PlatformBlockingResource:
+      type: object
+      required: [resource, used, limit]
+      properties:
+        resource:
+          type: string
+        used:
+          type: integer
+        limit:
+          type: integer
+
+    PlatformPlanChangeEvaluation:
+      type: object
+      required: [current, target, sameTarget, changeKind, transition, limits, blocking, unmeasurable, tightenedLimits, loosenedLimits, features, trialPolicy, allowances, requiresFeatureConfirmation, eligible]
+      properties:
+        current:
+          type: object
+          required: [plan, planVersionId, version, valid, legacyReference, billingSource, status]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            valid:
+              type: boolean
+              description: false when the current version reference is invalid (fail-closed elsewhere; the change repairs it)
+            legacyReference:
+              type: boolean
+            billingSource:
+              type: string
+            status:
+              type: string
+        target:
+          type: object
+          required: [plan, planVersionId, version, state, explicit]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            state:
+              type: string
+              enum: [published, retired, legacy]
+            explicit:
+              type: boolean
+        sameTarget:
+          type: boolean
+        changeKind:
+          type: string
+          enum: [none, plan_change, version_change, repair]
+        transition:
+          type: object
+          required: [ok, code]
+          properties:
+            ok:
+              type: boolean
+            code:
+              type: ["string", "null"]
+        limits:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformLimitComparisonRow"
+        blocking:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformBlockingResource"
+        unmeasurable:
+          type: array
+          items:
+            type: string
+        tightenedLimits:
+          type: array
+          items:
+            type: string
+        loosenedLimits:
+          type: array
+          items:
+            type: string
+        features:
+          type: object
+          required: [enforcement, current, target, lost, gained]
+          properties:
+            enforcement:
+              type: object
+              required: [current, target]
+              properties:
+                current:
+                  type: string
+                target:
+                  type: string
+            current:
+              type: object
+              additionalProperties:
+                type: boolean
+            target:
+              type: object
+              additionalProperties:
+                type: boolean
+            lost:
+              type: array
+              items:
+                type: string
+            gained:
+              type: array
+              items:
+                type: string
+        trialPolicy:
+          type: object
+          required: [current, target]
+          properties:
+            current:
+              $ref: "#/components/schemas/PlatformTrialEndPolicy"
+            target:
+              $ref: "#/components/schemas/PlatformTrialEndPolicy"
+        allowances:
+          type: object
+          required: [current, target]
+          properties:
+            current:
+              $ref: "#/components/schemas/PlatformPlanAllowances"
+            target:
+              $ref: "#/components/schemas/PlatformPlanAllowances"
+        requiresFeatureConfirmation:
+          type: boolean
+        eligible:
+          type: boolean
+          description: Transition allowed and nothing blocking (feature confirmation aside)
+
+    PlatformTrialEndPolicy:
+      type: object
+      required: [endOutcome, readOnlyGraceDays]
+      properties:
+        endOutcome:
+          type: string
+        readOnlyGraceDays:
+          type: integer
+
+    PlatformPlanChangePreview:
+      allOf:
+        - $ref: "#/components/schemas/PlatformPlanChangeEvaluation"
+        - type: object
+          required: [companyId, implicitLegacyKept, wouldChange, readOnly, generatedAt]
+          properties:
+            companyId:
+              type: integer
+            implicitLegacyKept:
+              type: boolean
+              description: Same plan, legacy NULL reference, no explicit version — the change would move nothing
+            wouldChange:
+              type: boolean
+            readOnly:
+              type: boolean
+            generatedAt:
+              type: string
+              format: date-time
+
+    PlatformPlanHistoryEntry:
+      type: object
+      required: [auditId, cursor, at, action, kind, actor, reason, fromPlan, toPlan, fromVersionId, fromVersion, toVersionId, toVersion, billingSource, changedFields, source, migrationId, dryRunDigest, limitsBefore, limitsAfter, changedLimits, tightenedLimits, loosenedLimits, lostFeatures, gainedFeatures, featureEnforcementBefore, featureEnforcementAfter, confirmFeatureDowngrade, repairedInvalidReference]
+      properties:
+        auditId:
+          type: integer
+        cursor:
+          type: string
+          description: Opaque position of this entry in the stable (createdAt, auditId) order; pass it as `cursor` to continue after it
+        at:
+          type: string
+          format: date-time
+        action:
+          type: string
+        kind:
+          type: string
+          enum: [created, direct_change, version_change, repair, migration, provider_sync, backfill_pin, other]
+        actor:
+          type: object
+          required: [userId, name]
+          properties:
+            userId:
+              type: ["integer", "null"]
+            name:
+              type: ["string", "null"]
+        reason:
+          type: ["string", "null"]
+        fromPlan:
+          type: ["string", "null"]
+        toPlan:
+          type: ["string", "null"]
+        fromVersionId:
+          type: ["integer", "null"]
+        fromVersion:
+          type: ["integer", "null"]
+        toVersionId:
+          type: ["integer", "null"]
+        toVersion:
+          type: ["integer", "null"]
+        billingSource:
+          type: ["string", "null"]
+        changedFields:
+          type: array
+          items:
+            type: string
+        source:
+          type: ["string", "null"]
+          description: direct_change | migration | provider_price | null
+        migrationId:
+          type: ["string", "null"]
+        dryRunDigest:
+          type: ["string", "null"]
+        limitsBefore:
+          type: ["object", "null"]
+          additionalProperties:
+            type: ["integer", "null"]
+        limitsAfter:
+          type: ["object", "null"]
+          additionalProperties:
+            type: ["integer", "null"]
+        changedLimits:
+          type: array
+          items:
+            type: string
+        tightenedLimits:
+          type: array
+          items:
+            type: string
+        loosenedLimits:
+          type: array
+          items:
+            type: string
+        lostFeatures:
+          type: array
+          items:
+            type: string
+        gainedFeatures:
+          type: array
+          items:
+            type: string
+        featureEnforcementBefore:
+          type: ["string", "null"]
+        featureEnforcementAfter:
+          type: ["string", "null"]
+        confirmFeatureDowngrade:
+          type: ["boolean", "null"]
+        repairedInvalidReference:
+          type: boolean
+
+    PlatformPlanHistory:
+      type: object
+      required: [companyId, companyName, original, current, entries, total, truncated, generatedAt, pageSize, order, nextCursor, hasMore]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: ["string", "null"]
+        original:
+          type: object
+          required: [plan, planVersionId, version, at]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            at:
+              type: ["string", "null"]
+              format: date-time
+        current:
+          type: object
+          required: [plan, planVersionId, version, versionState, billingSource, status]
+          properties:
+            plan:
+              type: string
+            planVersionId:
+              type: ["integer", "null"]
+            version:
+              type: ["integer", "null"]
+            versionState:
+              type: ["string", "null"]
+            billingSource:
+              type: string
+            status:
+              type: string
+        entries:
+          type: array
+          description: One page of the tenant's relevant plan-change events in the requested order (stable keyset order over createdAt + auditId)
+          items:
+            $ref: "#/components/schemas/PlatformPlanHistoryEntry"
+        total:
+          type: integer
+          description: The number of relevant plan-change events of the tenant across the whole history (not only this page)
+        truncated:
+          type: boolean
+          description: true when the response does not carry the whole history (= hasMore; kept for compatibility)
+        generatedAt:
+          type: string
+          format: date-time
+        pageSize:
+          type: integer
+        order:
+          type: string
+          enum: [asc, desc]
+        nextCursor:
+          type: ["string", "null"]
+          description: The cursor to request the next page in the same order; null when this page ends the history
+        hasMore:
+          type: boolean
+
+    PlatformMigratePlanVersionTenantsInput:
+      type: object
+      required: [dryRun]
+      properties:
+        dryRun:
+          type: boolean
+          description: true = evaluate only (no write) and return the digest; false = execute (requires confirmDigest)
+        sourceVersionId:
+          type: integer
+          minimum: 1
+          description: Scope = every subscription pinned to this PUBLISHED version (any plan)
+        companyIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: integer
+            minimum: 1
+          description: Explicit scope (≤ 200 companies); combined with sourceVersionId every listed company must be on the source
+        confirmDigest:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: The digest of the reviewed dry run; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same digest
+        confirmFeatureDowngrade:
+          type: boolean
+          description: D3 — required true for tenants that would lose features (otherwise they are reported, never migrated)
+        reason:
+          type: string
+          maxLength: 200
+
+    PlatformMigrationRow:
+      type: object
+      required: [companyId, companyName, currentPlan, currentPlanVersionId, currentVersion, currentReferenceValid, billingSource, status, reason, blocking, unmeasurable, lostFeatures, tightenedLimits, outcome, outcomeReason, reviewDigest, changedSinceReview]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: ["string", "null"]
+        currentPlan:
+          type: ["string", "null"]
+        currentPlanVersionId:
+          type: ["integer", "null"]
+        currentVersion:
+          type: ["integer", "null"]
+        currentReferenceValid:
+          type: boolean
+        billingSource:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+        reason:
+          type: string
+          enum: [ELIGIBLE, ALREADY_ON_VERSION, PROVIDER_MANAGED, TRANSITION_NOT_ALLOWED, NOT_ON_SOURCE_VERSION, DOWNGRADE_BLOCKED, FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED, SUBSCRIPTION_MISSING]
+        blocking:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformBlockingResource"
+        unmeasurable:
+          type: array
+          items:
+            type: string
+        lostFeatures:
+          type: array
+          items:
+            type: string
+        tightenedLimits:
+          type: array
+          items:
+            type: string
+        outcome:
+          type: string
+          enum: [migrated, skipped, failed, rolled_back, ineligible, not_attempted]
+          description: Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run)
+        outcomeReason:
+          type: ["string", "null"]
+        reviewDigest:
+          type: string
+          description: sha-256 over every material eligibility input of THIS tenant as reviewed (reference, status, billing source, overrides, measured usage, target limits, feature matrices, trial / allowance targets, transition, reason); the execution re-computes it inside the tenant's transaction and skips on any difference
+        changedSinceReview:
+          type: array
+          description: On a skipped tenant, the top-level review inputs that differ from the reviewed row (empty otherwise)
+          items:
+            type: string
+
+    PlatformMigrationResult:
+      type: object
+      required: [planId, target, source, scope, confirmFeatureDowngrade, digest, generatedAt, dryRun, migrationId, rows, summary, complete, status, incompleteReasons]
+      properties:
+        planId:
+          type: string
+        target:
+          type: object
+          required: [versionId, version]
+          properties:
+            versionId:
+              type: integer
+            version:
+              type: integer
+        source:
+          type: ["object", "null"]
+          properties:
+            versionId:
+              type: integer
+            version:
+              type: integer
+            planId:
+              type: string
+        scope:
+          type: string
+          enum: [companies, source_version]
+        confirmFeatureDowngrade:
+          type: boolean
+        digest:
+          type: string
+          description: sha256 over the canonical serialization of the reviewed scope (target plan / version / state, source, confirmation flag, scope kind) and every tenant's reviewDigest inputs; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same value
+        generatedAt:
+          type: string
+          format: date-time
+        dryRun:
+          type: boolean
+        migrationId:
+          type: ["string", "null"]
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformMigrationRow"
+        summary:
+          type: object
+          required: [total, eligible, byReason, migrated, skipped, failed, rolledBack, notAttempted, ineligible, concurrentlyChanged]
+          properties:
+            total:
+              type: integer
+            eligible:
+              type: integer
+            byReason:
+              type: object
+              additionalProperties:
+                type: integer
+            migrated:
+              type: integer
+            skipped:
+              type: integer
+            failed:
+              type: integer
+            rolledBack:
+              type: integer
+            notAttempted:
+              type: integer
+            ineligible:
+              type: integer
+              description: Tenants deliberately not migrated (reviewed reason other than ELIGIBLE); execution only
+            concurrentlyChanged:
+              type: integer
+              description: Eligible tenants skipped because their data changed between the review and their own transaction (CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING)
+        complete:
+          type: ["boolean", "null"]
+          description: null for a dry run; true only when status is `complete` — every eligible tenant of the reviewed scope was migrated (any skipped, failed or rolled-back eligible tenant makes it false)
+        status:
+          type: string
+          enum: [dry_run, complete, partial, concurrently_changed, failed, rolled_back]
+          description: dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error)
+        incompleteReasons:
+          type: array
+          description: Why the execution is not complete (empty for dry runs and complete executions)
+          items:
+            type: string
+            enum: [concurrently_changed, failed, rolled_back]
 
     PlatformStartTrialInput:
       type: object
@@ -12997,11 +15151,18 @@ components:
       properties:
         planId:
           type: string
-          enum: [free, starter, professional, business, enterprise]
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          minLength: 2
+          maxLength: 40
+          description: Plan slug (draft or published; never archived)
         providerPriceId:
           type: string
           minLength: 6
           maxLength: 128
+        planVersionId:
+          type: integer
+          minimum: 1
+          description: Batch 42 — bind the mapping to this DRAFT version of the plan (omit = plan-wide); a published version's pricing is immutable (409 VERSION_NOT_DRAFT)
 
     PlatformUpdatePriceInput:
       type: object
@@ -13656,6 +15817,8 @@ components:
           workflowRules,
           hasCustomSettings,
           availableProviders,
+          budgetSource,
+          planAllowance,
         ]
       properties:
         companyId:
@@ -13671,9 +15834,32 @@ components:
         monthlyTokenBudget:
           type: integer
           nullable: true
+          description: The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited)
         monthlyCostBudgetUsd:
           type: number
           nullable: true
+          description: The EFFECTIVE monthly cost budget in USD (same precedence)
+        budgetSource:
+          type: object
+          description: Batch 41 (U4) — where each effective budget comes from
+          required: [tokens, cost]
+          properties:
+            tokens:
+              type: string
+              enum: [tenant, plan, none]
+            cost:
+              type: string
+              enum: [tenant, plan, none]
+        planAllowance:
+          type: object
+          required: [planVersionId, aiTokensPerMonth, aiCostBudgetUsd]
+          properties:
+            planVersionId:
+              type: ["integer", "null"]
+            aiTokensPerMonth:
+              type: ["integer", "null"]
+            aiCostBudgetUsd:
+              type: ["number", "null"]
         workflowRules:
           $ref: "#/components/schemas/WorkflowRules"
         hasCustomSettings:

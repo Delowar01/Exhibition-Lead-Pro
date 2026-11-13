@@ -5,8 +5,22 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { PlatformSetSubscriptionPlanInputPlan } from './platformSetSubscriptionPlanInputPlan';
 
 export interface PlatformSetSubscriptionPlanInput {
-  plan: PlatformSetSubscriptionPlanInputPlan;
+  /**
+     * A PUBLISHED plan slug; without planVersionId the tenant is pinned to that plan's current published version
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan: string;
+  /**
+     * Batch 42 — an explicit PUBLISHED version of the plan (a retired version is allowed as the owner's deliberate choice; a draft never)
+     * @minimum 1
+     */
+  planVersionId?: number;
+  /** Batch 42 (D3) — required true when the target version removes features the tenant currently has */
+  confirmFeatureDowngrade?: boolean;
+  /** @maxLength 200 */
+  reason?: string;
 }

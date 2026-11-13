@@ -5,7 +5,7 @@ import { logger } from "../lib/logger.js";
 import type { Executor } from "../repositories/base.js";
 import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
-import { findPlan } from "../lib/billing/plan-catalog.js";
+import { findAssignablePlan, resolvePlanAssignment } from "../lib/billing/plan-catalog.js";
 import {
   checkTransition,
   legacyCompanyStatus,
@@ -18,7 +18,12 @@ import {
   type SubscriptionStatus,
 } from "../lib/billing/lifecycle.js";
 import { writeSubscriptionAudit, sanitizeReason, type AuditActor, PROVIDER_ACTOR } from "../lib/billing/audit.js";
+import { trialEndPolicyOf } from "../lib/billing/plan-versions.js";
+import { trialGraceEndsAt } from "../lib/billing/lifecycle.js";
+import { invalidateAiSettingsCache } from "../lib/ai-settings-cache.js";
 import { getBillingProvider, type ProviderSubscription } from "../lib/billing/provider.js";
+import { billingFault } from "../lib/billing/test-faults.js";
+import { assertChangeAllowed, changeAuditExtra, evaluatePlanChange, resolveChangeTarget, verifyAppliedChange, type ChangeTarget, type PlanChangeEvaluation } from "./plan-change.service.js";
 
 // Batch 20 — the ONLY writer of canonical subscription state. Every change:
 //   1. runs in one transaction with the subscription row locked (FOR UPDATE);
@@ -58,7 +63,7 @@ async function commitChange(
   patch: Partial<typeof before>,
   action: string,
   actor: Actor,
-  extra?: Record<string, string | number | boolean | null>,
+  extra?: Record<string, unknown>,
 ): Promise<SubscriptionRow> {
   const now = new Date();
   const statusChanged = patch.status !== undefined && patch.status !== before.status;
@@ -76,6 +81,10 @@ async function commitChange(
   if (!after) throw new AppError(404, "Subscription not found");
   await repo.writeCompanyMirror(before.companyId, mirrorFor(after), tx);
   await writeSubscriptionAudit(tx, { action, companyId: before.companyId, subscriptionId: before.id, before, after, actor, extra });
+  // Batch 41: a plan / version move changes the AI allowance the Enterprise AI
+  // Layer seeds from the version — drop the tenant's cached settings so the next
+  // request resolves the new budget (the cache otherwise refreshes on its TTL).
+  if (after.plan !== before.plan || after.planVersionId !== before.planVersionId) invalidateAiSettingsCache(before.companyId);
   logger.info({ companyId: before.companyId, subscriptionId: before.id, action, from: before.status, to: after.status, actorUserId: actor.userId }, "Subscription lifecycle change");
   return after;
 }
@@ -102,7 +111,10 @@ export interface CreateSubscriptionOptions {
 // plan configures a default).
 export async function createSubscriptionForCompany(tx: Executor, company: { id: number; name: string }, opts: CreateSubscriptionOptions): Promise<SubscriptionRow> {
   const plan = opts.plan ?? "free";
-  if (!(await findPlan(plan, tx))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+  // Batch 40: only a PUBLISHED plan is assignable; the new row pins to the plan's
+  // current published version (null = legacy reference while no version exists).
+  const assignment = await resolvePlanAssignment(plan, tx);
+  if (!assignment) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
   const now = new Date();
   const days = opts.trialDays ?? config.billing.trialDays;
   const trialExpiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -110,6 +122,7 @@ export async function createSubscriptionForCompany(tx: Executor, company: { id: 
     {
       companyId: company.id,
       plan,
+      planVersionId: assignment.planVersionId,
       status: "trialing",
       billingSource: "manual",
       trialStartedAt: now,
@@ -123,19 +136,86 @@ export async function createSubscriptionForCompany(tx: Executor, company: { id: 
     tx,
   );
   await repo.writeCompanyMirror(company.id, mirrorFor(sub), tx);
-  await writeSubscriptionAudit(tx, { action: "subscription.create", companyId: company.id, subscriptionId: sub.id, before: null, after: sub, actor: opts.actor, extra: { trialDays: days } });
+  await writeSubscriptionAudit(tx, { action: "subscription.create", companyId: company.id, subscriptionId: sub.id, before: null, after: sub, actor: opts.actor, extra: { trialDays: days, planVersionId: assignment.planVersionId } });
   return sub;
 }
 
 // ── Platform-owner manual operations ─────────────────────────────────────────
 
-export async function setPlan(companyId: number, actor: Actor, input: { plan?: unknown }): Promise<SubscriptionRow> {
+// Batch 42 (PB-4.4) — "Change plan / version" for a platform-managed tenant.
+//   • the target = a published plan + an explicit published version of it (an
+//     explicit retired version is allowed — it is the owner's deliberate choice,
+//     e.g. a revert) or the plan's current published version;
+//   • immediate (owner decision D1: no period-end scheduling);
+//   • a provider-managed tenant is never changed here (transition table, D4);
+//   • U6: blocked (409 DOWNGRADE_BLOCKED) when any MEASURABLE usage exceeds a
+//     target limit — the resources are named; storage is never "verified";
+//   • D3: a change that removes features needs confirmFeatureDowngrade: true
+//     (409 FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED otherwise);
+//   • same plan, legacy NULL reference, no explicit version → nothing moves (the
+//     version-1 backfill owns legacy references); an INVALID reference is repaired
+//     to the chosen / current published version (audited);
+//   • one transaction (row lock), before/after audit with the limit / feature
+//     comparison, and a post-commit verification INSIDE the transaction that the
+//     row resolves to exactly the predicted entitlements (else rollback).
+export interface SetPlanInput {
+  plan?: unknown;
+  planVersionId?: unknown;
+  confirmFeatureDowngrade?: unknown;
+  reason?: unknown;
+}
+
+export async function applyPlanChange(tx: Executor, sub: SubscriptionRow, target: ChangeTarget, evaluation: PlanChangeEvaluation, action: string, actor: Actor, extra: Record<string, unknown>, now: Date): Promise<SubscriptionRow> {
+  const after = await commitChange(tx, sub, { plan: target.plan.id, planVersionId: target.version?.id ?? null }, action, actor, changeAuditExtra(evaluation, extra));
+  await billingFault("planChange.beforeVerify");
+  await verifyAppliedChange(after, evaluation, now, tx);
+  return after;
+}
+
+export async function setPlan(companyId: number, actor: Actor, input: SetPlanInput): Promise<SubscriptionRow> {
   const plan = typeof input.plan === "string" ? input.plan : "";
-  if (!(await findPlan(plan))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+  if (!(await findAssignablePlan(plan))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+  if (input.confirmFeatureDowngrade !== undefined && typeof input.confirmFeatureDowngrade !== "boolean") throw new AppError(400, "confirmFeatureDowngrade must be a boolean", { code: "INVALID_CONFIRMATION" });
+  const confirmFeatureDowngrade = input.confirmFeatureDowngrade === true;
+  const reason = sanitizeReason(input.reason);
   return withLockedSubscription(companyId, async (tx, sub) => {
     assertTransition("set_plan", sub);
-    if (sub.plan === plan) return sub;
-    return commitChange(tx, sub, { plan }, "subscription.set_plan", actor);
+    const target = await resolveChangeTarget(plan, input.planVersionId, tx);
+    const now = new Date();
+    // Same plan, legacy NULL reference, no explicit version: never moved implicitly (grandfathering).
+    if (!target.explicit && sub.plan === target.plan.id && sub.planVersionId == null) return sub;
+    const evaluation = await evaluatePlanChange(sub, target, now, tx);
+    if (evaluation.changeKind === "none") return sub;
+    if (evaluation.changeKind === "repair" && !target.version) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+    assertChangeAllowed(evaluation, { confirmFeatureDowngrade });
+    return applyPlanChange(tx, sub, target, evaluation, "subscription.set_plan", actor, {
+      reason,
+      confirmFeatureDowngrade,
+      explicitVersion: target.explicit,
+      ...(evaluation.changeKind === "repair" ? { repairedInvalidReference: true } : {}),
+    }, now);
+  });
+}
+
+// Read-only preview of the SAME evaluation the change would apply (nothing is written).
+export async function previewPlanChange(companyId: number, input: { plan?: unknown; planVersionId?: unknown }) {
+  const plan = typeof input.plan === "string" ? input.plan : "";
+  if (!(await findAssignablePlan(plan))) throw new AppError(400, "Invalid plan", { code: "INVALID_PLAN" });
+  return db.transaction(async (tx) => {
+    const sub = await repo.findByCompanyId(companyId, tx);
+    if (!sub) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
+    const target = await resolveChangeTarget(plan, input.planVersionId, tx);
+    const now = new Date();
+    const evaluation = await evaluatePlanChange(sub, target, now, tx);
+    const implicitLegacyKept = !target.explicit && sub.plan === target.plan.id && sub.planVersionId == null;
+    return {
+      companyId,
+      ...evaluation,
+      implicitLegacyKept,
+      wouldChange: !implicitLegacyKept && evaluation.changeKind !== "none",
+      readOnly: true as const,
+      generatedAt: now.toISOString(),
+    };
   });
 }
 
@@ -410,7 +490,7 @@ export async function applyProviderState(
   remote: ProviderSubscription,
   eventCreated: Date | null,
   actor: Actor = PROVIDER_ACTOR,
-  extra?: Record<string, string | number | boolean | null>,
+  extra?: Record<string, unknown>,
   linkage?: ProviderLinkage,
 ): Promise<ApplyProviderResult> {
   // B20 Correction 2 — explicit mode enforcement before ANY decision or write.
@@ -439,8 +519,35 @@ export async function applyProviderState(
   if (mappedPrice && mappedPrice.providerMode !== configuredStripeMode()) throw new ProviderModeMismatchError();
   const priceChanged = remote.priceId !== sub.stripePriceId || replaced || !sub.stripeSubscriptionId;
   if (remoteLive && !mappedPrice && (priceChanged || !remote.priceId)) throw new ProviderPriceUnmappedError();
+  // Batch 40: a provider-driven plan change pins the tenant to the price's bound
+  // version or the plan's current published version; a price whose plan is not
+  // published (draft / archived) can never change entitlement → unmapped.
+  // Batch 42: a VERSION-BOUND price carries the version in its identity — the
+  // tenant is pinned to exactly that version (never a guessed one) even within
+  // the same plan; a price bound to a draft / foreign version is unmapped. A
+  // plan-wide price never moves a same-plan subscriber off its pinned version
+  // (grandfathering). The provider is authoritative: no U6 guard here.
+  let planPatch: Partial<SubscriptionRow> = {};
+  let priceBinding: Record<string, unknown> = {};
+  if (mappedPrice) {
+    const boundVersionId = mappedPrice.planVersionId ?? null;
+    if (boundVersionId != null) {
+      const bound = await repo.findPlanVersionById(boundVersionId, tx);
+      if (!bound || bound.planId !== mappedPrice.planId || !bound.publishedAt) throw new ProviderPriceUnmappedError();
+      if (mappedPrice.planId !== sub.plan || boundVersionId !== sub.planVersionId) {
+        if (!(await resolvePlanAssignment(mappedPrice.planId, tx))) throw new ProviderPriceUnmappedError();
+        planPatch = { plan: mappedPrice.planId, planVersionId: boundVersionId };
+        priceBinding = { planChangeSource: "provider_price", priceScope: "version", pricePlanVersionId: boundVersionId, previousPlan: sub.plan, previousPlanVersionId: sub.planVersionId ?? null };
+      }
+    } else if (mappedPrice.planId !== sub.plan) {
+      const assignment = await resolvePlanAssignment(mappedPrice.planId, tx);
+      if (!assignment) throw new ProviderPriceUnmappedError();
+      planPatch = { plan: mappedPrice.planId, planVersionId: assignment.planVersionId };
+      priceBinding = { planChangeSource: "provider_price", priceScope: "plan", pricePlanVersionId: null, previousPlan: sub.plan, previousPlanVersionId: sub.planVersionId ?? null };
+    }
+  }
   const patch: Partial<SubscriptionRow> = {
-    ...(mappedPrice ? { plan: mappedPrice.planId } : {}),
+    ...planPatch,
     billingSource: "stripe",
     stripeSubscriptionId: remote.id,
     stripeCustomerId: sub.stripeCustomerId ?? (remote.customerId || null),
@@ -464,7 +571,7 @@ export async function applyProviderState(
     }
   }
   // Skip the write when nothing observable changed (idempotent redelivery).
-  const observable = ["plan", "status", "statusBeforeSuspension", "stripeSubscriptionId", "stripeCustomerId", "stripePriceId", "providerStatus", "currentPeriodStartsAt", "currentPeriodEndsAt", "cancelAtPeriodEnd", "canceledAt", "endedAt", "trialExpiresAt", "billingSource"] as const;
+  const observable = ["plan", "planVersionId", "status", "statusBeforeSuspension", "stripeSubscriptionId", "stripeCustomerId", "stripePriceId", "providerStatus", "currentPeriodStartsAt", "currentPeriodEndsAt", "cancelAtPeriodEnd", "canceledAt", "endedAt", "trialExpiresAt", "billingSource"] as const;
   const same = observable.every((k) => {
     const a = sub[k];
     const b = patch[k];
@@ -483,7 +590,7 @@ export async function applyProviderState(
     patch,
     replaced ? "subscription.provider_replaced" : "subscription.provider_sync",
     actor,
-    { providerStatus: remote.status, mapping: mapped.note, ...(replaced ? { replacedProviderSubscriptionRef: maskRef(sub.stripeSubscriptionId) } : {}), ...(extra ?? {}) },
+    { providerStatus: remote.status, mapping: mapped.note, ...priceBinding, ...(replaced ? { replacedProviderSubscriptionRef: maskRef(sub.stripeSubscriptionId) } : {}), ...(extra ?? {}) },
   );
   return { changed: true, outcome: "applied", replaced, subscription: after };
 }
@@ -514,9 +621,25 @@ export async function syncFromProvider(companyId: number, actor: Actor): Promise
 
 // ── System sweep (elapsed manual trials) ─────────────────────────────────────
 
-export async function expireElapsedTrial(tx: Executor, sub: SubscriptionRow, actor: Actor): Promise<SubscriptionRow | null> {
+// Batch 41 (U5): a version with a read-only grace keeps the row `trialing`
+// (read-only through the single entitlement resolver) until trial end + grace;
+// only then does the sweep expire it. The grace is read from the pinned
+// PUBLISHED version; a legacy NULL reference or an invalid reference uses the
+// default policy (no grace) — the sweep never grants a grace it cannot prove.
+export async function trialGraceEndFor(tx: Executor | undefined, sub: SubscriptionRow): Promise<Date | null> {
+  if (!sub.trialExpiresAt) return null;
+  let policy = trialEndPolicyOf(null);
+  if (sub.planVersionId != null) {
+    const version = await repo.findPlanVersionById(sub.planVersionId, tx);
+    if (version && version.planId === sub.plan && version.publishedAt) policy = trialEndPolicyOf(version.trialPolicy);
+  }
+  return trialGraceEndsAt(sub.trialExpiresAt, policy);
+}
+
+export async function expireElapsedTrial(tx: Executor, sub: SubscriptionRow, actor: Actor, now: Date = new Date()): Promise<SubscriptionRow | null> {
   const check = checkTransition("sweep_expire_trial", sub);
   if (!check.ok) return null;
-  if (!sub.trialExpiresAt || sub.trialExpiresAt.getTime() > Date.now()) return null;
-  return commitChange(tx, sub, { status: "expired", endedAt: new Date() }, "subscription.trial_expired", actor, { sweep: true });
+  const graceEnd = await trialGraceEndFor(tx, sub);
+  if (!graceEnd || graceEnd.getTime() > now.getTime()) return null;
+  return commitChange(tx, sub, { status: "expired", endedAt: now }, "subscription.trial_expired", actor, { sweep: true, graceEndedAt: graceEnd.toISOString() });
 }

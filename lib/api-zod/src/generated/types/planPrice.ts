@@ -9,6 +9,11 @@
 export interface PlanPrice {
   id: number;
   planId: string;
+  /**
+     * Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version
+     * @nullable
+     */
+  planVersionId?: number | null;
   interval: string;
   intervalCount: number;
   currency: string;

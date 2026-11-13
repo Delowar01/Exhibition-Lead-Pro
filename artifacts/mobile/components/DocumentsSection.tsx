@@ -42,6 +42,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { FONT } from "@/components/ui";
+import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import {
@@ -55,6 +56,7 @@ import {
   type DocumentSource,
   type PickedFile,
 } from "@/lib/documents";
+import { featureAllowed } from "@/lib/entitlements";
 
 type EntityType = DocumentInputEntityType;
 
@@ -69,7 +71,39 @@ function formatDate(iso: string | null | undefined): string {
   });
 }
 
+// Batch 41 (PB-3): the Documents module follows the plan version's
+// `documents` entitlement (the API refuses /documents with FEATURE_NOT_ENTITLED).
+// Decided before the body mounts so no refused request is issued.
 export function DocumentsSection({
+  entityType,
+  entityId,
+}: {
+  entityType: EntityType;
+  entityId: number;
+}) {
+  const { user } = useAuth();
+  const colors = useColors();
+  const { t, textAlign } = useLocale();
+  if (!featureAllowed(user, "documents")) {
+    return (
+      <View
+        testID="documents-not-entitled"
+        style={{ paddingVertical: 24, paddingHorizontal: 12, alignItems: "center", gap: 6 }}
+      >
+        <Feather name="lock" size={22} color={colors.mutedForeground} />
+        <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: colors.foreground, textAlign }}>
+          {t("documents.notEntitledTitle")}
+        </Text>
+        <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: colors.mutedForeground, textAlign }}>
+          {t("documents.notEntitled")}
+        </Text>
+      </View>
+    );
+  }
+  return <DocumentsSectionBody entityType={entityType} entityId={entityId} />;
+}
+
+function DocumentsSectionBody({
   entityType,
   entityId,
 }: {

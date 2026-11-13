@@ -21,6 +21,7 @@ import {
 
 import { Avatar, Badge, Card, FONT, ListRow, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { featureAllowed } from "@/lib/entitlements";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
@@ -49,8 +50,11 @@ export default function MoreScreen() {
 
   const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
   const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
+  // Batch 41 (PB-3): RBAC first, then the plan version's feature entitlement.
   const canViewAssistant =
-    user?.role !== "platform_owner" && (isFullAccess || assistantPerms.includes("view"));
+    user?.role !== "platform_owner" &&
+    (isFullAccess || assistantPerms.includes("view")) &&
+    featureAllowed(user, "ai.assistant");
 
   async function applyAvatar(source: AvatarSource) {
     try {

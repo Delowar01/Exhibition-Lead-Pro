@@ -465,6 +465,57 @@ export interface SubscriptionSummary {
   cancelAtPeriodEnd: boolean;
 }
 
+/**
+ * legacy = grandfathered (every catalog feature allowed); enforced = the published version's feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed)
+ */
+export type TenantEntitlementsFeatureEnforcement = typeof TenantEntitlementsFeatureEnforcement[keyof typeof TenantEntitlementsFeatureEnforcement];
+
+
+export const TenantEntitlementsFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+  invalid: 'invalid',
+} as const;
+
+export type TrialEndPolicyViewEndOutcome = typeof TrialEndPolicyViewEndOutcome[keyof typeof TrialEndPolicyViewEndOutcome];
+
+
+export const TrialEndPolicyViewEndOutcome = {
+  blocked: 'blocked',
+  read_only: 'read_only',
+} as const;
+
+export interface TrialEndPolicyView {
+  endOutcome: TrialEndPolicyViewEndOutcome;
+  readOnlyGraceDays: number;
+  /**
+     * trialExpiresAt + readOnlyGraceDays when the outcome is read_only and a trial end exists; null otherwise
+     * @nullable
+     */
+  graceEndsAt: string | null;
+}
+
+/**
+ * Effective allow/deny per catalog feature key
+ */
+export type TenantEntitlementsFeatures = {[key: string]: boolean};
+
+/**
+ * Batch 41 (PB-3) — the tenant's resolved feature entitlements and trial-end policy, derived from the same server decision the API enforces (requireFeature); clients show or hide capabilities from this, never from plan metadata
+ */
+export interface TenantEntitlements {
+  /**
+     * The pinned plan version (null = legacy NULL reference)
+     * @nullable
+     */
+  planVersionId: number | null;
+  /** legacy = grandfathered (every catalog feature allowed); enforced = the published version's feature matrix is enforced; invalid = the version reference failed integrity checks (every feature denied, fail closed) */
+  featureEnforcement: TenantEntitlementsFeatureEnforcement;
+  /** Effective allow/deny per catalog feature key */
+  features: TenantEntitlementsFeatures;
+  trialPolicy: TrialEndPolicyView;
+}
+
 export type UserPermissions = {[key: string]: string[]};
 
 export interface User {
@@ -509,6 +560,8 @@ export interface User {
   teamName?: string | null;
   createdAt: string;
   subscription?: SubscriptionSummary | null;
+  /** Batch 41 — null for platform operators and users without a tenant subscription */
+  entitlements?: TenantEntitlements | null;
 }
 
 /**
@@ -1486,17 +1539,6 @@ export interface ProfileActivity {
   devices: ProfileActivityDevicesItem[];
 }
 
-export type CompanyPlan = typeof CompanyPlan[keyof typeof CompanyPlan];
-
-
-export const CompanyPlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
-} as const;
-
 export type CompanyStatus = typeof CompanyStatus[keyof typeof CompanyStatus];
 
 
@@ -1535,7 +1577,8 @@ export interface Company {
   primaryContactEmail?: string | null;
   /** @nullable */
   logoUrl?: string | null;
-  plan: CompanyPlan;
+  /** Plan slug (one of the fixed catalog ids or a builder-created plan) */
+  plan: string;
   status: CompanyStatus;
   /** @nullable */
   suspendedReason?: string | null;
@@ -1554,17 +1597,6 @@ export interface CompanyList {
   page: number;
   limit: number;
 }
-
-export type CompanyInputPlan = typeof CompanyInputPlan[keyof typeof CompanyInputPlan];
-
-
-export const CompanyInputPlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
-} as const;
 
 export interface CompanyInput {
   name: string;
@@ -1590,7 +1622,13 @@ export interface CompanyInput {
   primaryContactName?: string | null;
   /** @nullable */
   primaryContactEmail?: string | null;
-  plan?: CompanyInputPlan;
+  /**
+     * A PUBLISHED plan slug (fixed catalog id or builder-created plan)
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan?: string;
 }
 
 export interface CompanyUpdate {
@@ -3449,6 +3487,34 @@ export interface CalendarInviteResult {
   communication: LeadActivity;
 }
 
+/**
+ * Batch 41 (U4) — per-version AI/OCR allowances seeded into the Enterprise AI Layer budget (null = no plan allowance)
+ */
+export interface PlatformPlanAllowances {
+  /** @nullable */
+  aiTokensPerMonth: number | null;
+  /** @nullable */
+  aiCostMicroUsdPerMonth: number | null;
+}
+
+/**
+ * Partial allowances; null = no plan allowance for that budget
+ */
+export interface PlatformPlanAllowancesInput {
+  /**
+     * @minimum 0
+     * @maximum 1000000000000
+     * @nullable
+     */
+  aiTokensPerMonth?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 1000000000000
+     * @nullable
+     */
+  aiCostMicroUsdPerMonth?: number | null;
+}
+
 export type EffectiveLimitResource = typeof EffectiveLimitResource[keyof typeof EffectiveLimitResource];
 
 
@@ -3581,6 +3647,12 @@ export interface Subscription {
   id: number;
   companyId: number;
   plan: string;
+  /**
+     * The pinned plan version (null = legacy NULL reference)
+     * @nullable
+     */
+  planVersionId: number | null;
+  entitlements: TenantEntitlements;
   status: SubscriptionStatus;
   billingSource: SubscriptionBillingSource;
   accessMode: SubscriptionAccessMode;
@@ -3614,6 +3686,11 @@ export interface Subscription {
 export interface PlanPrice {
   id: number;
   planId: string;
+  /**
+     * Batch 42 — null = plan-wide mapping (every published version of the plan); a value = bound to exactly that version
+     * @nullable
+     */
+  planVersionId?: number | null;
   interval: string;
   intervalCount: number;
   currency: string;
@@ -3749,6 +3826,16 @@ export interface ProviderEventDiagnostic {
 }
 
 export type PlatformSubscriptionDetail = Subscription & ({
+  /**
+     * Batch 40 — the published plan version the tenant is pinned to (null = legacy reference to the plan row until the version-1 backfill)
+     * @nullable
+     */
+  planVersionId?: number | null;
+  /**
+     * Version number of the pinned version
+     * @nullable
+     */
+  planVersion?: number | null;
   /** @nullable */
   companyName: string | null;
   limitOverrides: PlatformSubscriptionDetailLimitOverrides;
@@ -3917,6 +4004,29 @@ export interface PlatformBillingStatus {
 }
 
 /**
+ * Batch 42 — plan-wide or bound to one version (strict identity, immutable)
+ */
+export type PlatformPlanPriceScope = typeof PlatformPlanPriceScope[keyof typeof PlatformPlanPriceScope];
+
+
+export const PlatformPlanPriceScope = {
+  plan: 'plan',
+  version: 'version',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PlatformPlanPricePlanVersionState = typeof PlatformPlanPricePlanVersionState[keyof typeof PlatformPlanPricePlanVersionState] | null;
+
+
+export const PlatformPlanPricePlanVersionState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+/**
  * Verified provider mode of the price at registration
  */
 export type PlatformPlanPriceProviderMode = typeof PlatformPlanPriceProviderMode[keyof typeof PlatformPlanPriceProviderMode];
@@ -3928,6 +4038,18 @@ export const PlatformPlanPriceProviderMode = {
 } as const;
 
 export type PlatformPlanPrice = PlanPrice & ({
+  /** Batch 42 — plan-wide or bound to one version (strict identity, immutable) */
+  scope?: PlatformPlanPriceScope;
+  /**
+     * Version number of the bound version (null when plan-wide)
+     * @nullable
+     */
+  planVersion?: number | null;
+  /** @nullable */
+  planVersionState?: PlatformPlanPricePlanVersionState;
+  verified?: boolean;
+  /** The price was verified in the provider mode the platform is configured for */
+  modeMatches?: boolean;
   /** @nullable */
   providerPriceRef?: string | null;
   /** @nullable */
@@ -3942,19 +4064,1447 @@ export interface PlatformPlanPriceList {
   prices: PlatformPlanPrice[];
 }
 
-export type PlatformSetSubscriptionPlanInputPlan = typeof PlatformSetSubscriptionPlanInputPlan[keyof typeof PlatformSetSubscriptionPlanInputPlan];
+/**
+ * Plan default limits (null = unlimited / not enforced)
+ */
+export interface PlatformPlanLimits {
+  /** @nullable */
+  contacts: number | null;
+  /** @nullable */
+  events: number | null;
+  /** @nullable */
+  admins: number | null;
+  /** @nullable */
+  employees: number | null;
+  /** @nullable */
+  scans: number | null;
+  /** @nullable */
+  storageMb: number | null;
+}
+
+export type PlatformPlanSubscriptionCountsByStatus = {
+  trialing: number;
+  active: number;
+  past_due: number;
+  cancelled: number;
+  expired: number;
+  suspended: number;
+};
+
+export type PlatformPlanSubscriptionCountsByBillingSource = {
+  manual: number;
+  stripe: number;
+};
+
+export interface PlatformPlanSubscriptionCounts {
+  total: number;
+  byStatus: PlatformPlanSubscriptionCountsByStatus;
+  byBillingSource: PlatformPlanSubscriptionCountsByBillingSource;
+  /** Subscriptions on this plan carrying at least one numeric per-tenant limit override */
+  withOverrides: number;
+}
+
+/**
+ * The plan row's feature flags (mirror of the current published version's fixed feature matrix; informational — feature gating is not enforced until PB-3)
+ */
+export type PlatformPlanOverviewFeatures = {[key: string]: boolean};
+
+/**
+ * Plan lifecycle state (Batch 40)
+ */
+export type PlatformPlanOverviewStatus = typeof PlatformPlanOverviewStatus[keyof typeof PlatformPlanOverviewStatus];
 
 
-export const PlatformSetSubscriptionPlanInputPlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
+export const PlatformPlanOverviewStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
 } as const;
 
+/**
+ * versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill / first publication)
+ */
+export type PlatformPlanOverviewVersioning = typeof PlatformPlanOverviewVersioning[keyof typeof PlatformPlanOverviewVersioning];
+
+
+export const PlatformPlanOverviewVersioning = {
+  not_versioned: 'not_versioned',
+  versioned: 'versioned',
+} as const;
+
+export type PlatformPlanVersionSummaryState = typeof PlatformPlanVersionSummaryState[keyof typeof PlatformPlanVersionSummaryState];
+
+
+export const PlatformPlanVersionSummaryState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export interface PlatformPlanVersionSummary {
+  id: number;
+  version: number;
+  state: PlatformPlanVersionSummaryState;
+  /** @nullable */
+  publishedAt: string | null;
+  /** @nullable */
+  retiredAt: string | null;
+  subscribers: number;
+}
+
+export interface PlatformPlanOverview {
+  id: string;
+  name: string;
+  /** @nullable */
+  description: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  /** One of the five fixed catalog identities */
+  seeded: boolean;
+  trialDays: number;
+  limits: PlatformPlanLimits;
+  /** The plan row's feature flags (mirror of the current published version's fixed feature matrix; informational — feature gating is not enforced until PB-3) */
+  features: PlatformPlanOverviewFeatures;
+  prices: PlatformPlanPrice[];
+  activePriceCount: number;
+  subscriptions: PlatformPlanSubscriptionCounts;
+  /** Plan lifecycle state (Batch 40) */
+  status: PlatformPlanOverviewStatus;
+  /** versioned once the plan has a published version; not_versioned = legacy (the plan row is the only source until the version-1 backfill / first publication) */
+  versioning: PlatformPlanOverviewVersioning;
+  currentVersion: PlatformPlanVersionSummary | null;
+  draft: PlatformPlanVersionSummary | null;
+  versionCount: number;
+  publishedVersionCount: number;
+  retiredVersionCount: number;
+  /** Subscribers pinned to a published version of this plan */
+  pinnedSubscriptions: number;
+  /** Subscribers still referencing the plan row (legacy NULL reference); publication is refused while any exist */
+  unpinnedSubscriptions: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace
+ */
+export type PlatformPlanTrialPolicyEndOfTrialOutcome = typeof PlatformPlanTrialPolicyEndOfTrialOutcome[keyof typeof PlatformPlanTrialPolicyEndOfTrialOutcome];
+
+
+export const PlatformPlanTrialPolicyEndOfTrialOutcome = {
+  blocked: 'blocked',
+} as const;
+
+export interface PlatformPlanTrialPolicy {
+  defaultTrialDays: number;
+  configuredTrialDays: number;
+  /** The platform DEFAULT end-of-trial outcome (U5); a published plan version may configure read_only with a 1–90 day grace */
+  endOfTrialOutcome: PlatformPlanTrialPolicyEndOfTrialOutcome;
+  /** The platform default grace (0); per-version grace is shown on the version */
+  readOnlyGraceDays: number;
+  manualTrialExpirySweep: boolean;
+  /** The resolver rule of record, stated for display only */
+  rule: string;
+}
+
+export type PlatformPlanCatalogLimitResourcesItem = typeof PlatformPlanCatalogLimitResourcesItem[keyof typeof PlatformPlanCatalogLimitResourcesItem];
+
+
+export const PlatformPlanCatalogLimitResourcesItem = {
+  contacts: 'contacts',
+  events: 'events',
+  admins: 'admins',
+  employees: 'employees',
+  scans: 'scans',
+  storageMb: 'storageMb',
+} as const;
+
+export type PlatformPlanCatalogProvider = {
+  kind: string;
+  available: boolean;
+  /** @nullable */
+  stripeMode: string | null;
+};
+
+export interface PlatformPlanCatalog {
+  plans: PlatformPlanOverview[];
+  limitResources: PlatformPlanCatalogLimitResourcesItem[];
+  trialPolicy: PlatformPlanTrialPolicy;
+  provider: PlatformPlanCatalogProvider;
+  /** The fixed feature catalog (U2) every version carries */
+  featureCatalog: string[];
+  /** false since Batch 40 — plans change through drafts and immutable published versions; published versions are never edited in place */
+  readOnly: boolean;
+  generatedAt: string;
+}
+
+export type PlatformPlanDetailOverridesByResource = {
+  contacts: number;
+  events: number;
+  admins: number;
+  employees: number;
+  scans: number;
+  storageMb: number;
+};
+
+export type PlatformPlanDetailOverrides = {
+  tenantsWithAnyOverride: number;
+  byResource: PlatformPlanDetailOverridesByResource;
+};
+
+export type PlatformPlanDetail = PlatformPlanOverview & {
+  overrides: PlatformPlanDetailOverrides;
+};
+
+export type PlatformEffectiveLimitPreviewRowResource = typeof PlatformEffectiveLimitPreviewRowResource[keyof typeof PlatformEffectiveLimitPreviewRowResource];
+
+
+export const PlatformEffectiveLimitPreviewRowResource = {
+  contacts: 'contacts',
+  events: 'events',
+  admins: 'admins',
+  employees: 'employees',
+  scans: 'scans',
+  storageMb: 'storageMb',
+} as const;
+
+export type PlatformEffectiveLimitPreviewRowSource = typeof PlatformEffectiveLimitPreviewRowSource[keyof typeof PlatformEffectiveLimitPreviewRowSource];
+
+
+export const PlatformEffectiveLimitPreviewRowSource = {
+  override: 'override',
+  plan: 'plan',
+  unlimited: 'unlimited',
+} as const;
+
+export interface PlatformEffectiveLimitPreviewRow {
+  resource: PlatformEffectiveLimitPreviewRowResource;
+  /**
+     * The previewed plan's default (null = unlimited)
+     * @nullable
+     */
+  planDefault: number | null;
+  /**
+     * The tenant's own numeric override (null = none)
+     * @nullable
+     */
+  override: number | null;
+  /**
+     * override ?? plan default ?? unlimited, from the single resolver
+     * @nullable
+     */
+  effective: number | null;
+  source: PlatformEffectiveLimitPreviewRowSource;
+  /**
+     * The tenant's effective limit on its current plan
+     * @nullable
+     */
+  currentEffective: number | null;
+  /** effective differs from currentEffective */
+  changes: boolean;
+  used: number;
+  measurable: boolean;
+  /** @nullable */
+  remaining: number | null;
+  /** Measured usage already exceeds the previewed effective limit (informational) */
+  exceeds: boolean;
+}
+
+export type PlatformEffectiveLimitPreviewAccessMode = typeof PlatformEffectiveLimitPreviewAccessMode[keyof typeof PlatformEffectiveLimitPreviewAccessMode];
+
+
+export const PlatformEffectiveLimitPreviewAccessMode = {
+  full: 'full',
+  read_only: 'read_only',
+  blocked: 'blocked',
+} as const;
+
+export type PlatformEffectiveLimitPreviewFeatureEnforcementPreview = typeof PlatformEffectiveLimitPreviewFeatureEnforcementPreview[keyof typeof PlatformEffectiveLimitPreviewFeatureEnforcementPreview];
+
+
+export const PlatformEffectiveLimitPreviewFeatureEnforcementPreview = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
+export type PlatformEffectiveLimitPreviewFeatureEnforcementCurrent = typeof PlatformEffectiveLimitPreviewFeatureEnforcementCurrent[keyof typeof PlatformEffectiveLimitPreviewFeatureEnforcementCurrent];
+
+
+export const PlatformEffectiveLimitPreviewFeatureEnforcementCurrent = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+  invalid: 'invalid',
+} as const;
+
+/**
+ * Batch 41 — the previewed version's enforcement mode vs the tenant's current mode
+ */
+export type PlatformEffectiveLimitPreviewFeatureEnforcement = {
+  preview: PlatformEffectiveLimitPreviewFeatureEnforcementPreview;
+  current: PlatformEffectiveLimitPreviewFeatureEnforcementCurrent;
+};
+
+export type PlatformEffectiveLimitPreviewTrialPolicy = {
+  preview: TrialEndPolicyView;
+  current: TrialEndPolicyView;
+};
+
+export type PlatformEffectiveLimitPreviewAiAllowancesTenantOverride = {
+  /** @nullable */
+  monthlyTokenBudget: number | null;
+  /** @nullable */
+  monthlyCostBudgetMicroUsd: number | null;
+};
+
+export type PlatformAiAllowancePreviewSourceTokens = typeof PlatformAiAllowancePreviewSourceTokens[keyof typeof PlatformAiAllowancePreviewSourceTokens];
+
+
+export const PlatformAiAllowancePreviewSourceTokens = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+export type PlatformAiAllowancePreviewSourceCost = typeof PlatformAiAllowancePreviewSourceCost[keyof typeof PlatformAiAllowancePreviewSourceCost];
+
+
+export const PlatformAiAllowancePreviewSourceCost = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+export type PlatformAiAllowancePreviewSource = {
+  tokens: PlatformAiAllowancePreviewSourceTokens;
+  cost: PlatformAiAllowancePreviewSourceCost;
+};
+
+export interface PlatformAiAllowancePreview {
+  allowance: PlatformPlanAllowances;
+  /** @nullable */
+  effectiveTokenBudget: number | null;
+  /** @nullable */
+  effectiveCostBudgetMicroUsd: number | null;
+  source: PlatformAiAllowancePreviewSource;
+}
+
+/**
+ * Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none)
+ */
+export type PlatformEffectiveLimitPreviewAiAllowances = {
+  tenantOverride: PlatformEffectiveLimitPreviewAiAllowancesTenantOverride;
+  preview: PlatformAiAllowancePreview;
+  current: PlatformAiAllowancePreview;
+};
+
+export interface PlatformEffectiveFeaturePreviewRow {
+  feature: string;
+  label: string;
+  /** The flag recorded in the previewed snapshot */
+  recorded: boolean;
+  /** What the previewed version would entitle (all true under legacy enforcement) */
+  previewAllowed: boolean;
+  /** What the tenant is entitled to today */
+  currentAllowed: boolean;
+  changes: boolean;
+}
+
+export interface PlatformEffectiveLimitPreview {
+  companyId: number;
+  /** @nullable */
+  companyName: string | null;
+  currentPlan: string;
+  /** @nullable */
+  currentPlanVersionId: number | null;
+  previewPlan: string;
+  /**
+     * The version whose limits were previewed (the plan's current published version by default; null = legacy plan row)
+     * @nullable
+     */
+  previewVersionId: number | null;
+  /** @nullable */
+  previewVersion: number | null;
+  /**
+     * draft | published | retired (null = legacy plan row)
+     * @nullable
+     */
+  previewVersionState: string | null;
+  isCurrentPlan: boolean;
+  status: string;
+  accessMode: PlatformEffectiveLimitPreviewAccessMode;
+  billingSource: string;
+  rows: PlatformEffectiveLimitPreviewRow[];
+  changedResources: string[];
+  blockingResources: string[];
+  /** Batch 41 — the previewed version's enforcement mode vs the tenant's current mode */
+  featureEnforcement: PlatformEffectiveLimitPreviewFeatureEnforcement;
+  features: PlatformEffectiveFeaturePreviewRow[];
+  changedFeatures: string[];
+  trialPolicy: PlatformEffectiveLimitPreviewTrialPolicy;
+  /** Batch 41 (U4) — tenant AI budget overrides, the previewed and current plan allowances and the effective budget with its source (tenant override > plan allowance > none) */
+  aiAllowances: PlatformEffectiveLimitPreviewAiAllowances;
+  readOnly: boolean;
+  generatedAt: string;
+}
+
+/**
+ * Partial limits; null = unlimited
+ */
+export interface PlatformPlanLimitsInput {
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  contacts?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  events?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  admins?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  employees?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  scans?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  storageMb?: number | null;
+}
+
+/**
+ * The fixed feature catalog (U2); enforced server-side when the version's featureEnforcement is `enforced`, grandfathered (every feature allowed) when `legacy`
+ */
+export interface PlatformPlanFeatureMatrix {[key: string]: boolean}
+
+export type PlatformPlanTrialPolicySpecEndOutcome = typeof PlatformPlanTrialPolicySpecEndOutcome[keyof typeof PlatformPlanTrialPolicySpecEndOutcome];
+
+
+export const PlatformPlanTrialPolicySpecEndOutcome = {
+  blocked: 'blocked',
+  read_only: 'read_only',
+} as const;
+
+export interface PlatformPlanTrialPolicySpec {
+  trialDays: number;
+  eligible: boolean;
+  oncePerCompany: boolean;
+  endOutcome: PlatformPlanTrialPolicySpecEndOutcome;
+  readOnlyGraceDays: number;
+}
+
+export type PlatformPlanTrialPolicyInputEndOutcome = typeof PlatformPlanTrialPolicyInputEndOutcome[keyof typeof PlatformPlanTrialPolicyInputEndOutcome];
+
+
+export const PlatformPlanTrialPolicyInputEndOutcome = {
+  blocked: 'blocked',
+  read_only: 'read_only',
+} as const;
+
+export interface PlatformPlanTrialPolicyInput {
+  /**
+     * @minimum 0
+     * @maximum 365
+     */
+  trialDays?: number;
+  eligible?: boolean;
+  oncePerCompany?: boolean;
+  endOutcome?: PlatformPlanTrialPolicyInputEndOutcome;
+  /**
+     * @minimum 0
+     * @maximum 90
+     */
+  readOnlyGraceDays?: number;
+}
+
+export interface PlatformPlanVersionPrice {
+  id: number;
+  /**
+     * Batch 42 — the version the mapping was bound to when captured (null = plan-wide; absent on snapshots published before Batch 42)
+     * @nullable
+     */
+  planVersionId?: number | null;
+  interval: string;
+  intervalCount: number;
+  currency: string;
+  unitAmountMinor: number;
+  providerMode: string;
+  /** @nullable */
+  nickname: string | null;
+  active: boolean;
+}
+
+/**
+ * Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered)
+ */
+export type PlatformPlanVersionSnapshotFeatureEnforcement = typeof PlatformPlanVersionSnapshotFeatureEnforcement[keyof typeof PlatformPlanVersionSnapshotFeatureEnforcement];
+
+
+export const PlatformPlanVersionSnapshotFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
+export type PlatformPlanManualPriceInterval = typeof PlatformPlanManualPriceInterval[keyof typeof PlatformPlanManualPriceInterval];
+
+
+export const PlatformPlanManualPriceInterval = {
+  day: 'day',
+  week: 'week',
+  month: 'month',
+  year: 'year',
+} as const;
+
+export interface PlatformPlanManualPrice {
+  interval: PlatformPlanManualPriceInterval;
+  /**
+     * @minimum 1
+     * @maximum 12
+     */
+  intervalCount: number;
+  /** @pattern ^[a-z]{3}$ */
+  currency: string;
+  /**
+     * @minimum 0
+     * @maximum 1000000000
+     */
+  unitAmountMinor: number;
+  /**
+     * @maxLength 60
+     * @nullable
+     */
+  label: string | null;
+}
+
+export interface PlatformPlanVersionSnapshot {
+  name: string;
+  /** @nullable */
+  description: string | null;
+  sortOrder: number;
+  limits: PlatformPlanLimits;
+  features: PlatformPlanFeatureMatrix;
+  prices: PlatformPlanVersionPrice[];
+  /** Batch 41 — absent on versions published before PB-3 (= legacy, grandfathered) */
+  featureEnforcement?: PlatformPlanVersionSnapshotFeatureEnforcement;
+  allowances?: PlatformPlanAllowances;
+  /** Batch 42 (owner decision D2) — platform-managed price summaries recorded in the immutable snapshot (display + audit only; never billed by the product, never a provider identity) */
+  manualPrices?: PlatformPlanManualPrice[];
+}
+
+export type PlatformPlanManualPriceInputInterval = typeof PlatformPlanManualPriceInputInterval[keyof typeof PlatformPlanManualPriceInputInterval];
+
+
+export const PlatformPlanManualPriceInputInterval = {
+  day: 'day',
+  week: 'week',
+  month: 'month',
+  year: 'year',
+} as const;
+
+export interface PlatformPlanManualPriceInput {
+  interval: PlatformPlanManualPriceInputInterval;
+  /**
+     * @minimum 1
+     * @maximum 12
+     */
+  intervalCount?: number;
+  /**
+     * @minLength 3
+     * @maxLength 3
+     */
+  currency: string;
+  /**
+     * @minimum 0
+     * @maximum 1000000000
+     */
+  unitAmountMinor: number;
+  /**
+     * @maxLength 60
+     * @nullable
+     */
+  label?: string | null;
+}
+
+export type PlatformVersionPriceMappingScope = typeof PlatformVersionPriceMappingScope[keyof typeof PlatformVersionPriceMappingScope];
+
+
+export const PlatformVersionPriceMappingScope = {
+  plan: 'plan',
+  version: 'version',
+} as const;
+
+/**
+ * Batch 42 — a provider price mapping that applies to a version (plan-wide or bound to it) with its verification state against the configured provider mode
+ */
+export interface PlatformVersionPriceMapping {
+  id: number;
+  planId: string;
+  /** @nullable */
+  planVersionId: number | null;
+  scope: PlatformVersionPriceMappingScope;
+  interval: string;
+  intervalCount: number;
+  currency: string;
+  unitAmountMinor: number;
+  /** @nullable */
+  nickname: string | null;
+  active: boolean;
+  providerMode: string;
+  verified: boolean;
+  modeMatches: boolean;
+  /** @nullable */
+  verifiedAt: string | null;
+  /** @nullable */
+  providerPriceRef: string | null;
+}
+
+export type PlatformPlanVersionState = typeof PlatformPlanVersionState[keyof typeof PlatformPlanVersionState];
+
+
+export const PlatformPlanVersionState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+/**
+ * Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants
+ */
+export type PlatformPlanVersionFeatureEnforcement = typeof PlatformPlanVersionFeatureEnforcement[keyof typeof PlatformPlanVersionFeatureEnforcement];
+
+
+export const PlatformPlanVersionFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
+export interface PlatformPlanVersion {
+  id: number;
+  planId: string;
+  version: number;
+  state: PlatformPlanVersionState;
+  /** The plan's current published (newest non-retired) version */
+  isCurrent: boolean;
+  snapshot: PlatformPlanVersionSnapshot;
+  trialPolicy: PlatformPlanTrialPolicySpec;
+  /** Batch 41 — legacy = grandfathered (every catalog feature allowed regardless of the recorded flags); enforced = the recorded matrix is enforced for pinned tenants */
+  featureEnforcement: PlatformPlanVersionFeatureEnforcement;
+  /** What a tenant pinned to this version is actually allowed (all true under legacy) */
+  effectiveFeatures: PlatformPlanFeatureMatrix;
+  allowances: PlatformPlanAllowances;
+  subscribers: number;
+  /** @nullable */
+  publishedAt: string | null;
+  /** @nullable */
+  publishedBy: number | null;
+  /** @nullable */
+  retiredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformFieldIssue {
+  code: string;
+  field: string;
+  message: string;
+}
+
+export type PlatformPublishBlockerCode = typeof PlatformPublishBlockerCode[keyof typeof PlatformPublishBlockerCode];
+
+
+export const PlatformPublishBlockerCode = {
+  VERSION_IMMUTABLE: 'VERSION_IMMUTABLE',
+  VERSION_RETIRED: 'VERSION_RETIRED',
+  PLAN_ARCHIVED: 'PLAN_ARCHIVED',
+  UNPINNED_SUBSCRIBERS: 'UNPINNED_SUBSCRIBERS',
+} as const;
+
+export interface PlatformPublishBlocker {
+  code: PlatformPublishBlockerCode;
+  message: string;
+  count?: number;
+}
+
+export type PlatformPlanVersionValidationState = typeof PlatformPlanVersionValidationState[keyof typeof PlatformPlanVersionValidationState];
+
+
+export const PlatformPlanVersionValidationState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export type PlatformPlanVersionValidationProviderMode = typeof PlatformPlanVersionValidationProviderMode[keyof typeof PlatformPlanVersionValidationProviderMode];
+
+
+export const PlatformPlanVersionValidationProviderMode = {
+  test: 'test',
+  live: 'live',
+} as const;
+
+export interface PlatformPlanVersionValidation {
+  planId: string;
+  versionId: number;
+  version: number;
+  state: PlatformPlanVersionValidationState;
+  /** Content validation passed (limits consistent, feature keys from the catalog, trial policy complete, prices verified in the configured provider mode) */
+  ok: boolean;
+  errors: PlatformFieldIssue[];
+  warnings: PlatformFieldIssue[];
+  blockers: PlatformPublishBlocker[];
+  /** ok and no blocker */
+  publishable: boolean;
+  pricesConsidered: PlatformPlanVersionPrice[];
+  /** Batch 42 — every applicable mapping (active or not) with scope + verification state */
+  priceMappings?: PlatformVersionPriceMapping[];
+  manualPrices?: PlatformPlanManualPrice[];
+  providerMode: PlatformPlanVersionValidationProviderMode;
+}
+
+export type PlatformPlanVersionDetail = PlatformPlanVersion & ({
+  prices: PlatformPlanVersionPrice[];
+  /** Batch 42 — applicable provider mappings with scope + verification state */
+  priceMappings?: PlatformVersionPriceMapping[];
+  manualPrices?: PlatformPlanManualPrice[];
+  validation: PlatformPlanVersionValidation | null;
+});
+
+export type PlatformPlanVersionListPlanStatus = typeof PlatformPlanVersionListPlanStatus[keyof typeof PlatformPlanVersionListPlanStatus];
+
+
+export const PlatformPlanVersionListPlanStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export interface PlatformPlanVersionList {
+  planId: string;
+  planStatus: PlatformPlanVersionListPlanStatus;
+  /** @nullable */
+  currentVersionId: number | null;
+  /** @nullable */
+  draftVersionId: number | null;
+  unpinnedSubscribers: number;
+  versions: PlatformPlanVersion[];
+}
+
+export type PlatformCompareRowGroup = typeof PlatformCompareRowGroup[keyof typeof PlatformCompareRowGroup];
+
+
+export const PlatformCompareRowGroup = {
+  display: 'display',
+  limits: 'limits',
+  features: 'features',
+  trialPolicy: 'trialPolicy',
+  enforcement: 'enforcement',
+  allowances: 'allowances',
+  pricing: 'pricing',
+} as const;
+
+export interface PlatformCompareRow {
+  group: PlatformCompareRowGroup;
+  field: string;
+  /** string | number | boolean | null */
+  left: unknown;
+  /** string | number | boolean | null */
+  right: unknown;
+  changed: boolean;
+}
+
+export interface PlatformPlanVersionComparison {
+  planId: string;
+  left: PlatformPlanVersionSummary;
+  right: PlatformPlanVersionSummary;
+  rows: PlatformCompareRow[];
+  changedFields: string[];
+  tightenedLimits: string[];
+  loosenedLimits: string[];
+}
+
+export type PlatformExceedingTenantResourcesItem = {
+  resource: string;
+  limit: number;
+  used: number;
+};
+
+export interface PlatformExceedingTenant {
+  companyId: number;
+  /** @nullable */
+  companyName: string | null;
+  status: string;
+  resources: PlatformExceedingTenantResourcesItem[];
+}
+
+export type PlatformPlanVersionImpactPlanStatus = typeof PlatformPlanVersionImpactPlanStatus[keyof typeof PlatformPlanVersionImpactPlanStatus];
+
+
+export const PlatformPlanVersionImpactPlanStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export type PlatformPlanVersionImpactState = typeof PlatformPlanVersionImpactState[keyof typeof PlatformPlanVersionImpactState];
+
+
+export const PlatformPlanVersionImpactState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export type PlatformPlanVersionImpactSubscribersByVersionItemState = typeof PlatformPlanVersionImpactSubscribersByVersionItemState[keyof typeof PlatformPlanVersionImpactSubscribersByVersionItemState];
+
+
+export const PlatformPlanVersionImpactSubscribersByVersionItemState = {
+  draft: 'draft',
+  published: 'published',
+  retired: 'retired',
+} as const;
+
+export type PlatformPlanVersionImpactSubscribersByVersionItem = {
+  versionId: number;
+  version: number;
+  state: PlatformPlanVersionImpactSubscribersByVersionItemState;
+  subscribers: number;
+};
+
+export type PlatformPlanVersionImpactPublish = {
+  /** Always 0 — publishing never moves an existing subscriber */
+  subscribersMoved: number;
+  wouldBecomeCurrent: boolean;
+  newTenantsGetThisVersion: boolean;
+  diffVsCurrent: PlatformCompareRow[];
+  tightenedLimits: string[];
+  tenantsExceedingNewLimits: {
+  checked: number;
+  sampled: boolean;
+  tenants: PlatformExceedingTenant[];
+};
+  blockers: PlatformPublishBlocker[];
+} | null;
+
+export type PlatformPlanVersionImpactRetire = {
+  subscribersKept: number;
+  subscribersByStatus: {[key: string]: number};
+  isCurrent: boolean;
+  isLastPublished: boolean;
+  alreadyRetired: boolean;
+  newCurrentVersion: PlatformPlanVersionSummary | null;
+} | null;
+
+export interface PlatformPlanVersionImpact {
+  planId: string;
+  planStatus: PlatformPlanVersionImpactPlanStatus;
+  versionId: number;
+  version: number;
+  state: PlatformPlanVersionImpactState;
+  planSubscribers: number;
+  unpinnedSubscribers: number;
+  subscribersOnVersion: number;
+  subscribersByVersion: PlatformPlanVersionImpactSubscribersByVersionItem[];
+  currentVersion: PlatformPlanVersionSummary | null;
+  generatedAt: string;
+  publish: PlatformPlanVersionImpactPublish;
+  retire: PlatformPlanVersionImpactRetire;
+}
+
+export type PlatformCreatePlanInputFeatureEnforcement = typeof PlatformCreatePlanInputFeatureEnforcement[keyof typeof PlatformCreatePlanInputFeatureEnforcement];
+
+
+export const PlatformCreatePlanInputFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
+export interface PlatformCreatePlanInput {
+  /**
+     * New plan slug; the five fixed ids are reserved
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  description?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  sortOrder?: number;
+  limits?: PlatformPlanLimitsInput;
+  features?: PlatformPlanFeatureMatrix;
+  featureEnforcement?: PlatformCreatePlanInputFeatureEnforcement;
+  allowances?: PlatformPlanAllowancesInput;
+  trialPolicy?: PlatformPlanTrialPolicyInput;
+  /** @maxItems 8 */
+  manualPrices?: PlatformPlanManualPriceInput[];
+}
+
+export interface PlatformDuplicatePlanInput {
+  /**
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+}
+
+export interface PlatformCreateDraftInput {
+  /** A PUBLISHED version to pre-fill from (default = the current published version) */
+  sourceVersionId?: number;
+}
+
+export type PlatformUpdateDraftInputFeatureEnforcement = typeof PlatformUpdateDraftInputFeatureEnforcement[keyof typeof PlatformUpdateDraftInputFeatureEnforcement];
+
+
+export const PlatformUpdateDraftInputFeatureEnforcement = {
+  legacy: 'legacy',
+  enforced: 'enforced',
+} as const;
+
+export interface PlatformUpdateDraftInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  description?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  sortOrder?: number;
+  limits?: PlatformPlanLimitsInput;
+  features?: PlatformPlanFeatureMatrix;
+  featureEnforcement?: PlatformUpdateDraftInputFeatureEnforcement;
+  allowances?: PlatformPlanAllowancesInput;
+  trialPolicy?: PlatformPlanTrialPolicyInput;
+  /**
+     * Batch 42 (D2) — replaces the draft's manual price summaries (unique per currency / interval / count)
+     * @maxItems 8
+     */
+  manualPrices?: PlatformPlanManualPriceInput[];
+}
+
+export interface PlatformPlanCreateResult {
+  plan: PlatformPlanDetail;
+  draft: PlatformPlanVersion;
+}
+
+export interface PlatformPlanVersionDeleted {
+  deleted: boolean;
+  versionId: number;
+  /** true when the deleted draft was the only version of a never-published plan (the plan row was removed too) */
+  planDeleted: boolean;
+}
+
 export interface PlatformSetSubscriptionPlanInput {
-  plan: PlatformSetSubscriptionPlanInputPlan;
+  /**
+     * A PUBLISHED plan slug; without planVersionId the tenant is pinned to that plan's current published version
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan: string;
+  /**
+     * Batch 42 — an explicit PUBLISHED version of the plan (a retired version is allowed as the owner's deliberate choice; a draft never)
+     * @minimum 1
+     */
+  planVersionId?: number;
+  /** Batch 42 (D3) — required true when the target version removes features the tenant currently has */
+  confirmFeatureDowngrade?: boolean;
+  /** @maxLength 200 */
+  reason?: string;
+}
+
+export interface PlatformPreviewSubscriptionPlanChangeInput {
+  /**
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan: string;
+  /** @minimum 1 */
+  planVersionId?: number;
+}
+
+export type PlatformLimitComparisonRowTargetSource = typeof PlatformLimitComparisonRowTargetSource[keyof typeof PlatformLimitComparisonRowTargetSource];
+
+
+export const PlatformLimitComparisonRowTargetSource = {
+  override: 'override',
+  plan: 'plan',
+  unlimited: 'unlimited',
+} as const;
+
+export interface PlatformLimitComparisonRow {
+  resource: string;
+  /** @nullable */
+  currentLimit: number | null;
+  /** @nullable */
+  targetLimit: number | null;
+  targetSource: PlatformLimitComparisonRowTargetSource;
+  /** @nullable */
+  override: number | null;
+  used: number;
+  measurable: boolean;
+  exceeds: boolean;
+  tightens: boolean;
+  loosens: boolean;
+}
+
+export interface PlatformBlockingResource {
+  resource: string;
+  used: number;
+  limit: number;
+}
+
+export type PlatformPlanChangeEvaluationCurrent = {
+  plan: string;
+  /** @nullable */
+  planVersionId: number | null;
+  /** @nullable */
+  version: number | null;
+  /** false when the current version reference is invalid (fail-closed elsewhere; the change repairs it) */
+  valid: boolean;
+  legacyReference: boolean;
+  billingSource: string;
+  status: string;
+};
+
+export type PlatformPlanChangeEvaluationTargetState = typeof PlatformPlanChangeEvaluationTargetState[keyof typeof PlatformPlanChangeEvaluationTargetState];
+
+
+export const PlatformPlanChangeEvaluationTargetState = {
+  published: 'published',
+  retired: 'retired',
+  legacy: 'legacy',
+} as const;
+
+export type PlatformPlanChangeEvaluationTarget = {
+  plan: string;
+  /** @nullable */
+  planVersionId: number | null;
+  /** @nullable */
+  version: number | null;
+  state: PlatformPlanChangeEvaluationTargetState;
+  explicit: boolean;
+};
+
+export type PlatformPlanChangeEvaluationChangeKind = typeof PlatformPlanChangeEvaluationChangeKind[keyof typeof PlatformPlanChangeEvaluationChangeKind];
+
+
+export const PlatformPlanChangeEvaluationChangeKind = {
+  none: 'none',
+  plan_change: 'plan_change',
+  version_change: 'version_change',
+  repair: 'repair',
+} as const;
+
+export type PlatformPlanChangeEvaluationTransition = {
+  ok: boolean;
+  /** @nullable */
+  code: string | null;
+};
+
+export type PlatformPlanChangeEvaluationFeaturesEnforcement = {
+  current: string;
+  target: string;
+};
+
+export type PlatformPlanChangeEvaluationFeaturesCurrent = {[key: string]: boolean};
+
+export type PlatformPlanChangeEvaluationFeaturesTarget = {[key: string]: boolean};
+
+export type PlatformPlanChangeEvaluationFeatures = {
+  enforcement: PlatformPlanChangeEvaluationFeaturesEnforcement;
+  current: PlatformPlanChangeEvaluationFeaturesCurrent;
+  target: PlatformPlanChangeEvaluationFeaturesTarget;
+  lost: string[];
+  gained: string[];
+};
+
+export interface PlatformTrialEndPolicy {
+  endOutcome: string;
+  readOnlyGraceDays: number;
+}
+
+export type PlatformPlanChangeEvaluationTrialPolicy = {
+  current: PlatformTrialEndPolicy;
+  target: PlatformTrialEndPolicy;
+};
+
+export type PlatformPlanChangeEvaluationAllowances = {
+  current: PlatformPlanAllowances;
+  target: PlatformPlanAllowances;
+};
+
+export interface PlatformPlanChangeEvaluation {
+  current: PlatformPlanChangeEvaluationCurrent;
+  target: PlatformPlanChangeEvaluationTarget;
+  sameTarget: boolean;
+  changeKind: PlatformPlanChangeEvaluationChangeKind;
+  transition: PlatformPlanChangeEvaluationTransition;
+  limits: PlatformLimitComparisonRow[];
+  blocking: PlatformBlockingResource[];
+  unmeasurable: string[];
+  tightenedLimits: string[];
+  loosenedLimits: string[];
+  features: PlatformPlanChangeEvaluationFeatures;
+  trialPolicy: PlatformPlanChangeEvaluationTrialPolicy;
+  allowances: PlatformPlanChangeEvaluationAllowances;
+  requiresFeatureConfirmation: boolean;
+  /** Transition allowed and nothing blocking (feature confirmation aside) */
+  eligible: boolean;
+}
+
+export type PlatformPlanChangePreview = PlatformPlanChangeEvaluation & {
+  companyId: number;
+  /** Same plan, legacy NULL reference, no explicit version — the change would move nothing */
+  implicitLegacyKept: boolean;
+  wouldChange: boolean;
+  readOnly: boolean;
+  generatedAt: string;
+};
+
+export type PlatformPlanHistoryEntryKind = typeof PlatformPlanHistoryEntryKind[keyof typeof PlatformPlanHistoryEntryKind];
+
+
+export const PlatformPlanHistoryEntryKind = {
+  created: 'created',
+  direct_change: 'direct_change',
+  version_change: 'version_change',
+  repair: 'repair',
+  migration: 'migration',
+  provider_sync: 'provider_sync',
+  backfill_pin: 'backfill_pin',
+  other: 'other',
+} as const;
+
+export type PlatformPlanHistoryEntryActor = {
+  /** @nullable */
+  userId: number | null;
+  /** @nullable */
+  name: string | null;
+};
+
+/**
+ * @nullable
+ */
+export type PlatformPlanHistoryEntryLimitsBefore = {[key: string]: number | null} | null;
+
+/**
+ * @nullable
+ */
+export type PlatformPlanHistoryEntryLimitsAfter = {[key: string]: number | null} | null;
+
+export interface PlatformPlanHistoryEntry {
+  auditId: number;
+  /** Opaque position of this entry in the stable (createdAt, auditId) order; pass it as `cursor` to continue after it */
+  cursor: string;
+  at: string;
+  action: string;
+  kind: PlatformPlanHistoryEntryKind;
+  actor: PlatformPlanHistoryEntryActor;
+  /** @nullable */
+  reason: string | null;
+  /** @nullable */
+  fromPlan: string | null;
+  /** @nullable */
+  toPlan: string | null;
+  /** @nullable */
+  fromVersionId: number | null;
+  /** @nullable */
+  fromVersion: number | null;
+  /** @nullable */
+  toVersionId: number | null;
+  /** @nullable */
+  toVersion: number | null;
+  /** @nullable */
+  billingSource: string | null;
+  changedFields: string[];
+  /**
+     * direct_change | migration | provider_price | null
+     * @nullable
+     */
+  source: string | null;
+  /** @nullable */
+  migrationId: string | null;
+  /** @nullable */
+  dryRunDigest: string | null;
+  /** @nullable */
+  limitsBefore: PlatformPlanHistoryEntryLimitsBefore;
+  /** @nullable */
+  limitsAfter: PlatformPlanHistoryEntryLimitsAfter;
+  changedLimits: string[];
+  tightenedLimits: string[];
+  loosenedLimits: string[];
+  lostFeatures: string[];
+  gainedFeatures: string[];
+  /** @nullable */
+  featureEnforcementBefore: string | null;
+  /** @nullable */
+  featureEnforcementAfter: string | null;
+  /** @nullable */
+  confirmFeatureDowngrade: boolean | null;
+  repairedInvalidReference: boolean;
+}
+
+export type PlatformPlanHistoryOriginal = {
+  plan: string;
+  /** @nullable */
+  planVersionId: number | null;
+  /** @nullable */
+  version: number | null;
+  /** @nullable */
+  at: string | null;
+};
+
+export type PlatformPlanHistoryCurrent = {
+  plan: string;
+  /** @nullable */
+  planVersionId: number | null;
+  /** @nullable */
+  version: number | null;
+  /** @nullable */
+  versionState: string | null;
+  billingSource: string;
+  status: string;
+};
+
+export type PlatformPlanHistoryOrder = typeof PlatformPlanHistoryOrder[keyof typeof PlatformPlanHistoryOrder];
+
+
+export const PlatformPlanHistoryOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export interface PlatformPlanHistory {
+  companyId: number;
+  /** @nullable */
+  companyName: string | null;
+  original: PlatformPlanHistoryOriginal;
+  current: PlatformPlanHistoryCurrent;
+  /** One page of the tenant's relevant plan-change events in the requested order (stable keyset order over createdAt + auditId) */
+  entries: PlatformPlanHistoryEntry[];
+  /** The number of relevant plan-change events of the tenant across the whole history (not only this page) */
+  total: number;
+  /** true when the response does not carry the whole history (= hasMore; kept for compatibility) */
+  truncated: boolean;
+  generatedAt: string;
+  pageSize: number;
+  order: PlatformPlanHistoryOrder;
+  /**
+     * The cursor to request the next page in the same order; null when this page ends the history
+     * @nullable
+     */
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface PlatformMigratePlanVersionTenantsInput {
+  /** true = evaluate only (no write) and return the digest; false = execute (requires confirmDigest) */
+  dryRun: boolean;
+  /**
+     * Scope = every subscription pinned to this PUBLISHED version (any plan)
+     * @minimum 1
+     */
+  sourceVersionId?: number;
+  /**
+     * Explicit scope (≤ 200 companies); combined with sourceVersionId every listed company must be on the source
+     * @minItems 1
+     * @maxItems 200
+     */
+  companyIds?: number[];
+  /**
+     * The digest of the reviewed dry run; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same digest
+     * @minLength 64
+     * @maxLength 64
+     */
+  confirmDigest?: string;
+  /** D3 — required true for tenants that would lose features (otherwise they are reported, never migrated) */
+  confirmFeatureDowngrade?: boolean;
+  /** @maxLength 200 */
+  reason?: string;
+}
+
+export type PlatformMigrationRowReason = typeof PlatformMigrationRowReason[keyof typeof PlatformMigrationRowReason];
+
+
+export const PlatformMigrationRowReason = {
+  ELIGIBLE: 'ELIGIBLE',
+  ALREADY_ON_VERSION: 'ALREADY_ON_VERSION',
+  PROVIDER_MANAGED: 'PROVIDER_MANAGED',
+  TRANSITION_NOT_ALLOWED: 'TRANSITION_NOT_ALLOWED',
+  NOT_ON_SOURCE_VERSION: 'NOT_ON_SOURCE_VERSION',
+  DOWNGRADE_BLOCKED: 'DOWNGRADE_BLOCKED',
+  FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED: 'FEATURE_DOWNGRADE_CONFIRMATION_REQUIRED',
+  SUBSCRIPTION_MISSING: 'SUBSCRIPTION_MISSING',
+} as const;
+
+/**
+ * Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run)
+ */
+export type PlatformMigrationRowOutcome = typeof PlatformMigrationRowOutcome[keyof typeof PlatformMigrationRowOutcome];
+
+
+export const PlatformMigrationRowOutcome = {
+  migrated: 'migrated',
+  skipped: 'skipped',
+  failed: 'failed',
+  rolled_back: 'rolled_back',
+  ineligible: 'ineligible',
+  not_attempted: 'not_attempted',
+} as const;
+
+export interface PlatformMigrationRow {
+  companyId: number;
+  /** @nullable */
+  companyName: string | null;
+  /** @nullable */
+  currentPlan: string | null;
+  /** @nullable */
+  currentPlanVersionId: number | null;
+  /** @nullable */
+  currentVersion: number | null;
+  currentReferenceValid: boolean;
+  /** @nullable */
+  billingSource: string | null;
+  /** @nullable */
+  status: string | null;
+  reason: PlatformMigrationRowReason;
+  blocking: PlatformBlockingResource[];
+  unmeasurable: string[];
+  lostFeatures: string[];
+  tightenedLimits: string[];
+  /** Execution outcome — migrated; skipped (concurrent change CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING at execution, never guessed); failed (unexpected error); rolled_back (post-change verification failed); ineligible (deliberately not migrated — the reviewed reason is in outcomeReason); not_attempted (dry run) */
+  outcome: PlatformMigrationRowOutcome;
+  /** @nullable */
+  outcomeReason: string | null;
+  /** sha-256 over every material eligibility input of THIS tenant as reviewed (reference, status, billing source, overrides, measured usage, target limits, feature matrices, trial / allowance targets, transition, reason); the execution re-computes it inside the tenant's transaction and skips on any difference */
+  reviewDigest: string;
+  /** On a skipped tenant, the top-level review inputs that differ from the reviewed row (empty otherwise) */
+  changedSinceReview: string[];
+}
+
+export type PlatformMigrationResultTarget = {
+  versionId: number;
+  version: number;
+};
+
+/**
+ * @nullable
+ */
+export type PlatformMigrationResultSource = {
+  versionId?: number;
+  version?: number;
+  planId?: string;
+} | null;
+
+export type PlatformMigrationResultScope = typeof PlatformMigrationResultScope[keyof typeof PlatformMigrationResultScope];
+
+
+export const PlatformMigrationResultScope = {
+  companies: 'companies',
+  source_version: 'source_version',
+} as const;
+
+export type PlatformMigrationResultSummaryByReason = {[key: string]: number};
+
+export type PlatformMigrationResultSummary = {
+  total: number;
+  eligible: number;
+  byReason: PlatformMigrationResultSummaryByReason;
+  migrated: number;
+  skipped: number;
+  failed: number;
+  rolledBack: number;
+  notAttempted: number;
+  /** Tenants deliberately not migrated (reviewed reason other than ELIGIBLE); execution only */
+  ineligible: number;
+  /** Eligible tenants skipped because their data changed between the review and their own transaction (CHANGED_SINCE_DRY_RUN / SUBSCRIPTION_MISSING) */
+  concurrentlyChanged: number;
+};
+
+/**
+ * dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error)
+ */
+export type PlatformMigrationResultStatus = typeof PlatformMigrationResultStatus[keyof typeof PlatformMigrationResultStatus];
+
+
+export const PlatformMigrationResultStatus = {
+  dry_run: 'dry_run',
+  complete: 'complete',
+  partial: 'partial',
+  concurrently_changed: 'concurrently_changed',
+  failed: 'failed',
+  rolled_back: 'rolled_back',
+} as const;
+
+export type PlatformMigrationResultIncompleteReasonsItem = typeof PlatformMigrationResultIncompleteReasonsItem[keyof typeof PlatformMigrationResultIncompleteReasonsItem];
+
+
+export const PlatformMigrationResultIncompleteReasonsItem = {
+  concurrently_changed: 'concurrently_changed',
+  failed: 'failed',
+  rolled_back: 'rolled_back',
+} as const;
+
+export interface PlatformMigrationResult {
+  planId: string;
+  target: PlatformMigrationResultTarget;
+  /** @nullable */
+  source: PlatformMigrationResultSource;
+  scope: PlatformMigrationResultScope;
+  confirmFeatureDowngrade: boolean;
+  /** sha256 over the canonical serialization of the reviewed scope (target plan / version / state, source, confirmation flag, scope kind) and every tenant's reviewDigest inputs; execution is refused (DRY_RUN_STALE) unless a fresh dry run over the current data yields the same value */
+  digest: string;
+  generatedAt: string;
+  dryRun: boolean;
+  /** @nullable */
+  migrationId: string | null;
+  rows: PlatformMigrationRow[];
+  summary: PlatformMigrationResultSummary;
+  /**
+     * null for a dry run; true only when status is `complete` — every eligible tenant of the reviewed scope was migrated (any skipped, failed or rolled-back eligible tenant makes it false)
+     * @nullable
+     */
+  complete: boolean | null;
+  /** dry_run (nothing executed); complete (every eligible tenant migrated); partial (some migrated, at least one eligible tenant not — see incompleteReasons); concurrently_changed (none migrated, every eligible tenant skipped on a concurrent change); failed (none migrated, at least one unexpected error); rolled_back (none migrated, at least one verification rollback, no unexpected error) */
+  status: PlatformMigrationResultStatus;
+  /** Why the execution is not complete (empty for dry runs and complete executions) */
+  incompleteReasons: PlatformMigrationResultIncompleteReasonsItem[];
 }
 
 export interface PlatformStartTrialInput {
@@ -4008,24 +5558,24 @@ export interface PlatformSetSubscriptionLimitsInput {
   limits: PlatformSetSubscriptionLimitsInputLimits;
 }
 
-export type PlatformRegisterPriceInputPlanId = typeof PlatformRegisterPriceInputPlanId[keyof typeof PlatformRegisterPriceInputPlanId];
-
-
-export const PlatformRegisterPriceInputPlanId = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
-} as const;
-
 export interface PlatformRegisterPriceInput {
-  planId: PlatformRegisterPriceInputPlanId;
+  /**
+     * Plan slug (draft or published; never archived)
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  planId: string;
   /**
      * @minLength 6
      * @maxLength 128
      */
   providerPriceId: string;
+  /**
+     * Batch 42 — bind the mapping to this DRAFT version of the plan (omit = plan-wide); a published version's pricing is immutable (409 VERSION_NOT_DRAFT)
+     * @minimum 1
+     */
+  planVersionId?: number;
 }
 
 export interface PlatformUpdatePriceInput {
@@ -4353,6 +5903,41 @@ export interface AiFeatureFlags {
   assignee_recommendation: boolean;
 }
 
+export type AiSettingsResponseBudgetSourceTokens = typeof AiSettingsResponseBudgetSourceTokens[keyof typeof AiSettingsResponseBudgetSourceTokens];
+
+
+export const AiSettingsResponseBudgetSourceTokens = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+export type AiSettingsResponseBudgetSourceCost = typeof AiSettingsResponseBudgetSourceCost[keyof typeof AiSettingsResponseBudgetSourceCost];
+
+
+export const AiSettingsResponseBudgetSourceCost = {
+  tenant: 'tenant',
+  plan: 'plan',
+  none: 'none',
+} as const;
+
+/**
+ * Batch 41 (U4) — where each effective budget comes from
+ */
+export type AiSettingsResponseBudgetSource = {
+  tokens: AiSettingsResponseBudgetSourceTokens;
+  cost: AiSettingsResponseBudgetSourceCost;
+};
+
+export type AiSettingsResponsePlanAllowance = {
+  /** @nullable */
+  planVersionId: number | null;
+  /** @nullable */
+  aiTokensPerMonth: number | null;
+  /** @nullable */
+  aiCostBudgetUsd: number | null;
+};
+
 /**
  * Effective tenant workflow-intelligence thresholds (Stage 5F). All fields are integers; day thresholds are 1-365.
  */
@@ -4372,8 +5957,13 @@ export interface AiSettingsResponse {
   model: string;
   enabled: boolean;
   featureFlags: AiFeatureFlags;
+  /** The EFFECTIVE monthly token budget (tenant override, else the pinned plan version's allowance, else unlimited) */
   monthlyTokenBudget?: number | null;
+  /** The EFFECTIVE monthly cost budget in USD (same precedence) */
   monthlyCostBudgetUsd?: number | null;
+  /** Batch 41 (U4) — where each effective budget comes from */
+  budgetSource: AiSettingsResponseBudgetSource;
+  planAllowance: AiSettingsResponsePlanAllowance;
   workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   availableProviders: string[];
@@ -7054,6 +8644,31 @@ export type PlatformListSubscriptionsBillingSource = typeof PlatformListSubscrip
 export const PlatformListSubscriptionsBillingSource = {
   manual: 'manual',
   stripe: 'stripe',
+} as const;
+
+export type PlatformSubscriptionPlanHistoryParams = {
+/**
+ * Page size (1–200, default 50) over the RELEVANT plan-change events only (ordinary audit rows never consume the page)
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+/**
+ * Opaque cursor of the last entry of the previous page (nextCursor); omitted = the first page
+ */
+cursor?: string;
+/**
+ * asc = oldest first (chronology), desc = newest first (the latest changes are reachable immediately)
+ */
+order?: PlatformSubscriptionPlanHistoryOrder;
+};
+
+export type PlatformSubscriptionPlanHistoryOrder = typeof PlatformSubscriptionPlanHistoryOrder[keyof typeof PlatformSubscriptionPlanHistoryOrder];
+
+
+export const PlatformSubscriptionPlanHistoryOrder = {
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 
 export type ListCompaniesParams = {

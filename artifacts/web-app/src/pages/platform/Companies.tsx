@@ -16,7 +16,7 @@ import { PageHeader, StatusBadge, TableSkeleton, EmptyState, ErrorState } from "
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Search, MoreHorizontal, Power, PowerOff, Building2, CreditCard, Plus, ExternalLink } from "lucide-react";
-import { SubscriptionManager, STATUSES, PLANS, STATUS_LABEL, CANONICAL_STATUS_LABEL, ACCESS_LABEL, statusTone, accessTone, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
+import { SubscriptionManager, STATUSES, usePlanOptions, STATUS_LABEL, CANONICAL_STATUS_LABEL, ACCESS_LABEL, statusTone, accessTone, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
 
 // Batch 21 — the tenant list of the Platform Owner admin panel. Real, server-side
 // paginated data (search / canonical status / plan filters), a row per tenant that
@@ -71,6 +71,8 @@ export default function PlatformCompanies() {
     }
   };
 
+  const planOptions = usePlanOptions();
+
   const submitNew = async () => {
     const name = form.name.trim();
     if (!name) return;
@@ -79,7 +81,7 @@ export default function PlatformCompanies() {
       const created = await createCompany.mutateAsync({
         data: {
           name,
-          plan: form.plan as (typeof PLANS)[number],
+          plan: form.plan,
           industry: form.industry.trim() || null,
           country: form.country.trim() || null,
           primaryContactName: form.primaryContactName.trim() || null,
@@ -135,7 +137,7 @@ export default function PlatformCompanies() {
                 <SelectTrigger className="w-[150px]" data-testid="company-plan-filter"><SelectValue placeholder="Plan" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All plans</SelectItem>
-                  {PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
+                  {planOptions.all.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -251,7 +253,7 @@ export default function PlatformCompanies() {
               <Label>Plan</Label>
               <Select value={form.plan} onValueChange={(v) => setForm({ ...form, plan: v })}>
                 <SelectTrigger data-testid="new-company-plan"><SelectValue /></SelectTrigger>
-                <SelectContent>{PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
+                <SelectContent>{planOptions.assignable.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">

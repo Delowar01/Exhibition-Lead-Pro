@@ -31,14 +31,17 @@ export async function runSubscriptionSweep(now = new Date()): Promise<SweepSumma
       let n = 0;
       for (const sub of rows) {
         summary.examined += 1;
-        const after = await expireElapsedTrial(tx, sub, SYSTEM_ACTOR);
+        const after = await expireElapsedTrial(tx, sub, SYSTEM_ACTOR, now);
         if (after) {
           n += 1;
           logger.info({ subscriptionId: sub.id, companyId: sub.companyId, from: sub.status, to: after.status, sweep: "subscription" }, "Manual trial expired by lifecycle sweep");
         }
       }
       summary.expired += n;
-      return rows.length;
+      // Batch 41: rows inside a read-only grace are selected (trial end passed)
+      // but not expired; a full batch that expired nothing would be re-selected
+      // forever, so the loop stops when a round changes nothing.
+      return n === 0 ? 0 : rows.length;
     });
     if (processed < BATCH) break;
   }

@@ -11,6 +11,8 @@ import { TeamMemberReportSection } from "@/components/reports/TeamMemberReportSe
 import { ExportCenterPanel } from "@/components/reports/ExportCenterPanel";
 import { ExportHistoryPanel } from "@/components/reports/ExportHistoryPanel";
 import { ExportSchedulesPanel } from "@/components/reports/ExportSchedulesPanel";
+import { useAuth } from "@/contexts/AuthContext";
+import { featureAllowed } from "@/lib/entitlements";
 
 // Reports & Export Center workspace (Batch 9). One page, four areas:
 //   Reports        — overview charts + Event Report + Team Member Report
@@ -136,6 +138,10 @@ function OverviewPanel() {
 }
 
 export default function AdminReports() {
+  const { user } = useAuth();
+  // Batch 41 (PB-3): the Schedules tab follows the plan version's
+  // `exports.scheduled` entitlement (the API refuses /exports/schedules too).
+  const canSchedule = featureAllowed(user, "exports.scheduled");
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -146,7 +152,7 @@ export default function AdminReports() {
         <TabsList data-testid="reports-workspace-tabs">
           <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
           <TabsTrigger value="export" data-testid="tab-export">Export Center</TabsTrigger>
-          <TabsTrigger value="schedules" data-testid="tab-schedules">Schedules</TabsTrigger>
+          {canSchedule && <TabsTrigger value="schedules" data-testid="tab-schedules">Schedules</TabsTrigger>}
           <TabsTrigger value="history" data-testid="tab-history">Export History</TabsTrigger>
         </TabsList>
 
@@ -173,9 +179,11 @@ export default function AdminReports() {
           <ExportCenterPanel />
         </TabsContent>
 
-        <TabsContent value="schedules" className="mt-4">
-          <ExportSchedulesPanel />
-        </TabsContent>
+        {canSchedule && (
+          <TabsContent value="schedules" className="mt-4">
+            <ExportSchedulesPanel />
+          </TabsContent>
+        )}
 
         <TabsContent value="history" className="mt-4">
           <ExportHistoryPanel />
