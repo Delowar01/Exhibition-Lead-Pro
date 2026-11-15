@@ -35,9 +35,9 @@ centralizing `SESSION_SECRET` with fail-fast validation.
 
 | # | Item | Impact | Remediation stage |
 |---|---|---|---|
-| L1 | **vCard parser gaps (line-folding RFC 2426, QUOTED-PRINTABLE).** | Some legacy address-book exports won't fully decode. Low real-world frequency. | Backlog — add parser tests + handling when prioritized. |
+| L1 | **vCard parser gaps (line-folding RFC 2426, QUOTED-PRINTABLE).** | Some legacy address-book exports won't fully decode. Low real-world frequency. | **RESOLVED — code is authoritative** (reconciled 2026-10-30, batch 38): `artifacts/mobile/lib/contact-parse.ts` unfolds RFC 2426 / 6350 continuation lines and vCard 2.1 QUOTED-PRINTABLE soft breaks and decodes QUOTED-PRINTABLE values; covered by `contact-parse.test.ts`. Row kept for traceability. |
 | L2 | **Single phone number / Arabic name stored in notes.** | Only the primary `TEL` is kept; extracted Arabic-script name lives in notes, not a structured column. | Backlog — requires a schema migration; out of Stage 1 scope. |
-| L3 | **Dashboard first-load polish.** | Dashboard has minimal skeleton/empty treatment vs. richer list screens. No business-logic impact. | Backlog — UX polish. |
+| L3 | **Dashboard first-load polish.** | Dashboard has minimal skeleton/empty treatment vs. richer list screens. No business-logic impact. | **RESOLVED — code is authoritative** (reconciled 2026-10-30, batch 38): the admin Dashboard renders `CardGridSkeleton` / `TableSkeleton` on first load with `ErrorState` / `EmptyState` treatment (`artifacts/web-app/src/pages/admin/Dashboard.tsx`); the mobile Home dashboard gained skeletons and explicit error states with Retry in Batches 37 / 38 (review branch, not yet merged). Row kept for traceability. |
 
 ## Resolved in Stage 1 (for traceability)
 
