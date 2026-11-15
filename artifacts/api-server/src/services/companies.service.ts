@@ -9,6 +9,7 @@ import { parseListQuery } from "../lib/list-query.js";
 import { ensureStages } from "./pipeline.service.js";
 import * as lifecycle from "./subscription-lifecycle.service.js";
 import { resolveEntitlement, normalizeLegacyStatus } from "../lib/billing/lifecycle.js";
+import { resolveSubscriptionContext } from "../lib/company-access.js";
 import type { Actor } from "./subscription-lifecycle.service.js";
 
 export interface ListCompaniesParams {
@@ -23,7 +24,8 @@ export interface ListCompaniesParams {
 // legacy `plan`/`status` columns on the row are mirrors and are not consulted.
 async function withSubscription<T extends { id: number; plan: string; status: string }>(c: T) {
   const sub = await subsRepo.findByCompanyId(c.id);
-  const entitlement = resolveEntitlement(sub ?? null);
+  // Batch 41: version-aware (trial grace) — the same decision path as the gate.
+  const entitlement = sub ? (await resolveSubscriptionContext(sub)).entitlement : resolveEntitlement(null);
   return {
     ...c,
     plan: sub?.plan ?? c.plan,

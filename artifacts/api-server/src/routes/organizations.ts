@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { requireFeature } from "../lib/feature-entitlements.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateCrmOrganizationBody, UpdateCrmOrganizationBody } from "@workspace/api-zod";
 import * as organizations from "../services/organizations.service.js";
@@ -43,7 +44,10 @@ router.get("/organizations/:id/notes", requirePermission("organizations", "view"
 });
 
 // GET /organizations/:id/documents
-router.get("/organizations/:id/documents", requirePermission("organizations", "view"), async (req: AuthRequest, res) => {
+// Release correction E1: this is a document READ, so it carries the same plan
+// feature gate as the /documents module (legacy versions allow everything). It
+// sits after the existing permission check, so RBAC answers exactly as before.
+router.get("/organizations/:id/documents", requirePermission("organizations", "view"), requireFeature("documents"), async (req: AuthRequest, res) => {
   res.json(await organizations.listOrganizationDocuments(req.user!, parseInt(String(req.params.id))));
 });
 

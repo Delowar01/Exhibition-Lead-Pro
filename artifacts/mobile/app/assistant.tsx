@@ -30,6 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { FONT } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { assistantAllowed } from "@/lib/entitlements";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { classifySendError, sendErrorMessageKey, type SendErrorKind } from "@/lib/assistant-error";
@@ -44,8 +45,13 @@ export default function AssistantScreen() {
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
   const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
+  // Batch 41 (PB-3): the plan version's `ai.assistant` entitlement gates the
+  // assistant before RBAC (the API refuses /ai/assistant with FEATURE_NOT_ENTITLED).
+  // Release correction M4: the same routes also need `ai.command_center`
+  // (deny wins on the server), so the screen mirrors both.
+  const entitled = assistantAllowed(user);
   const canUse =
-    user?.role === "primary_admin" || assistantPerms.includes("use");
+    entitled && (user?.role === "primary_admin" || assistantPerms.includes("use"));
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [input, setInput] = useState("");
@@ -362,7 +368,7 @@ export default function AssistantScreen() {
         <TextInput
           value={input}
           onChangeText={setInput}
-          placeholder={canUse ? t("assistant.placeholder") : t("assistant.readOnly")}
+          placeholder={canUse ? t("assistant.placeholder") : entitled ? t("assistant.readOnly") : t("assistant.notEntitled")}
           placeholderTextColor={colors.mutedForeground}
           editable={canUse && !sendMutation.isPending && !createMutation.isPending}
           multiline

@@ -11,6 +11,14 @@ export type CustomFetchOptions = RequestInit & {
  */
 export type UnauthorizedHandler = () => Promise<string | null>;
 
+/**
+ * Observer invoked when a response is a 403 whose body code is
+ * `FEATURE_NOT_ENTITLED` — the server just refused a feature the client still
+ * offered, so its cached entitlements are stale. Notification only: the
+ * request still fails with the same `ApiError`.
+ */
+export type FeatureDeniedHandler = () => void;
+
 export type ErrorType<T = unknown> = ApiError<T>;
 
 export type BodyType<T> = T;
@@ -27,6 +35,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _onUnauthorized: UnauthorizedHandler | null = null;
+let _onFeatureDenied: FeatureDeniedHandler | null = null;
 // Shared in-flight refresh promise so concurrent 401s trigger only one refresh.
 let _refreshInFlight: Promise<string | null> | null = null;
 
@@ -72,6 +81,15 @@ export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
  */
 export function setOnUnauthorized(handler: UnauthorizedHandler | null): void {
   _onUnauthorized = handler;
+}
+
+/**
+ * Register an observer for 403 `FEATURE_NOT_ENTITLED` responses (see
+ * `FeatureDeniedHandler`). It never changes the request flow or the thrown
+ * error. Pass `null` to clear it.
+ */
+export function setOnFeatureDenied(handler: FeatureDeniedHandler | null): void {
+  _onFeatureDenied = handler;
 }
 
 // Endpoints that must never trigger the refresh-on-401 retry, otherwise a failed
@@ -425,6 +443,17 @@ export async function customFetch<T = unknown>(
     }
 
     const errorData = await parseErrorBody(response, method);
+    if (
+      response.status === 403 &&
+      _onFeatureDenied &&
+      getStringField(errorData, "code") === "FEATURE_NOT_ENTITLED"
+    ) {
+      try {
+        _onFeatureDenied();
+      } catch {
+        // Observer only — it must never replace the error thrown below.
+      }
+    }
     throw new ApiError(response, errorData, requestInfo);
   }
 

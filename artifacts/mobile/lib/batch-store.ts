@@ -16,6 +16,15 @@ export interface BatchOcrResult {
 
 let captures: BatchCapture[] = [];
 const ocrResults = new Map<string, BatchOcrResult>();
+// Batch session counter. clearBatchCaptures() starts a new session; a background
+// OCR completion that carries an older session token belongs to a batch the user
+// already left and must not re-enter the store (Batch 38 audit: stale completion
+// after batch exit).
+let session = 1;
+
+export function getBatchSession(): number {
+  return session;
+}
 
 export function setBatchCaptures(items: BatchCapture[]): void {
   captures = items;
@@ -32,10 +41,19 @@ export function getBatchCaptures(): BatchCapture[] {
 export function clearBatchCaptures(): void {
   captures = [];
   ocrResults.clear();
+  session += 1;
 }
 
-export function setBatchOcrResult(id: string, result: BatchOcrResult): void {
+/**
+ * Records an OCR result. When `forSession` is given (the session token captured
+ * when the shot was taken), a result from an ended session is ignored and `false`
+ * is returned, so a late background completion can never resurrect a cleared
+ * batch or disturb the pending count of the next one.
+ */
+export function setBatchOcrResult(id: string, result: BatchOcrResult, forSession?: number): boolean {
+  if (forSession !== undefined && forSession !== session) return false;
   ocrResults.set(id, result);
+  return true;
 }
 
 export function getBatchOcrResult(id: string): BatchOcrResult | undefined {

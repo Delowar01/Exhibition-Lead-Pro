@@ -24,6 +24,12 @@ export interface AuthUser {
   // Server-side session id this request's token belongs to. Absent for legacy
   // tokens minted before sessions existed (still accepted for back-compat).
   sessionId: number | null;
+  // Batch 41 (PB-3): the tenant's feature entitlements + trial policy resolved
+  // from the canonical subscription and its pinned plan version by
+  // lib/company-access.ts — the SAME projection the login response carries, so
+  // the per-request feature gate (lib/feature-entitlements.ts) and the clients'
+  // visibility rules can never disagree. null = no tenant context.
+  entitlements: TenantEntitlements | null;
 }
 
 export interface AuthRequest extends Request {
@@ -48,8 +54,8 @@ export { normalizeRole };
 // lib/company-access.ts (shared with the login path and the refresh-rotation
 // path so all three apply the same entitlement policy). The legacy company
 // billing columns are never read here.
-import { loadTenantAccess, type CompanyAccess } from "../lib/company-access.js";
-export { type CompanyAccess };
+import { loadTenantAccess, type CompanyAccess, type TenantEntitlements } from "../lib/company-access.js";
+export { type CompanyAccess, type TenantEntitlements };
 
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -92,6 +98,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 
     let companyStatus: string | null = null;
     let readOnly = false;
+    let entitlements: TenantEntitlements | null = null;
     if (user.companyId) {
       const tenant = await loadTenantAccess(user.companyId);
       companyStatus = tenant.summary?.status ?? null;
@@ -100,6 +107,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
         return;
       }
       readOnly = tenant.access.readOnly;
+      entitlements = tenant.entitlements;
     }
 
     const accessRows = await db
@@ -138,6 +146,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       readOnly,
       accessibleCompanies,
       sessionId,
+      entitlements,
     };
     next();
   } catch (err) {
@@ -163,10 +172,12 @@ export async function loadAuthUserById(userId: number): Promise<AuthUser | null>
 
   let companyStatus: string | null = null;
   let readOnly = false;
+  let entitlements: TenantEntitlements | null = null;
   if (user.companyId) {
     const tenant = await loadTenantAccess(user.companyId);
     companyStatus = tenant.summary?.status ?? null;
     readOnly = tenant.access.blocked ? true : tenant.access.readOnly;
+    entitlements = tenant.entitlements;
   }
 
   const accessRows = await db
@@ -194,6 +205,7 @@ export async function loadAuthUserById(userId: number): Promise<AuthUser | null>
     readOnly,
     accessibleCompanies,
     sessionId: null,
+    entitlements,
   };
 }
 

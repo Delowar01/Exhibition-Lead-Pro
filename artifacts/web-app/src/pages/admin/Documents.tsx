@@ -6,6 +6,8 @@ import {
   type DocumentEntityType,
 } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { featureAllowed } from "@/lib/entitlements";
+import { FeatureUnavailable } from "@/components/FeatureUnavailable";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +43,15 @@ const ENTITY_TYPES: DocumentEntityType[] = [
   "event",
 ];
 
+// Batch 41 (PB-3): the Documents module follows the plan version's
+// `documents` entitlement (the API refuses /documents with FEATURE_NOT_ENTITLED).
 export default function AdminDocuments() {
+  const { user } = useAuth();
+  if (!featureAllowed(user, "documents")) return <FeatureUnavailable feature="documents" />;
+  return <AdminDocumentsWorkspace />;
+}
+
+function AdminDocumentsWorkspace() {
   const { user } = useAuth();
   const perms = useDocumentPermissions();
 

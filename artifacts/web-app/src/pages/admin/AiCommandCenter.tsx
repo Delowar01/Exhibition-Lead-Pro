@@ -26,6 +26,8 @@ import { EmptyState, ListSkeleton } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { describeAiError } from "@/lib/ai-errors";
+import { featureAllowed } from "@/lib/entitlements";
+import { FeatureUnavailable } from "@/components/FeatureUnavailable";
 
 function formatTs(ts?: string | null): string {
   if (!ts) return "—";
@@ -133,7 +135,23 @@ function MessageBubble({ m, onPrompt, onNavigate, onCopy }: { m: AssistantMessag
   );
 }
 
+// Batch 41 (PB-3): the Command Center is the web surface of the assistant
+// conversation routes, which the API gates on BOTH `ai.assistant` and
+// `ai.command_center`. Deciding before the inner component mounts keeps the
+// page from issuing requests the server would refuse with FEATURE_NOT_ENTITLED.
 export default function AiCommandCenter() {
+  const { user } = useAuth();
+  if (!featureAllowed(user, "ai.command_center") || !featureAllowed(user, "ai.assistant")) {
+    return (
+      <AiWorkspaceLayout activeTab="command">
+        <FeatureUnavailable feature={featureAllowed(user, "ai.command_center") ? "ai.assistant" : "ai.command_center"} />
+      </AiWorkspaceLayout>
+    );
+  }
+  return <AiCommandCenterWorkspace />;
+}
+
+function AiCommandCenterWorkspace() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();

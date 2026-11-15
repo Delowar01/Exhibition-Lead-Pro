@@ -27,6 +27,7 @@ const PlatformCompanies = lazy(() => import("@/pages/platform/Companies"));
 const PlatformCompanyDetail = lazy(() => import("@/pages/platform/CompanyDetail"));
 const PlatformUsers = lazy(() => import("@/pages/platform/Users"));
 const PlatformSubscriptions = lazy(() => import("@/pages/platform/Subscriptions"));
+const PlatformPlans = lazy(() => import("@/pages/platform/Plans"));
 const PlatformAnalytics = lazy(() => import("@/pages/platform/Analytics"));
 const PlatformActivity = lazy(() => import("@/pages/platform/Activity"));
 const PlatformSettings = lazy(() => import("@/pages/platform/Settings"));
@@ -152,7 +153,7 @@ function ProtectedRoute({ component: Component, role, layout: Layout }: any) {
 }
 
 function Router() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [, setLocation] = useLocation();
 
   // Register the refresh-on-401 handler: rotate the refresh token, update
@@ -178,6 +179,9 @@ function Router() {
         if (data.refreshToken) {
           localStorage.setItem("csp_refresh_token", data.refreshToken);
         }
+        // M5: a renewed session re-reads the user so the plan entitlements are
+        // current again. Fire-and-forget — it never delays or fails the retry.
+        refreshUser("token-refresh");
         return data.token as string;
       } catch {
         logout();
@@ -185,7 +189,7 @@ function Router() {
       }
     });
     return () => setOnUnauthorized(null);
-  }, [logout]);
+  }, [logout, refreshUser]);
 
   useEffect(() => {
     if (window.location.pathname === "/") {
@@ -236,6 +240,9 @@ function Router() {
       </Route>
       <Route path="/platform/subscriptions">
         {() => <ProtectedRoute component={PlatformSubscriptions} role="platform" layout={PlatformLayout} />}
+      </Route>
+      <Route path="/platform/plans">
+        {() => <ProtectedRoute component={PlatformPlans} role="platform" layout={PlatformLayout} />}
       </Route>
       <Route path="/platform/analytics">
         {() => <ProtectedRoute component={PlatformAnalytics} role="platform" layout={PlatformLayout} />}

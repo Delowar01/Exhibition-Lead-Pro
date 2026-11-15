@@ -37,7 +37,8 @@ export async function buildUserResponse(user: UserRow, companyName: string | nul
   const accessibleCompanies = await accessibleCompaniesFor(user.id, user.companyId);
   // Batch 20: stable subscription projection (plan/status/access mode) so clients
   // never have to infer read-only state from a 403.
-  const subscription = user.companyId ? (await loadTenantAccess(user.companyId)).summary : null;
+  const tenant = user.companyId ? await loadTenantAccess(user.companyId) : null;
+  const subscription = tenant?.summary ?? null;
   return {
     id: user.id,
     email: user.email,
@@ -60,6 +61,10 @@ export async function buildUserResponse(user: UserRow, companyName: string | nul
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     subscription,
+    // Batch 41 (PB-3): the plan-version feature entitlements + trial policy the
+    // server enforces (lib/company-access.ts) — the clients hide / disable what
+    // is not included instead of discovering it through a 403.
+    entitlements: tenant?.entitlements ?? null,
   };
 }
 

@@ -1,6 +1,7 @@
 import { pgTable, serial, text, integer, boolean, timestamp, index, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { plansTable } from "./plans";
+import { planVersionsTable } from "./plan_versions";
 
 // Provider price mappings (Batch 20). One internal plan can carry several
 // recurring provider prices (e.g. monthly + yearly, several currencies). A row is
@@ -14,6 +15,10 @@ export const planPricesTable = pgTable(
   {
     id: serial("id").primaryKey(),
     planId: text("plan_id").notNull().references(() => plansTable.id),
+    // Batch 40: NULL = the price applies to every version of the plan; a value
+    // restricts the mapping to that published version (compatible reference;
+    // the registration flow keeps writing NULL in this batch).
+    planVersionId: integer("plan_version_id").references(() => planVersionsTable.id),
     provider: text("provider").notNull().default("stripe"),
     providerPriceId: text("provider_price_id").notNull().unique(),
     providerProductId: text("provider_product_id"),

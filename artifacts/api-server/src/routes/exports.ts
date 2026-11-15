@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireFeature } from "../lib/feature-entitlements.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateExportBody, CreateExportScheduleBody, UpdateExportScheduleBody } from "@workspace/api-zod";
@@ -17,6 +18,9 @@ router.use(requireAuth);
 router.use("/exports", requireTenantUser);
 router.use("/exports", blockReadOnlyMutations);
 router.use("/exports", auditMutations("exports"));
+// Batch 41 (PB-3): recurring (scheduled) exports are a plan feature; on-demand
+// exports and run history stay available to every tenant.
+router.use("/exports/schedules", requireFeature("exports.scheduled"));
 
 // ── Export run history (static sub-paths BEFORE any /:id) ─────────────────────
 

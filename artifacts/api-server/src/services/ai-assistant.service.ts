@@ -10,6 +10,8 @@ import * as executive from "./executive-intelligence.service.js";
 import * as copilot from "./ai-copilot.service.js";
 import * as insights from "./ai-insights.service.js";
 import { resolveSettings } from "./ai.service.js";
+import { featureAllowedFor } from "../lib/feature-entitlements.js";
+import { FEATURE_LABEL, type PlanFeatureKey } from "../lib/billing/plan-versions.js";
 import { PROMPTS } from "../ai/prompts.js";
 import { phraseAssistantAnswer, logAiError, type AppLanguage } from "../lib/ai.js";
 
@@ -31,6 +33,12 @@ import { phraseAssistantAnswer, logAiError, type AppLanguage } from "../lib/ai.j
 // - RBAC INSIDE the orchestration: each intent re-checks the caller's permission for
 //   the UNDERLYING module (ai_workflow/ai_executive/ai_copilot/ai_insights/contacts/
 //   leads/events) before calling it — the assistant can never become a bypass route.
+// - PLAN FEATURES INSIDE the orchestration (release correction E3): Workflow and
+//   Executive Intelligence are plan features with their own route gates
+//   (/ai/workflow, /ai/executive). The assistant calls those engines in-process,
+//   so each intent, suggestion and capability flag re-checks the SAME feature
+//   entitlement — a tenant whose plan version denies a feature cannot reach it by
+//   asking the assistant. Legacy plan versions allow every feature (no change).
 // - TENANT ISOLATION: conversations are per-user per-tenant; all CRM reads go through
 //   tenantScope-based repositories. platform_owner is blocked at the route (requireTenantUser).
 
@@ -75,6 +83,23 @@ interface EvidenceRef {
 function can(user: AuthUser, module: string, action: string): boolean {
   if (user.role === "primary_admin") return true;
   return (user.permissions?.[module] ?? []).includes(action);
+}
+
+// The plan feature that owns an underlying AI module (absent = not plan-gated).
+const MODULE_FEATURE: Record<string, PlanFeatureKey | undefined> = {
+  ai_workflow: "workflow.intelligence",
+  ai_executive: "executive.intelligence",
+};
+
+/** True when the caller's plan version grants the feature owning this module (modules without a plan feature are always granted). */
+function planGrants(user: AuthUser, module: string): boolean {
+  const feature = MODULE_FEATURE[module];
+  return feature ? featureAllowedFor(user, feature) : true;
+}
+
+/** RBAC permission AND plan feature — what the assistant may offer or run for this caller. */
+function canUse(user: AuthUser, module: string, action: string): boolean {
+  return can(user, module, action) && planGrants(user, module);
 }
 
 function requireCompany(user: AuthUser): number {
@@ -159,9 +184,27 @@ async function runIntent(user: AuthUser, intent: Intent, query: string, ctx: Con
     confidence: 100,
     phrasable: false,
   });
+  // Release correction E3: the plan-feature denial. Same shape as an RBAC denial
+  // (HTTP 200, deterministic, no data, no evidence, never LLM-phrased) plus the
+  // machine-readable feature key, so clients can explain it. Checked AFTER the
+  // permission so RBAC answers exactly as before.
+  const notEntitled = (module: string): GroundedResult | null => {
+    if (planGrants(user, module)) return null;
+    const feature = MODULE_FEATURE[module]!;
+    return {
+      text: language === "ar" ? "هذه الميزة غير متضمنة في باقة مؤسستك. تواصل مع مدير الحساب لترقية الباقة." : `${FEATURE_LABEL[feature]} is not included in your organization's plan.`,
+      data: { featureDenied: feature, code: "FEATURE_NOT_ENTITLED" },
+      evidence: [],
+      actions: [],
+      confidence: 100,
+      phrasable: false,
+    };
+  };
 
   if (intent === "priorities" || intent === "risks") {
     if (!can(user, "ai_workflow", "view")) return denied("ai_workflow", "view");
+    const gated = notEntitled("ai_workflow");
+    if (gated) return gated;
     const result = await workflow.getSlaRisks(user, {});
     const top = result.risks.slice(0, 8);
     const lines = top.map((r) => `- [${r.riskLevel}] ${r.title}: ${r.detail} → ${r.recommendedAction}`);
@@ -183,6 +226,8 @@ async function runIntent(user: AuthUser, intent: Intent, query: string, ctx: Con
 
   if (intent === "bottlenecks") {
     if (!can(user, "ai_workflow", "view")) return denied("ai_workflow", "view");
+    const gated = notEntitled("ai_workflow");
+    if (gated) return gated;
     const result = await workflow.getBottlenecks(user, {});
     const top = (result.bottlenecks as Array<{ title?: string; detail?: string; stage?: string }>).slice(0, 6);
     const lines = top.map((b) => `- ${b.title ?? b.stage ?? "stage"}: ${b.detail ?? ""}`.trim());
@@ -200,6 +245,8 @@ async function runIntent(user: AuthUser, intent: Intent, query: string, ctx: Con
 
   if (intent === "workload") {
     if (!can(user, "ai_workflow", "view")) return denied("ai_workflow", "view");
+    const gated = notEntitled("ai_workflow");
+    if (gated) return gated;
     const result = await workflow.getHealth(user, {});
     return {
       text: language === "ar" ? "إليك نظرة عامة على صحة سير العمل وعبء الفريق (انظر التفاصيل أدناه)." : "Here is the current workflow health & team workload overview (details below).",
@@ -213,6 +260,8 @@ async function runIntent(user: AuthUser, intent: Intent, query: string, ctx: Con
 
   if (intent === "forecast") {
     if (!can(user, "ai_executive", "generate")) return denied("ai_executive", "generate");
+    const gated = notEntitled("ai_executive");
+    if (gated) return gated;
     const result = await executive.generateForecast(user, {});
     return {
       text: language === "ar" ? "تم إعداد التوقعات من بيانات CRM الفعلية (انظر التفاصيل أدناه)." : "Forecast generated from your real CRM history (details below).",
@@ -226,6 +275,8 @@ async function runIntent(user: AuthUser, intent: Intent, query: string, ctx: Con
 
   if (intent === "executive_summary") {
     if (!can(user, "ai_executive", "generate")) return denied("ai_executive", "generate");
+    const gated = notEntitled("ai_executive");
+    if (gated) return gated;
     const result = await executive.generateSummary(user, {});
     return {
       text: language === "ar" ? "تم إعداد الملخص التنفيذي من مؤشرات CRM الفعلية (انظر التفاصيل أدناه)." : "Executive summary generated from your real CRM signals (details below).",
@@ -385,8 +436,8 @@ async function runIntent(user: AuthUser, intent: Intent, query: string, ctx: Con
 
   // help / fallback — deterministic capability overview, adapted to role & permissions.
   const capabilities: string[] = [];
-  if (can(user, "ai_workflow", "view")) capabilities.push(language === "ar" ? "أولويات اليوم والمخاطر والاختناقات (اسأل: ما أولوياتي اليوم؟)" : 'Today\'s priorities, at-risk deals & bottlenecks ("What are my priorities today?")');
-  if (can(user, "ai_executive", "generate")) capabilities.push(language === "ar" ? "ملخص تنفيذي وتوقعات (اسأل: أعطني ملخصاً تنفيذياً)" : 'Executive summaries & forecasts ("Give me an executive summary")');
+  if (canUse(user, "ai_workflow", "view")) capabilities.push(language === "ar" ? "أولويات اليوم والمخاطر والاختناقات (اسأل: ما أولوياتي اليوم؟)" : 'Today\'s priorities, at-risk deals & bottlenecks ("What are my priorities today?")');
+  if (canUse(user, "ai_executive", "generate")) capabilities.push(language === "ar" ? "ملخص تنفيذي وتوقعات (اسأل: أعطني ملخصاً تنفيذياً)" : 'Executive summaries & forecasts ("Give me an executive summary")');
   if (can(user, "ai_copilot", "generate")) capabilities.push(language === "ar" ? "مسودات بريد/واتساب وتحضير مكالمات (من داخل سجل)" : 'Email/WhatsApp drafts, call & meeting prep (from a lead/contact)');
   if (can(user, "ai_insights", "view")) capabilities.push(language === "ar" ? "رؤى ذكية عن السجلات" : "AI insights on your records");
   if (can(user, "contacts", "view")) capabilities.push(language === "ar" ? 'البحث (مثال: أظهر جهات الاتصال من "شركة ABC")' : 'Natural search ("Show contacts from \\"Company ABC\\"")');
@@ -394,10 +445,13 @@ async function runIntent(user: AuthUser, intent: Intent, query: string, ctx: Con
     text: (language === "ar" ? "أنا مساعدك الذكي — أعمل فقط على بيانات CRM الحقيقية ولا أنفذ أي إجراء تلقائياً. يمكنني:\n" : "I'm your AI assistant — I only work from your real CRM data and never execute actions automatically. I can help with:\n") + capabilities.map((c) => `- ${c}`).join("\n"),
     data: { capabilities },
     evidence: [],
-    actions: [
-      { label: language === "ar" ? "أولويات اليوم" : "Today's priorities", type: "prompt", target: language === "ar" ? "ما أولوياتي اليوم؟" : "What are my priorities today?" },
-      { label: language === "ar" ? "الفرص المعرضة للخطر" : "Opportunities at risk", type: "prompt", target: language === "ar" ? "ما الفرص المعرضة للخطر؟" : "Show opportunities at risk" },
-    ],
+    // Both quick prompts run Workflow Intelligence: not offered when the plan denies it.
+    actions: planGrants(user, "ai_workflow")
+      ? [
+          { label: language === "ar" ? "أولويات اليوم" : "Today's priorities", type: "prompt", target: language === "ar" ? "ما أولوياتي اليوم؟" : "What are my priorities today?" },
+          { label: language === "ar" ? "الفرص المعرضة للخطر" : "Opportunities at risk", type: "prompt", target: language === "ar" ? "ما الفرص المعرضة للخطر؟" : "Show opportunities at risk" },
+        ]
+      : [],
     confidence: 100,
     phrasable: false,
   };
@@ -413,6 +467,37 @@ function formatConversation(c: import("@workspace/db").AiConversation) {
     contextId: c.contextId,
     lastMessageAt: c.lastMessageAt.toISOString(),
     createdAt: c.createdAt.toISOString(),
+  };
+}
+
+// Release correction E3 (independent review): an answer the assistant stored
+// while the tenant still had Workflow / Executive Intelligence is that feature's
+// data. Once the plan denies the feature it is no longer served from the
+// conversation history either — the same stance as a previously generated
+// executive report. The stored row is untouched (it reads normally again if the
+// feature returns); only the projection is redacted.
+const INTENT_MODULE: Partial<Record<string, string>> = {
+  priorities: "ai_workflow",
+  risks: "ai_workflow",
+  bottlenecks: "ai_workflow",
+  workload: "ai_workflow",
+  forecast: "ai_executive",
+  executive_summary: "ai_executive",
+};
+function deniedFeatureOf(user: AuthUser, m: { role: string; intent: string | null }): PlanFeatureKey | null {
+  if (m.role !== "assistant" || !m.intent) return null;
+  const module = INTENT_MODULE[m.intent];
+  if (!module || planGrants(user, module)) return null;
+  return MODULE_FEATURE[module] ?? null;
+}
+const redactedContent = (feature: PlanFeatureKey) => `${FEATURE_LABEL[feature]} is not included in your organization's plan.`;
+
+function formatMessageFor(user: AuthUser) {
+  return (m: import("@workspace/db").AiMessage) => {
+    const formatted = formatMessage(m);
+    const feature = deniedFeatureOf(user, m);
+    if (!feature) return formatted;
+    return { ...formatted, content: redactedContent(feature), data: { featureDenied: feature, code: "FEATURE_NOT_ENTITLED" }, evidence: [], suggestedActions: [] };
   };
 }
 
@@ -464,7 +549,7 @@ export async function getConversation(user: AuthUser, id: number) {
   const conv = await repo.findConversation(user, id);
   if (!conv) throw new AppError(404, "Conversation not found");
   const messages = await repo.listMessages(companyId, conv.id);
-  return { ...formatConversation(conv), messages: messages.map(formatMessage) };
+  return { ...formatConversation(conv), messages: messages.map(formatMessageFor(user)) };
 }
 
 export async function deleteConversation(user: AuthUser, id: number) {
@@ -560,12 +645,12 @@ export async function getSuggestions(user: AuthUser, raw: { contextType?: unknow
   } else if (ctx.contextType === "business_card") {
     prompts.push({ label: "Review this scan", prompt: "Review the OCR confidence and duplicate warnings for this scan" });
   }
-  if (can(user, "ai_workflow", "view")) {
+  if (canUse(user, "ai_workflow", "view")) {
     prompts.push({ label: "Today's priorities", prompt: "What are my priorities today?" });
     prompts.push({ label: "Opportunities at risk", prompt: "Show opportunities at risk" });
     prompts.push({ label: "Pipeline bottlenecks", prompt: "Where are the bottlenecks in our pipeline?" });
   }
-  if (can(user, "ai_executive", "generate")) {
+  if (canUse(user, "ai_executive", "generate")) {
     prompts.push({ label: "Executive summary", prompt: "Give me an executive summary" });
     prompts.push({ label: "Revenue forecast", prompt: "Show me the revenue forecast" });
   }
@@ -582,10 +667,13 @@ export async function getSuggestions(user: AuthUser, raw: { contextType?: unknow
     modules: {
       insights: can(user, "ai_insights", "view"),
       copilot: can(user, "ai_copilot", "view"),
-      executive: can(user, "ai_executive", "view"),
-      workflow: can(user, "ai_workflow", "view"),
+      executive: canUse(user, "ai_executive", "view"),
+      workflow: canUse(user, "ai_workflow", "view"),
     },
     provider: settings ? { provider: settings.provider, model: settings.model, enabled: settings.enabled } : null,
-    recentActivity: recent.map((m) => ({ id: m.id, conversationId: m.conversationId, intent: m.intent, content: m.content.slice(0, 140), source: m.source, createdAt: m.createdAt.toISOString() })),
+    recentActivity: recent.map((m) => {
+      const feature = deniedFeatureOf(user, m);
+      return { id: m.id, conversationId: m.conversationId, intent: m.intent, content: (feature ? redactedContent(feature) : m.content).slice(0, 140), source: m.source, createdAt: m.createdAt.toISOString() };
+    }),
   };
 }

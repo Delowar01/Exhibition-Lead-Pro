@@ -5,6 +5,9 @@ import { config } from "../config.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import * as repo from "../repositories/ai.repository.js";
 import type { RawAgg } from "../repositories/ai.repository.js";
+import * as subsRepo from "../repositories/subscriptions.repository.js";
+import { allowancesOf } from "../lib/billing/plan-versions.js";
+import { getCachedAiSettings, setCachedAiSettings, invalidateAiSettingsCache } from "../lib/ai-settings-cache.js";
 import { AI_FEATURES, type AiFeature, type AiUsage } from "../ai/types.js";
 import { availableProviders } from "../ai/providers/index.js";
 import { geminiProvider } from "../ai/providers/gemini.js";
@@ -24,6 +27,16 @@ import {
 // unlimited budgets). Existing tenants therefore keep working with zero behavior
 // change — the gates only fire when an admin has explicitly disabled a feature or set
 // a budget that has been exhausted.
+//
+// Batch 41 (PB-3.3 / U4) — plan-version AI allowances SEED the monthly budgets
+// through this SAME resolver (no second budget system): for each budget,
+//   explicit tenant budget in ai_settings (non-null)  → wins ("tenant")
+//   else the pinned PUBLISHED plan version's allowance → applies ("plan")
+//   else                                               → unlimited ("none")
+// Legacy / pre-Batch-41 versions carry no allowances, so nothing changes for
+// them; an invalid version reference contributes no allowance either (the
+// limits path already fails closed on it). Reservations, usage accounting and
+// the 429 path are untouched — they read the resolved budget as before.
 
 export interface EffectiveAiSettings {
   companyId: number;
@@ -40,13 +53,17 @@ export interface EffectiveAiSettings {
   workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   updatedAt: Date | null;
+  // Batch 41: where each effective budget comes from (tenant override, plan
+  // version allowance, or none = unlimited) + the allowance itself.
+  budgetSource: { tokens: BudgetSource; cost: BudgetSource };
+  planAllowance: { planVersionId: number | null; aiTokensPerMonth: number | null; aiCostMicroUsdPerMonth: number | null };
 }
 
-interface CacheEntry {
-  value: EffectiveAiSettings;
-  expires: number;
-}
-const settingsCache = new Map<number, CacheEntry>();
+export type BudgetSource = "tenant" | "plan" | "none";
+export const AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE = "AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE";
+export const AI_MODEL_NOT_SUPPORTED = "AI_MODEL_NOT_SUPPORTED";
+// The budget columns are 32-bit integers: a larger value is a client error, not a database error.
+const MAX_BUDGET_INT = 2_147_483_647;
 
 function defaults(companyId: number): EffectiveAiSettings {
   return {
@@ -60,20 +77,67 @@ function defaults(companyId: number): EffectiveAiSettings {
     workflowRules: normalizeWorkflowRules(null),
     hasCustomSettings: false,
     updatedAt: null,
+    budgetSource: { tokens: "none", cost: "none" },
+    planAllowance: { planVersionId: null, aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null },
   };
 }
 
 export function invalidateSettingsCache(companyId: number): void {
-  settingsCache.delete(companyId);
+  invalidateAiSettingsCache(companyId);
+}
+
+// The pinned PUBLISHED plan version's AI allowances (none for a legacy NULL
+// reference, an unpinned tenant, or an invalid reference — fail closed to "no
+// allowance", never to a budget the row cannot prove).
+async function planAllowanceFor(companyId: number): Promise<EffectiveAiSettings["planAllowance"]> {
+  const none = { planVersionId: null, aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null };
+  const sub = await subsRepo.findByCompanyId(companyId);
+  if (!sub || sub.planVersionId == null) return none;
+  const version = await subsRepo.findPlanVersionById(sub.planVersionId);
+  if (!version || version.planId !== sub.plan || !version.publishedAt) return none;
+  const a = allowancesOf(version.snapshot);
+  return { planVersionId: version.id, aiTokensPerMonth: a.aiTokensPerMonth, aiCostMicroUsdPerMonth: a.aiCostMicroUsdPerMonth };
+}
+
+// Release correction M1 — the plan allowance is a CAP, not a default.
+//   • no allowance on the plan version (every legacy / version-1 snapshot, a
+//     NULL pin, an invalid reference) → the tenant's own budget applies, or
+//     none: exactly the pre-existing behaviour, so grandfathered tenants see
+//     no change;
+//   • an allowance on the pinned version → the effective budget never exceeds
+//     it. A tenant admin may still set a LOWER budget of their own (source
+//     "tenant"); a missing or higher tenant value resolves to the allowance
+//     (source "plan"). Raising a tenant's allowance is a plan-version decision
+//     of the Platform Owner (assign a version with a higher allowance) — never
+//     an ordinary tenant setting.
+// The single budget engine is unchanged: it keeps reading the effective values.
+function capBudget(tenant: number | null, cap: number | null): { value: number | null; source: BudgetSource } {
+  if (cap == null) return { value: tenant, source: tenant != null ? "tenant" : "none" };
+  if (tenant != null && tenant <= cap) return { value: tenant, source: "tenant" };
+  return { value: cap, source: "plan" };
+}
+
+export function applyPlanAllowance(
+  base: Pick<EffectiveAiSettings, "monthlyTokenBudget" | "monthlyCostBudgetMicroUsd">,
+  allowance: EffectiveAiSettings["planAllowance"],
+): Pick<EffectiveAiSettings, "monthlyTokenBudget" | "monthlyCostBudgetMicroUsd" | "budgetSource" | "planAllowance"> {
+  const tokens = capBudget(base.monthlyTokenBudget, allowance.aiTokensPerMonth);
+  const cost = capBudget(base.monthlyCostBudgetMicroUsd, allowance.aiCostMicroUsdPerMonth);
+  return {
+    monthlyTokenBudget: tokens.value,
+    monthlyCostBudgetMicroUsd: cost.value,
+    budgetSource: { tokens: tokens.source, cost: cost.source },
+    planAllowance: allowance,
+  };
 }
 
 export async function resolveSettings(companyId: number): Promise<EffectiveAiSettings> {
   const now = Date.now();
-  const cached = settingsCache.get(companyId);
-  if (cached && cached.expires > now) return cached.value;
+  const cached = getCachedAiSettings(companyId, now);
+  if (cached) return cached;
 
   const row = await repo.getSettingsByCompany(companyId);
-  const value: EffectiveAiSettings = row
+  const base: EffectiveAiSettings = row
     ? {
         companyId,
         provider: row.provider,
@@ -85,11 +149,14 @@ export async function resolveSettings(companyId: number): Promise<EffectiveAiSet
         workflowRules: normalizeWorkflowRules(row.workflowRules),
         hasCustomSettings: true,
         updatedAt: row.updatedAt,
+        budgetSource: { tokens: "none", cost: "none" },
+        planAllowance: { planVersionId: null, aiTokensPerMonth: null, aiCostMicroUsdPerMonth: null },
       }
     : defaults(companyId);
+  const value: EffectiveAiSettings = { ...base, ...applyPlanAllowance(base, await planAllowanceFor(companyId)) };
 
   if (config.ai.settingsCacheTtlMs > 0) {
-    settingsCache.set(companyId, { value, expires: now + config.ai.settingsCacheTtlMs });
+    setCachedAiSettings(companyId, value, now + config.ai.settingsCacheTtlMs);
   }
   return value;
 }
@@ -348,6 +415,13 @@ function formatSettings(s: EffectiveAiSettings) {
     hasCustomSettings: s.hasCustomSettings,
     availableProviders: availableProviders(),
     updatedAt: s.updatedAt ? s.updatedAt.toISOString() : null,
+    // Batch 41: provenance of the effective budgets (tenant override > plan allowance > none).
+    budgetSource: s.budgetSource,
+    planAllowance: {
+      planVersionId: s.planAllowance.planVersionId,
+      aiTokensPerMonth: s.planAllowance.aiTokensPerMonth,
+      aiCostBudgetUsd: s.planAllowance.aiCostMicroUsdPerMonth == null ? null : microToUsd(s.planAllowance.aiCostMicroUsdPerMonth),
+    },
   };
 }
 
@@ -420,6 +494,7 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
   if (body.monthlyCostBudgetUsd !== undefined) {
     const usd = normalizeBudgetNumber(body.monthlyCostBudgetUsd, "monthlyCostBudgetUsd");
     values.monthlyCostBudgetMicroUsd = usd == null ? null : Math.round(usd * 1_000_000);
+    if (values.monthlyCostBudgetMicroUsd != null && values.monthlyCostBudgetMicroUsd > MAX_BUDGET_INT) throw new AppError(400, `monthlyCostBudgetUsd must not exceed ${microToUsd(MAX_BUDGET_INT)}`);
   }
   if (body.workflowRules !== undefined) {
     if (body.workflowRules === null) {
@@ -445,6 +520,37 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
     }
   }
 
+  // Release correction M1 (independent review): the ledger costs a model the
+  // platform has no price for at 0, which would make every COST budget — a
+  // plan's cost allowance included — unenforceable. A real provider therefore
+  // only accepts a priced model. The deterministic stub provider (registered
+  // outside production only) keeps its test models.
+  if (values.model !== undefined || values.provider !== undefined) {
+    const provider = values.provider ?? current.provider;
+    const model = values.model ?? current.model;
+    if (provider !== "stub" && !hasPricing(model)) {
+      throw new AppError(400, `model must be one of: ${Object.keys(config.ai.pricing).filter((m) => !m.startsWith("stub-")).join(", ")}`, { code: AI_MODEL_NOT_SUPPORTED, details: { provider, model } });
+    }
+  }
+
+  // Release correction M1: a tenant budget above the plan allowance would be
+  // capped at resolution time anyway — refuse it explicitly so the admin gets a
+  // clear answer instead of a silently ignored value. null (no tenant budget)
+  // and any value up to the allowance stay valid.
+  const cap = current.planAllowance;
+  if (values.monthlyTokenBudget != null && cap.aiTokensPerMonth != null && values.monthlyTokenBudget > cap.aiTokensPerMonth) {
+    throw new AppError(400, `monthlyTokenBudget cannot exceed your plan's AI allowance of ${cap.aiTokensPerMonth} tokens per month`, {
+      code: AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE,
+      details: { field: "monthlyTokenBudget", planAllowance: cap.aiTokensPerMonth, planVersionId: cap.planVersionId },
+    });
+  }
+  if (values.monthlyCostBudgetMicroUsd != null && cap.aiCostMicroUsdPerMonth != null && values.monthlyCostBudgetMicroUsd > cap.aiCostMicroUsdPerMonth) {
+    throw new AppError(400, `monthlyCostBudgetUsd cannot exceed your plan's AI allowance of ${microToUsd(cap.aiCostMicroUsdPerMonth)} USD per month`, {
+      code: AI_BUDGET_EXCEEDS_PLAN_ALLOWANCE,
+      details: { field: "monthlyCostBudgetUsd", planAllowance: microToUsd(cap.aiCostMicroUsdPerMonth), planVersionId: cap.planVersionId },
+    });
+  }
+
   if (Object.keys(values).length === 0) throw new AppError(400, "No valid fields to update");
 
   await repo.upsertSettings(companyId, values);
@@ -457,6 +563,7 @@ function normalizeBudgetInt(raw: unknown, field: string): number | null {
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || !Number.isInteger(raw)) {
     throw new AppError(400, `${field} must be a non-negative integer or null`);
   }
+  if (raw > MAX_BUDGET_INT) throw new AppError(400, `${field} must not exceed ${MAX_BUDGET_INT}`);
   return raw;
 }
 

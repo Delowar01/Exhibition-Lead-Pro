@@ -27,7 +27,7 @@ import {
 } from "../lib/export-generate.js";
 import { uploadExportBuffer, exportDownloadURL, discardExportObject } from "../lib/exportStorage.js";
 import { bindEntity, publicBaseUrl } from "./storage.service.js";
-import { tenantWritable } from "../lib/company-access.js";
+import { tenantWritable, tenantFeatureAllowed } from "../lib/company-access.js";
 
 // Stage 4B — Export Center (export side). Produces a filtered CSV/Excel/PDF/JSON
 // file of the caller's contacts or leads, optionally AES-encrypted (on-demand
@@ -469,6 +469,10 @@ function systemUserForCompany(companyId: number, createdById: number | null): Au
     readOnly: false,
     accessibleCompanies: [companyId],
     sessionId: null,
+    // Batch 41: scheduled exports check the plan feature explicitly in
+    // runDueSchedules (tenantFeatureAllowed); the system principal itself
+    // carries no entitlements (fail closed if ever gated).
+    entitlements: null,
   };
 }
 
@@ -483,6 +487,13 @@ export async function runDueSchedules(): Promise<{ processed: number }> {
       const gate = await tenantWritable(s.companyId, now);
       if (!gate.writable) {
         logger.warn({ scheduleId: s.id, companyId: s.companyId, accessMode: gate.accessMode, reasonCode: gate.reasonCode, code: "SUBSCRIPTION_NOT_WRITABLE" }, "Scheduled export skipped: subscription not writable");
+        continue;
+      }
+      // Batch 41 (PB-3): the plan version must grant scheduled exports; the
+      // schedule is kept (never deleted) and simply advances without an artifact.
+      const feature = await tenantFeatureAllowed(s.companyId, "exports.scheduled", now);
+      if (!feature.allowed) {
+        logger.warn({ scheduleId: s.id, companyId: s.companyId, enforcement: feature.enforcement, planVersionId: feature.planVersionId, code: "FEATURE_NOT_ENTITLED" }, "Scheduled export skipped: scheduled exports not included in the plan version");
         continue;
       }
       const sysUser = systemUserForCompany(s.companyId, s.createdById);

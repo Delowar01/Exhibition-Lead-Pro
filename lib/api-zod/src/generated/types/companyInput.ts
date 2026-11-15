@@ -5,7 +5,6 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { CompanyInputPlan } from './companyInputPlan';
 
 export interface CompanyInput {
   name: string;
@@ -31,5 +30,11 @@ export interface CompanyInput {
   primaryContactName?: string | null;
   /** @nullable */
   primaryContactEmail?: string | null;
-  plan?: CompanyInputPlan;
+  /**
+     * A PUBLISHED plan slug (fixed catalog id or builder-created plan)
+     * @minLength 2
+     * @maxLength 40
+     * @pattern ^[a-z][a-z0-9-]{1,39}$
+     */
+  plan?: string;
 }

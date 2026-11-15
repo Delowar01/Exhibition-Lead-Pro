@@ -16,6 +16,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { featureAllowed } from "@/lib/entitlements";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -301,7 +302,10 @@ export default function AiWorkspace({ contact }: AiWorkspaceProps) {
 
   const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
   const assistantPerms = ((user?.permissions as Record<string, string[]> | undefined)?.ai_assistant ?? []) as string[];
-  const canUse = isFullAccess || assistantPerms.includes("use");
+  // Release correction M4: these are the assistant conversation routes, which the
+  // API gates on BOTH `ai.assistant` and `ai.command_center` — never called when
+  // the plan version denies either (RBAC unchanged).
+  const canUse = (isFullAccess || assistantPerms.includes("use")) && featureAllowed(user, "ai.assistant") && featureAllowed(user, "ai.command_center");
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [input, setInput] = useState("");

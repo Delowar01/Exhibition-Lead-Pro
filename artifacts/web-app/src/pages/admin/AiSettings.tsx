@@ -131,6 +131,7 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
   const [costBudget, setCostBudget] = React.useState<string>(
     settings.monthlyCostBudgetUsd == null ? "" : String(settings.monthlyCostBudgetUsd),
   );
+  const shownBudgets = React.useRef({ token: tokenBudget, cost: costBudget });
   const [rules, setRules] = React.useState<Record<RuleKey, string>>(() =>
     Object.fromEntries(RULE_FIELDS.map((f) => [f.key, String(settings.workflowRules[f.key])])) as Record<RuleKey, string>,
   );
@@ -153,19 +154,30 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
       const n = Number(rules[f.key].trim());
       if (n !== settings.workflowRules[f.key]) changedRules[f.key] = n;
     }
+    // The form shows the EFFECTIVE budgets (which may come from the plan
+    // allowance). They are sent only when the admin actually changed them, so
+    // saving another field never stores the plan's value as a tenant budget.
+    const nextTokenBudget = tokenBudget.trim() === "" ? null : Number(tokenBudget);
+    const nextCostBudget = costBudget.trim() === "" ? null : Number(costBudget);
+    // "Changed" = different from what THIS field showed when it was filled (not
+    // from the latest refetch): if the plan allowance moves while the form is
+    // open, an untouched field is still never sent.
+    const tokenChanged = tokenBudget.trim() !== shownBudgets.current.token.trim();
+    const costChanged = costBudget.trim() !== shownBudgets.current.cost.trim();
     const body: UpdateAiSettings = {
       enabled,
       provider,
       model: model.trim(),
       featureFlags: flags,
-      monthlyTokenBudget: tokenBudget.trim() === "" ? null : Number(tokenBudget),
-      monthlyCostBudgetUsd: costBudget.trim() === "" ? null : Number(costBudget),
+      ...(tokenChanged ? { monthlyTokenBudget: nextTokenBudget } : {}),
+      ...(costChanged ? { monthlyCostBudgetUsd: nextCostBudget } : {}),
       ...(Object.keys(changedRules).length > 0 ? { workflowRules: changedRules } : {}),
     };
     update.mutate(
       { data: body },
       {
         onSuccess: () => {
+          shownBudgets.current = { token: tokenBudget, cost: costBudget }; // what was just saved is the new baseline
           queryClient.invalidateQueries({ queryKey: getGetAiSettingsQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetAiHealthQueryKey() });
           toast({ title: "AI settings saved" });
@@ -257,12 +269,17 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
               id="token-budget"
               type="number"
               min={0}
-              placeholder="Unlimited"
+              max={settings.planAllowance.aiTokensPerMonth ?? undefined}
+              placeholder={settings.planAllowance.aiTokensPerMonth != null ? "Plan allowance" : "Unlimited"}
               value={tokenBudget}
               onChange={(e) => setTokenBudget(e.target.value)}
               disabled={!canEdit}
             />
-            <p className="text-xs text-muted-foreground">Leave blank for unlimited.</p>
+            <p className="text-xs text-muted-foreground" data-testid="token-budget-hint">
+              {settings.planAllowance.aiTokensPerMonth != null
+                ? `Your plan includes ${NUM.format(settings.planAllowance.aiTokensPerMonth)} tokens per month. You can set a lower budget, not a higher one.`
+                : "Leave blank for unlimited."}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="cost-budget">Monthly cost budget (USD)</Label>
@@ -271,12 +288,17 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
               type="number"
               min={0}
               step="0.01"
-              placeholder="Unlimited"
+              max={settings.planAllowance.aiCostBudgetUsd ?? undefined}
+              placeholder={settings.planAllowance.aiCostBudgetUsd != null ? "Plan allowance" : "Unlimited"}
               value={costBudget}
               onChange={(e) => setCostBudget(e.target.value)}
               disabled={!canEdit}
             />
-            <p className="text-xs text-muted-foreground">Estimated spend cap. Leave blank for unlimited.</p>
+            <p className="text-xs text-muted-foreground" data-testid="cost-budget-hint">
+              {settings.planAllowance.aiCostBudgetUsd != null
+                ? `Your plan includes ${formatUsd(settings.planAllowance.aiCostBudgetUsd)} of estimated AI spend per month. You can set a lower cap, not a higher one.`
+                : "Estimated spend cap. Leave blank for unlimited."}
+            </p>
           </div>
         </div>
 

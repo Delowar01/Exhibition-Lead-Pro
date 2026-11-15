@@ -67,6 +67,20 @@ router.put("/files/uploads/:id", async (req: AuthRequest, res: Response) => {
     req.resume();
     throw new AppError(404, "File not found");
   }
+  // Release correction E1: an upload target reserved before a plan change is not
+  // honoured afterwards — the plan feature owning the object kind is decided here,
+  // for the authenticated tenant user. RBAC keeps precedence (a caller without the
+  // upload permission gets the service's permission answer), and an unknown or
+  // foreign object falls through to the service, which answers exactly as before.
+  try {
+    const reserved = await storage.authorizeObject(req.user!, id, "put");
+    if (reserved && storage.userHasPermission(req.user!, storage.permissionForKind(reserved.kind as StorageKind, "put"))) {
+      storage.assertKindEntitled(req.user!, reserved.kind as StorageKind);
+    }
+  } catch (err) {
+    req.resume(); // the body is never read: drain it so the client receives the JSON answer
+    throw err;
+  }
   const capabilityHeader = req.headers[storage.CAPABILITY_HEADER];
   const capability = Array.isArray(capabilityHeader) ? capabilityHeader[0] : capabilityHeader;
   const declared = req.headers["content-length"];
@@ -106,6 +120,10 @@ router.get("/files/:id", async (req: AuthRequest, res: Response) => {
   if (!storage.userHasPermission(user, storage.permissionForKind(row.kind as StorageKind, "get"))) {
     throw new AppError(403, "Missing permission for this file");
   }
+  // Release correction E1: the plan feature owning this object kind is enforced
+  // here too — the byte route must not be an alternate way around the feature
+  // gate of /documents or /ai/executive (legacy plan versions allow everything).
+  storage.assertKindEntitled(user, row.kind as StorageKind);
   // B25 Correction 2: the URL is stable and credential-free, so the LIVE feature
   // association is re-proven at byte time (soft-deleted document, replaced scan
   // image / logo, failed export, not-ready report → 404, no disclosure).
