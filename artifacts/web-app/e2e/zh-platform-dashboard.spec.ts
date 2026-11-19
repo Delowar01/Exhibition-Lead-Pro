@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { Client } from "pg";
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures/workspace";
-import { API_BASE } from "./fixtures/seed-values";
+import { API_BASE, RUN_TAG } from "./fixtures/seed-values";
 
 /**
  * ZH. G-7 — the Platform Dashboard (/platform) uses the same definitions as Platform Owner
@@ -10,8 +11,12 @@ import { API_BASE } from "./fixtures/seed-values";
  * from the card scans sent for OCR, and money is formatted in the currency's own minor unit.
  *
  * Figures are compared with the API's own answer (the oracle); the currency cases intercept
- * the single stats request because a local database holds one currency at most. The design
- * of the page is unchanged: the same six metric cards, charts and company table.
+ * the single stats request because a local database holds one currency at most.
+ *
+ * Launch polish: the same six metric cards, charts and company table in the approved visual
+ * system — the cards now sit two or three to a row so no label is cut and a long amount stays
+ * inside its card, the dark card is readable throughout, the status list is the chart's
+ * legend (nothing overlaps it), and Recent Companies leads with the newest tenants.
  *
  * Set G7_SHOTS_DIR to an existing directory to also save screenshots (off by default).
  */
@@ -20,6 +25,19 @@ const PLATFORM = { email: "admin@cardscannerpro.com", password: "Admin123!" };
 const SHOTS = process.env.G7_SHOTS_DIR;
 type Auth = { token: string; user: { id: number; companyId: number | null; email: string } };
 let platform: Auth;
+let pg: Client;
+const NEWEST = [`${RUN_TAG} ZH Newest A`, `${RUN_TAG} ZH Newest B`];
+
+/** The companies the sorting test creates must not stay behind. */
+async function purge() {
+  const companies = await pg.query("select id from companies where name = any($1)", [NEWEST]);
+  for (const { id } of companies.rows) {
+    await pg.query("delete from audit_logs where company_id = $1", [id]);
+    await pg.query("delete from users where company_id = $1", [id]);
+    await pg.query("delete from subscriptions where company_id = $1", [id]);
+    await pg.query("delete from companies where id = $1", [id]);
+  }
+}
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -39,21 +57,75 @@ async function api(method: string, p: string, token: string | null = null, body?
   return { status: res.status, json, text };
 }
 
-async function seedAs(page: Page, auth: Auth) {
+async function seedAs(page: Page, auth: Auth, theme: "light" | "dark" = "light") {
   await page.addInitScript(
-    ([t, u, cid, userId]) => {
+    ([t, u, cid, userId, th]) => {
       try {
         localStorage.setItem("csp_token", t as string);
         localStorage.setItem("csp_user", u as string);
         if (cid) localStorage.setItem("csp_company_id", cid as string);
-        localStorage.setItem("csp_theme", "light");
-        localStorage.setItem(`csp_theme:u${userId}c${cid}`, "light");
+        localStorage.setItem("csp_theme", th as string);
+        localStorage.setItem(`csp_theme:u${userId}c${cid}`, th as string);
       } catch {
         /* storage unavailable */
       }
     },
-    [auth.token, JSON.stringify(auth.user), String(auth.user.companyId ?? ""), String(auth.user.id)] as const,
+    [auth.token, JSON.stringify(auth.user), String(auth.user.companyId ?? ""), String(auth.user.id), theme] as const,
   );
+}
+
+/**
+ * WCAG contrast of every label, figure, footer text and icon inside an element, against the
+ * background each sits on. Colours are resolved by painting them (computed styles may be
+ * rgb(), oklab() or color-mix()), so the figures are what the eye gets.
+ */
+async function contrastsIn(page: Page, testId: string): Promise<Array<{ what: string; ratio: number; icon: boolean }>> {
+  return page.getByTestId(testId).evaluate((root) => {
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 1;
+    const cx = cv.getContext("2d", { willReadFrequently: true })!;
+    const rgba = (c: string) => {
+      cx.clearRect(0, 0, 1, 1);
+      cx.fillStyle = "rgba(0,0,0,0)";
+      cx.fillStyle = c;
+      cx.fillRect(0, 0, 1, 1);
+      const d = cx.getImageData(0, 0, 1, 1).data;
+      return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
+    };
+    type C = { r: number; g: number; b: number; a: number };
+    const over = (f: C, b: C): C => ({ r: f.r * f.a + b.r * (1 - f.a), g: f.g * f.a + b.g * (1 - f.a), b: f.b * f.a + b.b * (1 - f.a), a: 1 });
+    const lum = (c: C) => {
+      const f = (v: number) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+    };
+    const backgroundOf = (el: Element): C => {
+      const stack: C[] = [];
+      for (let e: Element | null = el; e; e = e.parentElement) {
+        const c = rgba(getComputedStyle(e).backgroundColor);
+        if (c.a > 0) {
+          stack.push(c);
+          if (c.a >= 1) break;
+        }
+      }
+      let base: C = { r: 255, g: 255, b: 255, a: 1 };
+      for (const c of stack.reverse()) base = over(c, base);
+      return base;
+    };
+    const ratioOf = (el: Element) => {
+      const bg = backgroundOf(el);
+      const a = lum(over(rgba(getComputedStyle(el).color), bg));
+      const b = lum(bg);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const out: Array<{ what: string; ratio: number; icon: boolean }> = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = (n.textContent ?? "").trim();
+      if (text && n.parentElement && !n.parentElement.closest("svg")) out.push({ what: text.slice(0, 30), ratio: ratioOf(n.parentElement), icon: false });
+    }
+    for (const svg of root.querySelectorAll("svg")) out.push({ what: "icon", ratio: ratioOf(svg), icon: true });
+    return out;
+  });
 }
 
 function trackConsole(page: Page): string[] {
@@ -91,6 +163,14 @@ test.beforeAll(async () => {
   const res = await api("POST", "/auth/login", null, PLATFORM);
   expect(res.status, res.text).toBe(200);
   platform = { token: res.json.token, user: res.json.user };
+  pg = new Client({ connectionString: process.env.DATABASE_URL });
+  await pg.connect();
+  await purge();
+});
+
+test.afterAll(async () => {
+  await purge();
+  await pg.end();
 });
 
 test("totals follow the shared definitions and captures are told apart from card scans", async ({ page }) => {
@@ -112,18 +192,11 @@ test("totals follow the shared definitions and captures are told apart from card
   await expect(captures).toContainText("Total Captures");
   await expect(value(page, "dashboard-total-captures")).toHaveText(fmt(stats.totalCaptures));
   await expect(page.getByTestId("dashboard-card-scans")).toHaveText(`${fmt(stats.totalScans)} card ${stats.totalScans === 1 ? "scan" : "scans"} sent for OCR`);
-  // The card is dark; its figure must be readable on it (it used to be dark on dark).
-  const contrast = await value(page, "dashboard-total-captures").evaluate((el) => {
-    const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
-    const lum = (c: string) => {
-      const [r, g, b] = rgb(c).map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-    const fg = lum(getComputedStyle((el.firstElementChild as HTMLElement | null) ?? el).color);
-    const bg = lum(getComputedStyle(el.closest(".rounded-lg")!).backgroundColor);
-    return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
-  });
-  expect(contrast).toBeGreaterThanOrEqual(4.5);
+  // The card is dark; its label, icon, figure and footer must all be readable on it (the
+  // figure used to be dark on dark, the label and icon were low-contrast).
+  const onDarkCard = await contrastsIn(page, "dashboard-total-captures");
+  expect(onDarkCard.map((c) => c.what)).toEqual(expect.arrayContaining(["Total Captures", fmt(stats.totalCaptures), "icon"]));
+  for (const c of onDarkCard) expect(c.ratio, `${c.what} ${c.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(c.icon ? 3 : 4.5);
   // The ambiguous label is gone: nothing calls the capture total "scans".
   await expect(page.getByTestId("platform-dashboard").getByText("Total Scans", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("platform-dashboard").getByText("Cards captured system-wide")).toHaveCount(0);
@@ -232,10 +305,141 @@ test("the company pages call the per-company figure Captures, not Scans", async 
   await expect(figure.locator("xpath=..")).toContainText("Captures");
 });
 
+test("Recent Companies lists the five newest tenants, newest first", async ({ page }) => {
+  // Two tenants onboarded now are the two newest; the later one leads.
+  for (const name of NEWEST) {
+    const created = await api("POST", "/companies", platform.token, { name, plan: "free", industry: "QA" });
+    expect(created.status, created.text).toBe(201);
+  }
+  await seedAs(page, platform);
+  const wait = page.waitForResponse((r) => new URL(r.url()).pathname.endsWith("/companies") && r.status() === 200);
+  await openDashboard(page);
+  const listed = (await (await wait).json()).companies as Array<{ id: number; name: string; createdAt: string }>;
+  expect(listed).toHaveLength(5);
+  expect(listed.slice(0, 2).map((c) => c.name)).toEqual([NEWEST[1], NEWEST[0]]);
+
+  // Newest first all the way down, and they are the five newest of every company there is.
+  const newestFirst = (a: { id: number; createdAt: string }, b: { id: number; createdAt: string }) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || b.id - a.id;
+  expect(listed.map((c) => c.id)).toEqual([...listed].sort(newestFirst).map((c) => c.id));
+  const everyone = (await api("GET", "/companies?limit=100", platform.token)).json;
+  expect(everyone.total).toBeLessThanOrEqual(100);
+  const all = everyone.companies as Array<{ id: number; createdAt: string }>;
+  expect(listed.map((c) => c.id)).toEqual([...all].sort(newestFirst).slice(0, 5).map((c) => c.id));
+
+  // The page shows them in that order and says what the list is.
+  const card = page.getByTestId("platform-dashboard").locator("table").locator("xpath=ancestor::div[contains(@class,'rounded-xl') or contains(@class,'shadow-sm')][1]");
+  await expect(card).toContainText("The five tenants onboarded most recently");
+  const rows = page.getByTestId("platform-dashboard").locator("table tbody tr");
+  await expect(rows).toHaveCount(5);
+  for (const [i, c] of listed.entries()) await expect(rows.nth(i).locator("td").first()).toHaveText(c.name);
+  await expect(page.getByTestId("platform-dashboard").getByText("Latest onboarded tenants")).toHaveCount(0);
+});
+
+test("the status list is the legend of the ring and nothing overlaps it", async ({ page }) => {
+  await seedAs(page, platform);
+  const stats = await openDashboard(page);
+  const statuses = (stats.subscriptions.byStatus as Array<{ status: string; count: number }>).filter((s) => s.count > 0);
+  expect(statuses.length).toBeGreaterThan(0);
+  const card = page.getByTestId("dashboard-subscription-status");
+  const legend = page.getByTestId("dashboard-status-legend");
+
+  // One row per status with its count and a colour dot; no second, chart-drawn legend.
+  await expect(card.locator(".recharts-legend-wrapper")).toHaveCount(0);
+  await expect(legend.locator("li")).toHaveCount(statuses.length);
+  for (const s of statuses) {
+    const row = page.getByTestId(`status-count-${s.status}`);
+    await expect(row.locator("span.tabular-nums")).toHaveText(String(s.count));
+    await expect(row.locator("span[aria-hidden='true']")).toHaveCount(1);
+  }
+
+  // Each dot has the colour of its ring segment, and the colours differ from one another.
+  await expect(card.locator(".recharts-pie-sector path").first()).toBeVisible();
+  const colours = await card.evaluate((root) => {
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 1;
+    const cx = cv.getContext("2d", { willReadFrequently: true })!;
+    const paint = (c: string) => {
+      cx.clearRect(0, 0, 1, 1);
+      cx.fillStyle = c;
+      cx.fillRect(0, 0, 1, 1);
+      return Array.from(cx.getImageData(0, 0, 1, 1).data).join(",");
+    };
+    const dots = [...root.querySelectorAll("[data-testid='dashboard-status-legend'] span[aria-hidden='true']")].map((el) => paint(getComputedStyle(el).backgroundColor));
+    const segments = [...root.querySelectorAll(".recharts-pie-sector path")].map((el) => paint(getComputedStyle(el).fill));
+    return { dots, segments };
+  });
+  expect(colours.dots).toEqual(colours.segments);
+  expect(new Set(colours.dots).size).toBe(colours.dots.length);
+
+  // The list sits below the ring: no row touches the chart or another row, at any width.
+  for (const width of [1440, 1024, 820, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(250);
+    const boxes = await card.evaluate((root) => {
+      const box = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) };
+      };
+      return {
+        card: box(root),
+        chart: box(root.querySelector(".recharts-wrapper")!),
+        rows: [...root.querySelectorAll("[data-testid='dashboard-status-legend'] li")].map(box),
+      };
+    });
+    let floor = boxes.chart.bottom;
+    for (const [i, row] of boxes.rows.entries()) {
+      expect(row.top, `row ${i} at ${width}`).toBeGreaterThanOrEqual(floor);
+      expect(row.left, `row ${i} at ${width}`).toBeGreaterThanOrEqual(boxes.card.left);
+      expect(row.right, `row ${i} at ${width}`).toBeLessThanOrEqual(boxes.card.right);
+      floor = row.bottom;
+    }
+    expect(floor, `legend at ${width}`).toBeLessThanOrEqual(boxes.card.bottom);
+  }
+});
+
+for (const vp of [
+  { name: "desktop-1440", width: 1440 },
+  { name: "laptop-1280", width: 1280 },
+  { name: "laptop-1024", width: 1024 },
+  { name: "tablet-820", width: 820 },
+  { name: "mobile-390", width: 390 },
+  { name: "small-320", width: 320 },
+] as const) {
+  test(`a very long recurring amount stays inside its card at ${vp.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: 900 });
+    await seedAs(page, platform);
+    // 9.9 billion a month: an ARR of fifteen digits and separators.
+    await openWithRevenue(page, { available: true, reason: null, currency: "sar", monthlyRecurringMinor: 987_654_321_012, countedSubscriptions: 3, unpricedSubscriptions: 0 });
+    await expect(value(page, "dashboard-mrr")).toHaveText("SAR 9,876,543,210.12");
+    await expect(value(page, "dashboard-arr")).toHaveText("SAR 118,518,518,521.44");
+    for (const id of ["dashboard-mrr", "dashboard-arr"]) {
+      const fit = await value(page, id).evaluate((el) => {
+        const card = el.closest(".rounded-lg")!.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const text = range.getBoundingClientRect();
+        return { left: Math.round(text.left - card.left), right: Math.round(card.right - text.right), below: Math.round(card.bottom - text.bottom), clipped: el.scrollWidth - el.clientWidth };
+      });
+      expect(fit.left, `${id} ${vp.name}`).toBeGreaterThan(0);
+      expect(fit.right, `${id} ${vp.name}`).toBeGreaterThan(0);
+      expect(fit.below, `${id} ${vp.name}`).toBeGreaterThan(0);
+      expect(fit.clipped, `${id} ${vp.name}`).toBeLessThanOrEqual(0);
+    }
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector("main");
+      return { document: document.documentElement.scrollWidth - document.documentElement.clientWidth, main: main ? main.scrollWidth - main.clientWidth : 0 };
+    });
+    expect(overflow, vp.name).toEqual({ document: 0, main: 0 });
+    if (SHOTS) await page.getByTestId("dashboard-metrics").screenshot({ path: path.join(SHOTS, `dashboard-long-amount-${vp.name}.png`) });
+  });
+}
+
 for (const vp of [
   { name: "desktop-1440", width: 1440, height: 900 },
   { name: "tablet-820", width: 820, height: 1180 },
   { name: "mobile-390", width: 390, height: 844 },
+  { name: "small-320", width: 320, height: 700 },
 ] as const) {
   test(`the dashboard keeps its design and fits ${vp.name}`, async ({ page }) => {
     const errors = trackConsole(page);
@@ -244,27 +448,55 @@ for (const vp of [
     await openDashboard(page);
     await page.waitForTimeout(300);
 
-    // The same six metric cards, in the same order.
-    const labels = await page.getByTestId("platform-dashboard").locator("div.grid").first().locator("p.text-sm.font-medium").allInnerTexts();
-    expect(labels).toEqual(["Total Companies", "Total Users", "MRR", "ARR", "Total Leads", "Total Captures"]);
+    // The same six metric cards, in the same order — two, then three to a row.
+    const metrics = page.getByTestId("dashboard-metrics");
+    const labels = metrics.locator("p.text-sm.font-medium");
+    expect(await labels.allInnerTexts()).toEqual(["Total Companies", "Total Users", "MRR", "ARR", "Total Leads", "Total Captures"]);
     for (const id of ["dashboard-revenue-trend", "dashboard-subscription-status", "dashboard-scan-trend"]) await expect(page.getByTestId(id)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Platform Dashboard" })).toBeVisible();
+    const cells = metrics.locator(":scope > *");
+    await expect(cells).toHaveCount(6);
+    const columns = new Set(await cells.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().left)))).size;
+    expect(columns, vp.name).toBe(vp.width >= 1280 ? 3 : vp.width >= 640 ? 2 : 1);
 
-    // The two cards that gained a test hook still fill their grid cell, like the plain cards beside them.
-    for (const id of ["dashboard-total-users", "dashboard-total-captures"]) {
-      const [cell, card] = await page.getByTestId(id).evaluate((el) => [el.getBoundingClientRect().height, el.firstElementChild!.getBoundingClientRect().height]);
-      expect(Math.round(card), id).toBe(Math.round(cell));
+    // No label is cut off, and no figure runs past its card.
+    for (const [i, label] of (await labels.all()).entries()) {
+      const cut = await label.evaluate((el) => el.scrollWidth - el.clientWidth);
+      expect(cut, `label ${i} at ${vp.name}`).toBeLessThanOrEqual(0);
     }
-    if (vp.width >= 1440) {
-      // On one row, the CARDS inside the two wrappers are as tall as the unwrapped
-      // "Total Companies" and "Total Leads" cards (grid cells are equal by construction;
-      // the cards themselves are what could fall short).
-      const cells = page.getByTestId("platform-dashboard").locator("div.grid").first().locator(":scope > *");
-      await expect(cells).toHaveCount(6);
-      const cardHeight = (i: number, wrapped: boolean) => cells.nth(i).evaluate((el, w) => Math.round((w ? el.firstElementChild! : el).getBoundingClientRect().height), wrapped);
-      const [companies, users, leads, captures] = await Promise.all([cardHeight(0, false), cardHeight(1, true), cardHeight(4, false), cardHeight(5, true)]);
-      expect([users, leads, captures], `cards: ${[companies, users, leads, captures].join(",")}`).toEqual([companies, companies, companies]);
-    }
+    const figures = await metrics.locator("p.text-3xl").evaluateAll((els) =>
+      els.map((el) => {
+        const card = el.closest(".rounded-lg")!.getBoundingClientRect();
+        // The text itself (a range) — the paragraph box is as wide as the card by definition.
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return Math.round(range.getBoundingClientRect().right - card.right);
+      }),
+    );
+    for (const [i, past] of figures.entries()) expect(past, `figure ${i} at ${vp.name}`).toBeLessThan(0);
+
+    // Every card fills its grid cell, so the cards of a row are equally tall.
+    const fills = await cells.evaluateAll((els) =>
+      els.map((el) => {
+        const card = el.classList.contains("rounded-lg") ? el : el.firstElementChild!;
+        return Math.round(el.getBoundingClientRect().height - card.getBoundingClientRect().height);
+      }),
+    );
+    expect(fills, vp.name).toEqual([0, 0, 0, 0, 0, 0]);
+    const rowHeights = await cells.evaluateAll((els) => {
+      const rows = new Map<number, Set<number>>();
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        const card = (el.classList.contains("rounded-lg") ? el : el.firstElementChild!).getBoundingClientRect();
+        rows.set(Math.round(r.top), (rows.get(Math.round(r.top)) ?? new Set()).add(Math.round(card.height)));
+      }
+      return [...rows.values()].map((s) => s.size);
+    });
+    for (const distinct of rowHeights) expect(distinct, vp.name).toBe(1);
+
+    // "View all" stays on one line beside the card title.
+    const link = page.getByRole("link", { name: "View all" });
+    expect(await link.evaluate((el) => el.getClientRects().length), vp.name).toBe(1);
 
     const overflow = await page.evaluate(() => {
       const main = document.querySelector("main");
@@ -277,6 +509,37 @@ for (const vp of [
       await page.setViewportSize({ width: vp.width, height: Math.min(Math.max(height + 140, vp.height), 7800) });
       await page.waitForTimeout(400);
       await page.screenshot({ path: path.join(SHOTS, `dashboard-${vp.name}.png`) });
+    }
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+}
+
+for (const theme of ["light", "dark"] as const) {
+  test(`labels, figures and icons of the metric cards are readable in the ${theme} theme`, async ({ page }) => {
+    const errors = trackConsole(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await seedAs(page, platform, theme);
+    await openDashboard(page);
+    await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(theme === "dark");
+    await page.waitForTimeout(300);
+
+    const found = await contrastsIn(page, "dashboard-metrics");
+    // Six labels, six figures, six icons at least.
+    expect(found.filter((c) => c.icon).length).toBeGreaterThanOrEqual(6);
+    expect(found.filter((c) => !c.icon).length).toBeGreaterThanOrEqual(12);
+    for (const c of found) expect(c.ratio, `${theme}: ${c.what} ${c.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(c.icon ? 3 : 4.5);
+
+    // The status list and the company table, too.
+    for (const c of await contrastsIn(page, "dashboard-status-legend")) {
+      if (c.what === "icon") continue;
+      expect(c.ratio, `${theme}: legend ${c.what} ${c.ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    }
+
+    if (SHOTS && theme === "dark") {
+      const height = await page.evaluate(() => document.querySelector("main")?.scrollHeight ?? document.body.scrollHeight);
+      await page.setViewportSize({ width: 1440, height: Math.min(Math.max(height + 140, 900), 7800) });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(SHOTS, "dashboard-desktop-1440-dark.png") });
     }
     expect(errors, errors.join("\n")).toEqual([]);
   });

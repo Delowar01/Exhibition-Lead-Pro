@@ -15,6 +15,7 @@ export function MetricCard({
   deltaIntent = "higher-better",
   icon: Icon,
   footer,
+  tone = "default",
   className,
 }: {
   label: string;
@@ -30,19 +31,28 @@ export function MetricCard({
   deltaIntent?: "higher-better" | "lower-better" | "neutral";
   icon?: ComponentType<{ className?: string }>;
   footer?: ReactNode;
+  /**
+   * "inverse" is for a card on the dark sidebar surface (pass `bg-sidebar` in className):
+   * label, icon, figure and footer then take the sidebar's own text colour, so every part
+   * stays readable on it in both themes.
+   */
+  tone?: "default" | "inverse";
   className?: string;
 }) {
   const up = typeof delta === "number" && delta > 0;
   const down = typeof delta === "number" && delta < 0;
   const good = deltaIntent === "higher-better" ? up : deltaIntent === "lower-better" ? down : false;
   const bad = deltaIntent === "higher-better" ? down : deltaIntent === "lower-better" ? up : false;
+  const inverse = tone === "inverse";
+  const quiet = inverse ? "text-sidebar-foreground/75" : "text-muted-foreground";
   return (
     <div className={cn("rounded-lg border border-card-border bg-card p-5 shadow-sm", className)}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-muted-foreground truncate">{label}</p>
-        {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden="true" />}
+        <p className={cn("text-sm font-medium truncate", quiet)} title={label}>{label}</p>
+        {Icon && <Icon className={cn("h-4 w-4 shrink-0", quiet)} aria-hidden="true" />}
       </div>
-      <p className="mt-2 text-3xl font-bold tracking-tight text-foreground tabular-nums">{value}</p>
+      {/* A figure too long for its card wraps instead of running past the edge. */}
+      <p className={cn("mt-2 min-w-0 text-3xl font-bold tracking-tight tabular-nums [overflow-wrap:anywhere]", inverse ? "text-sidebar-foreground" : "text-foreground")}>{value}</p>
       {(typeof delta === "number" || footer) && (
         <div className="mt-2 flex items-center gap-2 text-xs">
           {typeof delta === "number" && (
@@ -51,16 +61,16 @@ export function MetricCard({
                 "inline-flex items-center gap-1 font-medium",
                 good && "text-success",
                 bad && "text-destructive",
-                !good && !bad && "text-muted-foreground",
+                !good && !bad && quiet,
               )}
             >
               {up && <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />}
               {down && <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />}
               {delta > 0 ? "+" : ""}
-              {delta}%{deltaLabel ? <span className="text-muted-foreground font-normal"> {deltaLabel}</span> : null}
+              {delta}%{deltaLabel ? <span className={cn("font-normal", quiet)}> {deltaLabel}</span> : null}
             </span>
           )}
-          {footer && <span className="text-muted-foreground">{footer}</span>}
+          {footer && <span className={quiet}>{footer}</span>}
         </div>
       )}
     </div>

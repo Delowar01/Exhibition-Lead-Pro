@@ -212,14 +212,16 @@ describe("formats", () => {
     expect(formatMinor(176600, "usd")).toBe("$1,766.00");
     expect(formatMinor(5000, "USD")).toBe("$50.00");
     expect(formatMinor(1999, "eur")).toContain("19.99");
-    expect(formatMinor(100, "not-a-currency")).toBe("1.00 NOT-A-CURRENCY");
+    // An unsupported currency is never converted: the amount is printed as the minor units it is.
+    expect(formatMinor(100, "not-a-currency")).toBe("100 NOT-A-CURRENCY (minor units)");
   });
 
   it("does not assume every currency has cents", () => {
     expect(minorUnitDigits("usd")).toBe(2);
     expect(minorUnitDigits("JPY")).toBe(0);
     expect(minorUnitDigits("kwd")).toBe(3);
-    expect(minorUnitDigits("not-a-currency")).toBe(2);
+    expect(minorUnitDigits("not-a-currency")).toBeNull();
+    expect(minorUnitDigits("xyz")).toBeNull();
     // The provider's convention, not the browser's: forints, Icelandic krónur and Ugandan
     // shillings are reported in hundredths even where Intl prints them without decimals.
     for (const code of ["huf", "ISK", "ugx", "twd", "eur", "aed", "sar"]) expect(minorUnitDigits(code), code).toBe(2);

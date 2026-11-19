@@ -40,6 +40,8 @@ import { useToast } from "@/hooks/use-toast";
 import { LIMIT_RESOURCES, STATUS_LABEL, fmtDateTime, errMessage } from "@/components/platform/SubscriptionManager";
 import { Lock, GitBranch, ShieldCheck, AlertTriangle, Users } from "lucide-react";
 import { MigrateTenantsDialog } from "@/components/platform/MigrateTenantsDialog";
+import { amountHint, decimalToScaled, formatMinor, isSupportedCurrency, scaledToDecimal, type AmountResult } from "@/lib/money";
+import { EMPTY_MANUAL_PRICE, rowFromStoredPrice, rowMinor, rowUntouched, type ManualPriceRow } from "@/lib/manual-prices";
 
 // Batch 40 — Plan Builder PB-2: the platform owner's version workspace for ONE plan.
 //
@@ -121,7 +123,7 @@ export function invalidatePlanQueries(queryClient: QueryClient): Promise<void> {
 type TrialForm = { trialDays: string; eligible: boolean; oncePerCompany: boolean; endOutcome: "blocked" | "read_only"; readOnlyGraceDays: string };
 type Enforcement = "legacy" | "enforced";
 type AllowanceForm = { aiTokensPerMonth: string; aiCostUsdPerMonth: string };
-type ManualPriceForm = { interval: "day" | "week" | "month" | "year"; intervalCount: string; currency: string; unitAmount: string; label: string };
+type ManualPriceForm = ManualPriceRow;
 type DraftForm = { name: string; description: string; sortOrder: string; limits: Record<Resource, string>; features: Record<string, boolean>; featureEnforcement: Enforcement; allowances: AllowanceForm; trial: TrialForm; manualPrices: ManualPriceForm[] };
 
 export const INTERVAL_LABEL: Record<string, string> = { day: "day", week: "week", month: "month", year: "year" };
@@ -134,12 +136,9 @@ export function periodGroup(interval: string, intervalCount: number): "monthly" 
   if ((interval === "year" && intervalCount === 1) || (interval === "month" && intervalCount === 12)) return "annual";
   return "other";
 }
+/** A stored price for reading — the portal's one currency policy (lib/money.ts). */
 export function moneyText(minor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(minor / 100);
-  } catch {
-    return `${(minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
-  }
+  return formatMinor(minor, currency);
 }
 
 export const ENFORCEMENT_LABEL: Record<string, string> = { legacy: "Legacy (grandfathered)", enforced: "Enforced", invalid: "Invalid reference" };
@@ -165,11 +164,11 @@ function formFrom(v: PlatformPlanVersionDetail): DraftForm {
     sortOrder: String(v.snapshot.sortOrder),
     limits,
     features: { ...v.snapshot.features },
-    manualPrices: (v.snapshot.manualPrices ?? []).map((p) => ({ interval: p.interval, intervalCount: String(p.intervalCount), currency: p.currency, unitAmount: (p.unitAmountMinor / 100).toFixed(2), label: p.label ?? "" })),
+    manualPrices: (v.snapshot.manualPrices ?? []).map(rowFromStoredPrice),
     featureEnforcement: v.featureEnforcement,
     allowances: {
       aiTokensPerMonth: v.allowances.aiTokensPerMonth == null ? "" : String(v.allowances.aiTokensPerMonth),
-      aiCostUsdPerMonth: v.allowances.aiCostMicroUsdPerMonth == null ? "" : String(v.allowances.aiCostMicroUsdPerMonth / 1_000_000),
+      aiCostUsdPerMonth: v.allowances.aiCostMicroUsdPerMonth == null ? "" : scaledToDecimal(v.allowances.aiCostMicroUsdPerMonth, 6) ?? String(v.allowances.aiCostMicroUsdPerMonth / 1_000_000),
     },
     trial: {
       trialDays: String(v.trialPolicy.trialDays),
@@ -184,6 +183,22 @@ function num(s: string): number {
   const n = Number(s.trim());
   return Number.isFinite(n) ? n : NaN;
 }
+// bodyFrom() is only called once formIssues() is empty; NaN keeps a refused value from ever reading as an amount.
+const minorOrNaN = (r: AmountResult): number => (r.ok ? r.minor : NaN);
+const scaledOrNaN = (r: ReturnType<typeof decimalToScaled>): number => (r.ok ? r.value : NaN);
+const manualPriceUntouched = rowUntouched;
+const manualPriceMinor = rowMinor;
+/** What the editor refuses to send: amounts that cannot be converted exactly. */
+function formIssues(f: DraftForm): PlatformFieldIssue[] {
+  const issues: PlatformFieldIssue[] = [];
+  f.manualPrices.forEach((p, i) => {
+    const r = manualPriceMinor(p);
+    if (!r.ok) issues.push({ code: r.error === "UNSUPPORTED_CURRENCY" ? "MANUAL_PRICE_CURRENCY_UNSUPPORTED" : "MANUAL_PRICE_AMOUNT_INVALID", field: `manualPrices.${i}`, message: r.message });
+  });
+  const cost = f.allowances.aiCostUsdPerMonth.trim();
+  if (cost !== "" && !decimalToScaled(cost, 6).ok) issues.push({ code: "ALLOWANCE_INVALID", field: "allowances.aiCostMicroUsdPerMonth", message: "Enter the AI cost allowance in US dollars with at most 6 decimals, for example 25 or 12.50." });
+  return issues;
+}
 function bodyFrom(f: DraftForm): PlatformUpdateDraftInput {
   const limits: Record<string, number | null> = {};
   for (const r of LIMIT_RESOURCES) limits[r] = f.limits[r].trim() === "" ? null : num(f.limits[r]);
@@ -196,7 +211,7 @@ function bodyFrom(f: DraftForm): PlatformUpdateDraftInput {
     featureEnforcement: f.featureEnforcement,
     allowances: {
       aiTokensPerMonth: f.allowances.aiTokensPerMonth.trim() === "" ? null : num(f.allowances.aiTokensPerMonth),
-      aiCostMicroUsdPerMonth: f.allowances.aiCostUsdPerMonth.trim() === "" ? null : Math.round(num(f.allowances.aiCostUsdPerMonth) * 1_000_000),
+      aiCostMicroUsdPerMonth: f.allowances.aiCostUsdPerMonth.trim() === "" ? null : scaledOrNaN(decimalToScaled(f.allowances.aiCostUsdPerMonth, 6)),
     },
     trialPolicy: {
       trialDays: num(f.trial.trialDays),
@@ -209,12 +224,36 @@ function bodyFrom(f: DraftForm): PlatformUpdateDraftInput {
       interval: p.interval,
       intervalCount: num(p.intervalCount),
       currency: p.currency.trim().toLowerCase(),
-      unitAmountMinor: Math.round(num(p.unitAmount) * 100),
+      unitAmountMinor: minorOrNaN(manualPriceMinor(p)),
       label: p.label.trim() === "" ? null : p.label.trim(),
     })),
   };
 }
-const EMPTY_MANUAL_PRICE: ManualPriceForm = { interval: "month", intervalCount: "1", currency: "usd", unitAmount: "0.00", label: "" };
+/** Under each manual price: what the amount will be stored as, or why it cannot be. */
+function ManualPriceHint({ row, index }: { row: ManualPriceForm; index: number }) {
+  const r = manualPriceMinor(row);
+  const untouched = manualPriceUntouched(row);
+  const base = "text-xs sm:col-span-6";
+  if (untouched && !isSupportedCurrency(row.currency)) {
+    return (
+      <p id={`manual-price-hint-${index}`} className={`${base} text-warning`} data-testid={`manual-price-hint-${index}`} data-state="kept">
+        Stored as {moneyText(row.stored!.minor, row.currency)}. {row.currency.toUpperCase()} is not a currency the billing provider supports, so the amount is kept exactly as stored. To change it, set a supported currency and enter the amount again.
+      </p>
+    );
+  }
+  if (!r.ok) {
+    return (
+      <p id={`manual-price-hint-${index}`} className={`${base} text-destructive`} role="alert" data-testid={`manual-price-hint-${index}`} data-state="invalid">
+        {r.message}
+      </p>
+    );
+  }
+  return (
+    <p id={`manual-price-hint-${index}`} className={`${base} text-muted-foreground`} data-testid={`manual-price-hint-${index}`} data-state="ok">
+      {moneyText(r.minor, row.currency)} {periodText(row.interval, Number(row.intervalCount) || 1)}. {amountHint(row.currency)}
+    </p>
+  );
+}
 
 export interface PlanVersionsProps {
   planId: string;
@@ -312,7 +351,13 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
   const save = () =>
     run(async () => {
       if (!form || !selectedId) return;
-      setSaveIssues([]);
+      // An amount that cannot be converted exactly is never sent.
+      const local = formIssues(form);
+      setSaveIssues(local);
+      if (local.length > 0) {
+        toast({ title: "Draft not saved", description: "Correct the highlighted amounts first.", variant: "destructive" });
+        return;
+      }
       try {
         const v = await m.update.mutateAsync({ planId, versionId: selectedId, data: bodyFrom(form) });
         toast({ title: `Draft ${versionLabel(v)} saved` });
@@ -511,7 +556,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
               )}
 
               {isDraft && form ? (
-                <div className="grid gap-6 lg:grid-cols-2" data-testid="version-editor">
+                <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0" data-testid="version-editor">
                   <div className="space-y-4">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5 sm:col-span-2">
@@ -662,11 +707,11 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                             </div>
                             <div className="space-y-1">
                               <Label className="text-xs">Currency</Label>
-                              <Input maxLength={3} value={p.currency} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, currency: e.target.value.toLowerCase() } : x)) })} data-testid={`manual-price-currency-${i}`} />
+                              <Input maxLength={3} value={p.currency} aria-invalid={!isSupportedCurrency(p.currency) && !manualPriceUntouched(p)} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, currency: e.target.value.toLowerCase() } : x)) })} data-testid={`manual-price-currency-${i}`} />
                             </div>
                             <div className="space-y-1">
                               <Label className="text-xs">Amount</Label>
-                              <Input type="number" min={0} step="0.01" inputMode="decimal" value={p.unitAmount} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, unitAmount: e.target.value } : x)) })} data-testid={`manual-price-amount-${i}`} />
+                              <Input type="text" inputMode="decimal" autoComplete="off" value={p.unitAmount} aria-invalid={!manualPriceMinor(p).ok} aria-describedby={`manual-price-hint-${i}`} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, unitAmount: e.target.value } : x)) })} data-testid={`manual-price-amount-${i}`} />
                             </div>
                             <div className="space-y-1">
                               <Label className="text-xs">Label</Label>
@@ -675,6 +720,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                             <div className="flex items-end">
                               <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, manualPrices: form.manualPrices.filter((_, j) => j !== i) })} data-testid={`manual-price-remove-${i}`}>Remove</Button>
                             </div>
+                            <ManualPriceHint row={p} index={i} />
                           </div>
                         ))}
                       </div>
@@ -728,7 +774,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                 </div>
               )}
 
-              <div className="grid gap-6 lg:grid-cols-2">
+              <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
                 <div data-testid="version-impact">
                   <h4 className="mb-2 text-sm font-semibold">Tenant impact</h4>
                   {impact.isLoading ? (
@@ -880,7 +926,7 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
 
 function VersionSnapshot({ v }: { v: PlatformPlanVersionDetail }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2" data-testid="version-snapshot">
+    <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0" data-testid="version-snapshot">
       <div>
         <h4 className="mb-2 text-sm font-semibold">Limits</h4>
         <Table>

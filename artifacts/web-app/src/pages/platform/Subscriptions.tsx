@@ -25,7 +25,7 @@ import { PageHeader, MetricCard, StatusBadge, TableSkeleton, ListSkeleton, Empty
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Search, Building2 } from "lucide-react";
 import { Link } from "wouter";
-import { formatMinor } from "@/lib/platform-analytics";
+import { formatMinor } from "@/lib/money";
 import { SubscriptionManager, STATUSES, usePlanOptions, STATUS_LABEL, statusTone, fmt, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
 import { invalidatePlanQueries } from "@/components/platform/PlanVersions";
 import { StatusBadge as VerifiedBadge } from "@/components/ds";
