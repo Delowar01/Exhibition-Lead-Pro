@@ -169,6 +169,13 @@ import type {
   GetEmployeeAnalyticsParams,
   GetEventReportParams,
   GetOrganizationParams,
+  GetPlatformAnalyticsActivityParams,
+  GetPlatformAnalyticsAiParams,
+  GetPlatformAnalyticsGrowthParams,
+  GetPlatformAnalyticsOperationsParams,
+  GetPlatformAnalyticsOverviewParams,
+  GetPlatformAnalyticsRevenueParams,
+  GetPlatformAnalyticsSubscriptionsParams,
   GetSecurityAlertsParams,
   GetSecurityPolicyParams,
   GetTeamAnalyticsParams,
@@ -265,6 +272,13 @@ import type {
   PipelineStageReorderInput,
   PipelineView,
   Plan,
+  PlatformAnalyticsActivity,
+  PlatformAnalyticsAi,
+  PlatformAnalyticsGrowth,
+  PlatformAnalyticsOperations,
+  PlatformAnalyticsOverview,
+  PlatformAnalyticsRevenue,
+  PlatformAnalyticsSubscriptions,
   PlatformBillingStatus,
   PlatformCreateDraftInput,
   PlatformCreatePlanInput,
@@ -3490,6 +3504,594 @@ export function useGetPlatformActivity<TData = Awaited<ReturnType<typeof getPlat
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPlatformActivityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPlatformAnalyticsOverviewUrl = (params?: GetPlatformAnalyticsOverviewParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/platform/analytics/overview?${stringifiedParams}` : `/api/platform/analytics/overview`
+}
+
+/**
+ * @summary Headline platform metrics for a reporting window, each with the preceding window of equal length
+ */
+export const getPlatformAnalyticsOverview = async (params?: GetPlatformAnalyticsOverviewParams, options?: RequestInit): Promise<PlatformAnalyticsOverview> => {
+
+  return customFetch<PlatformAnalyticsOverview>(getGetPlatformAnalyticsOverviewUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAnalyticsOverviewQueryKey = (params?: GetPlatformAnalyticsOverviewParams,) => {
+    return [
+    `/api/platform/analytics/overview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPlatformAnalyticsOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAnalyticsOverview>>, TError = ErrorType<ErrorResponse>>(params?: GetPlatformAnalyticsOverviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAnalyticsOverviewQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAnalyticsOverview>>> = ({ signal }) => getPlatformAnalyticsOverview(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAnalyticsOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAnalyticsOverview>>>
+export type GetPlatformAnalyticsOverviewQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Headline platform metrics for a reporting window, each with the preceding window of equal length
+ */
+
+export function useGetPlatformAnalyticsOverview<TData = Awaited<ReturnType<typeof getPlatformAnalyticsOverview>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetPlatformAnalyticsOverviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAnalyticsOverviewQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPlatformAnalyticsGrowthUrl = (params?: GetPlatformAnalyticsGrowthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/platform/analytics/growth?${stringifiedParams}` : `/api/platform/analytics/growth`
+}
+
+/**
+ * @summary Company and user growth (new per bucket and running total) from real creation dates
+ */
+export const getPlatformAnalyticsGrowth = async (params?: GetPlatformAnalyticsGrowthParams, options?: RequestInit): Promise<PlatformAnalyticsGrowth> => {
+
+  return customFetch<PlatformAnalyticsGrowth>(getGetPlatformAnalyticsGrowthUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAnalyticsGrowthQueryKey = (params?: GetPlatformAnalyticsGrowthParams,) => {
+    return [
+    `/api/platform/analytics/growth`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPlatformAnalyticsGrowthQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAnalyticsGrowth>>, TError = ErrorType<ErrorResponse>>(params?: GetPlatformAnalyticsGrowthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsGrowth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAnalyticsGrowthQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAnalyticsGrowth>>> = ({ signal }) => getPlatformAnalyticsGrowth(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsGrowth>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAnalyticsGrowthQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAnalyticsGrowth>>>
+export type GetPlatformAnalyticsGrowthQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Company and user growth (new per bucket and running total) from real creation dates
+ */
+
+export function useGetPlatformAnalyticsGrowth<TData = Awaited<ReturnType<typeof getPlatformAnalyticsGrowth>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetPlatformAnalyticsGrowthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsGrowth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAnalyticsGrowthQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPlatformAnalyticsSubscriptionsUrl = (params?: GetPlatformAnalyticsSubscriptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/platform/analytics/subscriptions?${stringifiedParams}` : `/api/platform/analytics/subscriptions`
+}
+
+/**
+ * @summary Subscription status and plan distribution as of now, plus the subscription changes recorded in the audit trail inside the window
+ */
+export const getPlatformAnalyticsSubscriptions = async (params?: GetPlatformAnalyticsSubscriptionsParams, options?: RequestInit): Promise<PlatformAnalyticsSubscriptions> => {
+
+  return customFetch<PlatformAnalyticsSubscriptions>(getGetPlatformAnalyticsSubscriptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAnalyticsSubscriptionsQueryKey = (params?: GetPlatformAnalyticsSubscriptionsParams,) => {
+    return [
+    `/api/platform/analytics/subscriptions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPlatformAnalyticsSubscriptionsQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAnalyticsSubscriptions>>, TError = ErrorType<ErrorResponse>>(params?: GetPlatformAnalyticsSubscriptionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsSubscriptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAnalyticsSubscriptionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAnalyticsSubscriptions>>> = ({ signal }) => getPlatformAnalyticsSubscriptions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsSubscriptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAnalyticsSubscriptionsQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAnalyticsSubscriptions>>>
+export type GetPlatformAnalyticsSubscriptionsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Subscription status and plan distribution as of now, plus the subscription changes recorded in the audit trail inside the window
+ */
+
+export function useGetPlatformAnalyticsSubscriptions<TData = Awaited<ReturnType<typeof getPlatformAnalyticsSubscriptions>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetPlatformAnalyticsSubscriptionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsSubscriptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAnalyticsSubscriptionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPlatformAnalyticsRevenueUrl = (params?: GetPlatformAnalyticsRevenueParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/platform/analytics/revenue?${stringifiedParams}` : `/api/platform/analytics/revenue`
+}
+
+/**
+ * @summary Estimated recurring revenue from verified provider prices, kept apart from recorded payment events (payment amounts are not stored and are never invented)
+ */
+export const getPlatformAnalyticsRevenue = async (params?: GetPlatformAnalyticsRevenueParams, options?: RequestInit): Promise<PlatformAnalyticsRevenue> => {
+
+  return customFetch<PlatformAnalyticsRevenue>(getGetPlatformAnalyticsRevenueUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAnalyticsRevenueQueryKey = (params?: GetPlatformAnalyticsRevenueParams,) => {
+    return [
+    `/api/platform/analytics/revenue`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPlatformAnalyticsRevenueQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAnalyticsRevenue>>, TError = ErrorType<ErrorResponse>>(params?: GetPlatformAnalyticsRevenueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsRevenue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAnalyticsRevenueQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAnalyticsRevenue>>> = ({ signal }) => getPlatformAnalyticsRevenue(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsRevenue>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAnalyticsRevenueQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAnalyticsRevenue>>>
+export type GetPlatformAnalyticsRevenueQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Estimated recurring revenue from verified provider prices, kept apart from recorded payment events (payment amounts are not stored and are never invented)
+ */
+
+export function useGetPlatformAnalyticsRevenue<TData = Awaited<ReturnType<typeof getPlatformAnalyticsRevenue>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetPlatformAnalyticsRevenueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsRevenue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAnalyticsRevenueQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPlatformAnalyticsActivityUrl = (params?: GetPlatformAnalyticsActivityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/platform/analytics/activity?${stringifiedParams}` : `/api/platform/analytics/activity`
+}
+
+/**
+ * @summary Card scans, contacts and leads created across all tenants (counts only), with the most active companies
+ */
+export const getPlatformAnalyticsActivity = async (params?: GetPlatformAnalyticsActivityParams, options?: RequestInit): Promise<PlatformAnalyticsActivity> => {
+
+  return customFetch<PlatformAnalyticsActivity>(getGetPlatformAnalyticsActivityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAnalyticsActivityQueryKey = (params?: GetPlatformAnalyticsActivityParams,) => {
+    return [
+    `/api/platform/analytics/activity`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPlatformAnalyticsActivityQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAnalyticsActivity>>, TError = ErrorType<ErrorResponse>>(params?: GetPlatformAnalyticsActivityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAnalyticsActivityQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAnalyticsActivity>>> = ({ signal }) => getPlatformAnalyticsActivity(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsActivity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAnalyticsActivityQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAnalyticsActivity>>>
+export type GetPlatformAnalyticsActivityQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Card scans, contacts and leads created across all tenants (counts only), with the most active companies
+ */
+
+export function useGetPlatformAnalyticsActivity<TData = Awaited<ReturnType<typeof getPlatformAnalyticsActivity>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetPlatformAnalyticsActivityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAnalyticsActivityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPlatformAnalyticsAiUrl = (params?: GetPlatformAnalyticsAiParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/platform/analytics/ai?${stringifiedParams}` : `/api/platform/analytics/ai`
+}
+
+/**
+ * @summary AI requests, tokens and estimated cost across all tenants from the invocation ledger (no prompt or response content)
+ */
+export const getPlatformAnalyticsAi = async (params?: GetPlatformAnalyticsAiParams, options?: RequestInit): Promise<PlatformAnalyticsAi> => {
+
+  return customFetch<PlatformAnalyticsAi>(getGetPlatformAnalyticsAiUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAnalyticsAiQueryKey = (params?: GetPlatformAnalyticsAiParams,) => {
+    return [
+    `/api/platform/analytics/ai`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPlatformAnalyticsAiQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAnalyticsAi>>, TError = ErrorType<ErrorResponse>>(params?: GetPlatformAnalyticsAiParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsAi>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAnalyticsAiQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAnalyticsAi>>> = ({ signal }) => getPlatformAnalyticsAi(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsAi>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAnalyticsAiQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAnalyticsAi>>>
+export type GetPlatformAnalyticsAiQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary AI requests, tokens and estimated cost across all tenants from the invocation ledger (no prompt or response content)
+ */
+
+export function useGetPlatformAnalyticsAi<TData = Awaited<ReturnType<typeof getPlatformAnalyticsAi>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetPlatformAnalyticsAiParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsAi>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAnalyticsAiQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPlatformAnalyticsOperationsUrl = (params?: GetPlatformAnalyticsOperationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/platform/analytics/operations?${stringifiedParams}` : `/api/platform/analytics/operations`
+}
+
+/**
+ * @summary Sign-ins, audit and security events, billing notifications and the background job queue (counts only)
+ */
+export const getPlatformAnalyticsOperations = async (params?: GetPlatformAnalyticsOperationsParams, options?: RequestInit): Promise<PlatformAnalyticsOperations> => {
+
+  return customFetch<PlatformAnalyticsOperations>(getGetPlatformAnalyticsOperationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAnalyticsOperationsQueryKey = (params?: GetPlatformAnalyticsOperationsParams,) => {
+    return [
+    `/api/platform/analytics/operations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPlatformAnalyticsOperationsQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAnalyticsOperations>>, TError = ErrorType<ErrorResponse>>(params?: GetPlatformAnalyticsOperationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsOperations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAnalyticsOperationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAnalyticsOperations>>> = ({ signal }) => getPlatformAnalyticsOperations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsOperations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAnalyticsOperationsQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAnalyticsOperations>>>
+export type GetPlatformAnalyticsOperationsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Sign-ins, audit and security events, billing notifications and the background job queue (counts only)
+ */
+
+export function useGetPlatformAnalyticsOperations<TData = Awaited<ReturnType<typeof getPlatformAnalyticsOperations>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetPlatformAnalyticsOperationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAnalyticsOperations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAnalyticsOperationsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

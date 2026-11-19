@@ -285,11 +285,21 @@ export async function subscriptionMetrics(now = new Date()) {
 // Revenue is computed ONLY from active provider-managed subscriptions whose bound
 // price is a verified mapping. Anything else is reported as unavailable — never
 // an estimate, never a zero presented as truth.
+// The two rules of the revenue estimate, shared with the platform analytics breakdown so
+// both always agree: which provider-managed subscriptions count today, and how a verified
+// recurring price is normalized to one month.
+export function isLiveProviderSubscription(s: SubscriptionRow): boolean {
+  return normalizeLegacyStatus(s.status) === "active" && !!s.stripeSubscriptionId && (s.providerStatus == null || LIVE_PROVIDER_STATUSES.has(s.providerStatus));
+}
+export function monthlyRecurringMinorOf(p: Pick<PlanPriceRow, "interval" | "intervalCount" | "unitAmountMinor">): number {
+  return p.interval === "year" ? p.unitAmountMinor / (12 * p.intervalCount) : p.interval === "month" ? p.unitAmountMinor / p.intervalCount : p.interval === "week" ? (p.unitAmountMinor * 52) / (12 * p.intervalCount) : (p.unitAmountMinor * 365) / (12 * p.intervalCount);
+}
+
 export async function revenueSnapshot() {
   const stripeSubs = await repo.listStripeManaged(10_000);
   const prices = await repo.listPlanPrices({});
   const byProviderPrice = new Map(prices.map((p) => [p.providerPriceId, p]));
-  const live = stripeSubs.filter((s) => (normalizeLegacyStatus(s.status) === "active" || normalizeLegacyStatus(s.status) === "trialing") && s.stripeSubscriptionId && (s.providerStatus == null || LIVE_PROVIDER_STATUSES.has(s.providerStatus)) && normalizeLegacyStatus(s.status) === "active");
+  const live = stripeSubs.filter(isLiveProviderSubscription);
   if (live.length === 0) {
     return { available: false as const, reason: prices.length === 0 ? "NO_VERIFIED_PRICES" : "NO_ACTIVE_PROVIDER_SUBSCRIPTIONS", currency: null, monthlyRecurringMinor: null, countedSubscriptions: 0, unpricedSubscriptions: 0 };
   }
@@ -307,8 +317,7 @@ export async function revenueSnapshot() {
       return { available: false as const, reason: "MIXED_CURRENCIES", currency: null, monthlyRecurringMinor: null, countedSubscriptions: counted, unpricedSubscriptions: unpriced };
     }
     currency = p.currency;
-    const monthly = p.interval === "year" ? p.unitAmountMinor / (12 * p.intervalCount) : p.interval === "month" ? p.unitAmountMinor / p.intervalCount : p.interval === "week" ? (p.unitAmountMinor * 52) / (12 * p.intervalCount) : (p.unitAmountMinor * 365) / (12 * p.intervalCount);
-    total += monthly;
+    total += monthlyRecurringMinorOf(p);
     counted += 1;
   }
   if (counted === 0) return { available: false as const, reason: "UNPRICED_SUBSCRIPTIONS", currency: null, monthlyRecurringMinor: null, countedSubscriptions: 0, unpricedSubscriptions: unpriced };

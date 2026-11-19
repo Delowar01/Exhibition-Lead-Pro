@@ -5803,6 +5803,496 @@ export interface PlatformStats {
   subscriptionDistribution?: StatusCount[];
 }
 
+export type PlatformAnalyticsRangeGranularity = typeof PlatformAnalyticsRangeGranularity[keyof typeof PlatformAnalyticsRangeGranularity];
+
+
+export const PlatformAnalyticsRangeGranularity = {
+  day: 'day',
+  week: 'week',
+  month: 'month',
+} as const;
+
+export type PlatformAnalyticsRangeTimezone = typeof PlatformAnalyticsRangeTimezone[keyof typeof PlatformAnalyticsRangeTimezone];
+
+
+export const PlatformAnalyticsRangeTimezone = {
+  UTC: 'UTC',
+} as const;
+
+/**
+ * The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.
+ */
+export interface PlatformAnalyticsRange {
+  /** First UTC day, inclusive (YYYY-MM-DD) */
+  from: string;
+  /** Last UTC day, inclusive (YYYY-MM-DD) */
+  to: string;
+  days: number;
+  granularity: PlatformAnalyticsRangeGranularity;
+  previousFrom: string;
+  previousTo: string;
+  timezone: PlatformAnalyticsRangeTimezone;
+}
+
+/**
+ * A counted metric for the window and for the preceding window of equal length
+ */
+export interface PlatformAnalyticsCount {
+  current: number;
+  previous: number;
+}
+
+/**
+ * A summed amount for the window and for the preceding window of equal length
+ */
+export interface PlatformAnalyticsAmount {
+  current: number;
+  previous: number;
+}
+
+export interface PlatformAnalyticsStatusCount {
+  status: string;
+  count: number;
+}
+
+/**
+ * All-time counts as of now (the platform dashboard's definitions)
+ */
+export type PlatformAnalyticsOverviewTotals = {
+  companies: number;
+  users: number;
+};
+
+export type PlatformAnalyticsOverviewPeriod = {
+  newCompanies: PlatformAnalyticsCount;
+  newUsers: PlatformAnalyticsCount;
+  /** Companies with at least one card scan or new contact in the window */
+  activeCompanies: PlatformAnalyticsCount;
+  /** Distinct users with at least one successful sign-in in the window */
+  activeUsers: PlatformAnalyticsCount;
+  /** Card scans (manual-entry interaction rows and deleted rows excluded) */
+  scans: PlatformAnalyticsCount;
+  contacts: PlatformAnalyticsCount;
+  leads: PlatformAnalyticsCount;
+  /** AI provider calls */
+  aiRequests: PlatformAnalyticsCount;
+};
+
+/**
+ * Canonical subscription state as of now
+ */
+export type PlatformAnalyticsOverviewSubscriptions = {
+  total: number;
+  /** Subscriptions that grant full access today (active or trialing) */
+  fullAccess: number;
+  byStatus: PlatformAnalyticsStatusCount[];
+  trialsExpiringWithin7Days: number;
+};
+
+export type PlatformAnalyticsOverviewAi = {
+  /** Estimated AI cost in USD (token usage × the platform price table) */
+  costUsd: PlatformAnalyticsAmount;
+};
+
+export interface PlatformAnalyticsOverview {
+  range: PlatformAnalyticsRange;
+  generatedAt: string;
+  /** All-time counts as of now (the platform dashboard's definitions) */
+  totals: PlatformAnalyticsOverviewTotals;
+  period: PlatformAnalyticsOverviewPeriod;
+  /** Canonical subscription state as of now */
+  subscriptions: PlatformAnalyticsOverviewSubscriptions;
+  revenue: RevenueSnapshot;
+  ai: PlatformAnalyticsOverviewAi;
+}
+
+export type PlatformAnalyticsGrowthSeriesSeriesItem = {
+  /** First UTC day of the bucket (YYYY-MM-DD) */
+  bucket: string;
+  added: number;
+  cumulative: number;
+};
+
+export interface PlatformAnalyticsGrowthSeries {
+  /** Existing rows created before the window */
+  startingTotal: number;
+  /** Existing rows created up to the end of the window */
+  endingTotal: number;
+  added: PlatformAnalyticsCount;
+  series: PlatformAnalyticsGrowthSeriesSeriesItem[];
+}
+
+/**
+ * Growth by creation date of the rows that exist today (hard-deleted companies are not tracked)
+ */
+export interface PlatformAnalyticsGrowth {
+  range: PlatformAnalyticsRange;
+  companies: PlatformAnalyticsGrowthSeries;
+  users: PlatformAnalyticsGrowthSeries;
+}
+
+/**
+ * Subscription changes recorded in the audit trail — new subscriptions, transitions INTO each status, and plan changes
+ */
+export interface PlatformAnalyticsLifecycleCounts {
+  created: number;
+  toTrialing: number;
+  toActive: number;
+  toPastDue: number;
+  toCancelled: number;
+  toExpired: number;
+  toSuspended: number;
+  planChanges: number;
+}
+
+export interface PlatformAnalyticsLifecyclePoint {
+  bucket: string;
+  created: number;
+  toTrialing: number;
+  toActive: number;
+  toPastDue: number;
+  toCancelled: number;
+  toExpired: number;
+  toSuspended: number;
+  planChanges: number;
+}
+
+export type PlatformAnalyticsSubscriptionsSnapshotByPlanItem = {
+  planId: string;
+  /** @nullable */
+  planName: string | null;
+  /**
+     * draft | published | archived (null when the plan row no longer exists)
+     * @nullable
+     */
+  planStatus: string | null;
+  total: number;
+  byStatus: PlatformAnalyticsStatusCount[];
+};
+
+export type PlatformAnalyticsSubscriptionsSnapshotByBillingSourceItem = {
+  billingSource: string;
+  count: number;
+};
+
+/**
+ * Canonical subscription rows as of now (not window-dependent)
+ */
+export type PlatformAnalyticsSubscriptionsSnapshot = {
+  total: number;
+  fullAccess: number;
+  byStatus: PlatformAnalyticsStatusCount[];
+  byPlan: PlatformAnalyticsSubscriptionsSnapshotByPlanItem[];
+  byBillingSource: PlatformAnalyticsSubscriptionsSnapshotByBillingSourceItem[];
+  trialsExpiringWithin7Days: number;
+};
+
+export type PlatformAnalyticsSubscriptionsLifecycleSource = typeof PlatformAnalyticsSubscriptionsLifecycleSource[keyof typeof PlatformAnalyticsSubscriptionsLifecycleSource];
+
+
+export const PlatformAnalyticsSubscriptionsLifecycleSource = {
+  audit_log: 'audit_log',
+} as const;
+
+export type PlatformAnalyticsSubscriptionsLifecyclePlanMovesItem = {
+  fromPlan: string;
+  toPlan: string;
+  count: number;
+};
+
+/**
+ * Derived only from audit rows written by the subscription lifecycle (before/after status and plan). Changes made before auditing existed are not represented.
+ */
+export type PlatformAnalyticsSubscriptionsLifecycle = {
+  source: PlatformAnalyticsSubscriptionsLifecycleSource;
+  totals: PlatformAnalyticsLifecycleCounts;
+  previousTotals: PlatformAnalyticsLifecycleCounts;
+  series: PlatformAnalyticsLifecyclePoint[];
+  /** Most frequent plan changes in the window */
+  planMoves: PlatformAnalyticsSubscriptionsLifecyclePlanMovesItem[];
+};
+
+export interface PlatformAnalyticsSubscriptions {
+  range: PlatformAnalyticsRange;
+  /** Canonical subscription rows as of now (not window-dependent) */
+  snapshot: PlatformAnalyticsSubscriptionsSnapshot;
+  /** Derived only from audit rows written by the subscription lifecycle (before/after status and plan). Changes made before auditing existed are not represented. */
+  lifecycle: PlatformAnalyticsSubscriptionsLifecycle;
+}
+
+export type PlatformAnalyticsRevenueEstimateBasis = typeof PlatformAnalyticsRevenueEstimateBasis[keyof typeof PlatformAnalyticsRevenueEstimateBasis];
+
+
+export const PlatformAnalyticsRevenueEstimateBasis = {
+  verified_provider_prices: 'verified_provider_prices',
+} as const;
+
+export type PlatformAnalyticsRevenueEstimateByPlanItem = {
+  planId: string;
+  /** @nullable */
+  planName: string | null;
+  subscriptions: number;
+  monthlyRecurringMinor: number;
+};
+
+/**
+ * An ESTIMATE of recurring revenue as of now — verified provider prices × active provider-managed subscriptions. It is not money received.
+ */
+export type PlatformAnalyticsRevenueEstimate = {
+  basis: PlatformAnalyticsRevenueEstimateBasis;
+  snapshot: RevenueSnapshot;
+  /** Present only when the snapshot is available */
+  byPlan: PlatformAnalyticsRevenueEstimateByPlanItem[];
+};
+
+/**
+ * Money actually received. This system stores no invoice or payment amounts, so collected revenue is reported as unavailable — never estimated.
+ */
+export type PlatformAnalyticsRevenueCollected = {
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+};
+
+export type PlatformAnalyticsRevenuePaymentEventsSeriesItem = {
+  bucket: string;
+  paid: number;
+  failed: number;
+};
+
+/**
+ * ACTUAL payment notifications received from the billing provider (counts only — the provider's amounts are not stored)
+ */
+export type PlatformAnalyticsRevenuePaymentEvents = {
+  paid: PlatformAnalyticsCount;
+  failed: PlatformAnalyticsCount;
+  series: PlatformAnalyticsRevenuePaymentEventsSeriesItem[];
+};
+
+/**
+ * Self-service checkout sessions started in the window, by their current state
+ */
+export type PlatformAnalyticsRevenueCheckouts = {
+  started: PlatformAnalyticsCount;
+  completed: number;
+  expired: number;
+  failed: number;
+  open: number;
+};
+
+export type PlatformAnalyticsRevenueProviderEventsByTypeItem = {
+  eventType: string;
+  count: number;
+};
+
+export type PlatformAnalyticsRevenueProviderEventsByOutcomeItem = {
+  outcome: string;
+  count: number;
+};
+
+/**
+ * Billing provider notifications received in the window
+ */
+export type PlatformAnalyticsRevenueProviderEvents = {
+  total: PlatformAnalyticsCount;
+  /** Notifications whose processing failed */
+  failed: number;
+  byType: PlatformAnalyticsRevenueProviderEventsByTypeItem[];
+  byOutcome: PlatformAnalyticsRevenueProviderEventsByOutcomeItem[];
+};
+
+export type PlatformAnalyticsRevenueBillingSourcesItem = {
+  billingSource: string;
+  total: number;
+  fullAccess: number;
+};
+
+export interface PlatformAnalyticsRevenue {
+  range: PlatformAnalyticsRange;
+  /** An ESTIMATE of recurring revenue as of now — verified provider prices × active provider-managed subscriptions. It is not money received. */
+  estimate: PlatformAnalyticsRevenueEstimate;
+  /** Money actually received. This system stores no invoice or payment amounts, so collected revenue is reported as unavailable — never estimated. */
+  collected: PlatformAnalyticsRevenueCollected;
+  /** ACTUAL payment notifications received from the billing provider (counts only — the provider's amounts are not stored) */
+  paymentEvents: PlatformAnalyticsRevenuePaymentEvents;
+  /** Self-service checkout sessions started in the window, by their current state */
+  checkouts: PlatformAnalyticsRevenueCheckouts;
+  /** Billing provider notifications received in the window */
+  providerEvents: PlatformAnalyticsRevenueProviderEvents;
+  /** Subscriptions by how they are billed. Manually managed subscriptions carry no recorded price and are never part of the estimate. */
+  billingSources: PlatformAnalyticsRevenueBillingSourcesItem[];
+}
+
+export type PlatformAnalyticsActivityTotals = {
+  scans: PlatformAnalyticsCount;
+  contacts: PlatformAnalyticsCount;
+  leads: PlatformAnalyticsCount;
+  activeCompanies: PlatformAnalyticsCount;
+};
+
+export type PlatformAnalyticsActivitySeriesItem = {
+  bucket: string;
+  scans: number;
+  contacts: number;
+  leads: number;
+};
+
+export type PlatformAnalyticsActivityScansByMethodItem = {
+  method: string;
+  count: number;
+};
+
+export type PlatformAnalyticsActivityTopCompaniesItem = {
+  companyId: number;
+  companyName: string;
+  scans: number;
+  contacts: number;
+  leads: number;
+};
+
+export interface PlatformAnalyticsActivity {
+  range: PlatformAnalyticsRange;
+  totals: PlatformAnalyticsActivityTotals;
+  series: PlatformAnalyticsActivitySeriesItem[];
+  /** Card scans by extraction method (manual-entry rows are reported separately) */
+  scansByMethod: PlatformAnalyticsActivityScansByMethodItem[];
+  scansByStatus: PlatformAnalyticsStatusCount[];
+  /** Manual-entry interaction rows in the window (not counted as scans) */
+  manualEntries: number;
+  /** The most active companies in the window — volumes only, never tenant records */
+  topCompanies: PlatformAnalyticsActivityTopCompaniesItem[];
+}
+
+export interface AiUsageAgg {
+  /** Provider calls only (success + error + timeout). */
+  requests: number;
+  success: number;
+  /** Failed provider calls (error + timeout). */
+  errors: number;
+  failureRate: number;
+  /** Requests served from the short-window result cache (no provider call, zero tokens). */
+  cacheHits: number;
+  /** Concurrent duplicates that shared one in-flight provider call. */
+  dedupReused: number;
+  /** Requests denied by the month budget before any provider call. */
+  budgetDenied: number;
+  /** Requests denied by AI rate limiting before any provider call. */
+  rateLimited: number;
+  /** Provider calls whose token usage was estimated (no provider metadata). */
+  estimatedRows: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  avgLatencyMs: number;
+}
+
+export type PlatformAnalyticsAiPoint = AiUsageAgg & {
+  bucket: string;
+};
+
+/**
+ * Cost is estimated from token usage and the platform price table; it is not a provider invoice
+ */
+export type PlatformAnalyticsAiCostBasis = typeof PlatformAnalyticsAiCostBasis[keyof typeof PlatformAnalyticsAiCostBasis];
+
+
+export const PlatformAnalyticsAiCostBasis = {
+  estimated: 'estimated',
+} as const;
+
+export type PlatformAnalyticsAiFailureCategoriesItem = {
+  category: string;
+  count: number;
+};
+
+export type AiFeatureUsage = AiUsageAgg & {
+  feature: string;
+};
+
+export type AiCompanyUsage = AiUsageAgg & ({
+  companyId: number | null;
+  companyName: string | null;
+});
+
+export interface PlatformAnalyticsAi {
+  range: PlatformAnalyticsRange;
+  /** Cost is estimated from token usage and the platform price table; it is not a provider invoice */
+  costBasis: PlatformAnalyticsAiCostBasis;
+  totals: AiUsageAgg;
+  previous: AiUsageAgg;
+  series: PlatformAnalyticsAiPoint[];
+  byFeature: AiFeatureUsage[];
+  topCompanies: AiCompanyUsage[];
+  failureCategories: PlatformAnalyticsAiFailureCategoriesItem[];
+}
+
+export type PlatformAnalyticsOperationsSignInsSeriesItem = {
+  bucket: string;
+  successful: number;
+  failed: number;
+};
+
+export type PlatformAnalyticsOperationsSignIns = {
+  successful: PlatformAnalyticsCount;
+  failed: PlatformAnalyticsCount;
+  activeUsers: PlatformAnalyticsCount;
+  series: PlatformAnalyticsOperationsSignInsSeriesItem[];
+};
+
+export type PlatformAnalyticsOperationsAuditEventsByCategoryItem = {
+  category: string;
+  count: number;
+};
+
+export type PlatformAnalyticsOperationsAuditEventsSeriesItem = {
+  bucket: string;
+  value: number;
+};
+
+export type PlatformAnalyticsOperationsAuditEvents = {
+  total: PlatformAnalyticsCount;
+  /** Audit rows by the leading segment of their action (subscription, user, plan_version, …) */
+  byCategory: PlatformAnalyticsOperationsAuditEventsByCategoryItem[];
+  series: PlatformAnalyticsOperationsAuditEventsSeriesItem[];
+};
+
+export type PlatformAnalyticsOperationsSecurityEventsByTypeItem = {
+  type: string;
+  count: number;
+};
+
+export type PlatformAnalyticsOperationsSecurityEvents = {
+  total: PlatformAnalyticsCount;
+  byType: PlatformAnalyticsOperationsSecurityEventsByTypeItem[];
+};
+
+export type PlatformAnalyticsOperationsBillingEvents = {
+  received: PlatformAnalyticsCount;
+  failed: PlatformAnalyticsCount;
+};
+
+/**
+ * The background job queue as of now (not window-dependent). With the in-process driver nothing is persisted and durable is false.
+ */
+export type PlatformAnalyticsOperationsJobs = {
+  durable: boolean;
+  pending: number;
+  running: number;
+  /** Dead-lettered jobs still retained for diagnosis */
+  dead: number;
+};
+
+export interface PlatformAnalyticsOperations {
+  range: PlatformAnalyticsRange;
+  signIns: PlatformAnalyticsOperationsSignIns;
+  auditEvents: PlatformAnalyticsOperationsAuditEvents;
+  securityEvents: PlatformAnalyticsOperationsSecurityEvents;
+  billingEvents: PlatformAnalyticsOperationsBillingEvents;
+  /** The background job queue as of now (not window-dependent). With the in-process driver nothing is persisted and durable is false. */
+  jobs: PlatformAnalyticsOperationsJobs;
+}
+
 export interface AnalyticsKpis {
   scans: number;
   newContacts: number;
@@ -6003,39 +6493,6 @@ export interface UpdateAiSettings {
   /** Partial workflow-rule override; provided keys are validated and merged over the current effective rules. Null resets all rules to platform defaults. */
   workflowRules?: UpdateAiSettingsWorkflowRules;
 }
-
-export interface AiUsageAgg {
-  /** Provider calls only (success + error + timeout). */
-  requests: number;
-  success: number;
-  /** Failed provider calls (error + timeout). */
-  errors: number;
-  failureRate: number;
-  /** Requests served from the short-window result cache (no provider call, zero tokens). */
-  cacheHits: number;
-  /** Concurrent duplicates that shared one in-flight provider call. */
-  dedupReused: number;
-  /** Requests denied by the month budget before any provider call. */
-  budgetDenied: number;
-  /** Requests denied by AI rate limiting before any provider call. */
-  rateLimited: number;
-  /** Provider calls whose token usage was estimated (no provider metadata). */
-  estimatedRows: number;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  costUsd: number;
-  avgLatencyMs: number;
-}
-
-export type AiFeatureUsage = AiUsageAgg & {
-  feature: string;
-};
-
-export type AiCompanyUsage = AiUsageAgg & ({
-  companyId: number | null;
-  companyName: string | null;
-});
 
 export type AiDayUsage = AiUsageAgg & {
   /** UTC day (YYYY-MM-DD). */
@@ -8580,6 +9037,25 @@ export interface WorkflowCatalog {
   recipientKinds: WorkflowCatalogRecipientKindsItem[];
 }
 
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+export type AnalyticsFromParameter = string;
+
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+export type AnalyticsToParameter = string;
+
+export type AnalyticsGranularityParameter = typeof AnalyticsGranularityParameter[keyof typeof AnalyticsGranularityParameter];
+
+
+export const AnalyticsGranularityParameter = {
+  day: 'day',
+  week: 'week',
+  month: 'month',
+} as const;
+
 export type ListInvitationsParams = {
 companyId?: number;
 page?: number;
@@ -8615,6 +9091,111 @@ limit?: number;
 page?: number;
 pageSize?: number;
 unreadOnly?: boolean;
+};
+
+export type GetPlatformAnalyticsOverviewParams = {
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+from?: AnalyticsFromParameter;
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+to?: AnalyticsToParameter;
+/**
+ * Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+ */
+granularity?: AnalyticsGranularityParameter;
+};
+
+export type GetPlatformAnalyticsGrowthParams = {
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+from?: AnalyticsFromParameter;
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+to?: AnalyticsToParameter;
+/**
+ * Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+ */
+granularity?: AnalyticsGranularityParameter;
+};
+
+export type GetPlatformAnalyticsSubscriptionsParams = {
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+from?: AnalyticsFromParameter;
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+to?: AnalyticsToParameter;
+/**
+ * Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+ */
+granularity?: AnalyticsGranularityParameter;
+};
+
+export type GetPlatformAnalyticsRevenueParams = {
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+from?: AnalyticsFromParameter;
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+to?: AnalyticsToParameter;
+/**
+ * Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+ */
+granularity?: AnalyticsGranularityParameter;
+};
+
+export type GetPlatformAnalyticsActivityParams = {
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+from?: AnalyticsFromParameter;
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+to?: AnalyticsToParameter;
+/**
+ * Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+ */
+granularity?: AnalyticsGranularityParameter;
+};
+
+export type GetPlatformAnalyticsAiParams = {
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+from?: AnalyticsFromParameter;
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+to?: AnalyticsToParameter;
+/**
+ * Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+ */
+granularity?: AnalyticsGranularityParameter;
+};
+
+export type GetPlatformAnalyticsOperationsParams = {
+/**
+ * First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+ */
+from?: AnalyticsFromParameter;
+/**
+ * Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+ */
+to?: AnalyticsToParameter;
+/**
+ * Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+ */
+granularity?: AnalyticsGranularityParameter;
 };
 
 export type PlatformListSubscriptionsParams = {
