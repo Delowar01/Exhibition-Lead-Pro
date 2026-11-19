@@ -156,6 +156,20 @@ pnpm --filter @workspace/web-app exec playwright test e2e/zg-platform-analytics.
   routing, keyboard use, desktop 1440 / tablet 820 / mobile 390 layouts, dark theme. Set
   `G7_SHOTS_DIR` to save screenshots.
 
+Full local regression on the code of this branch (commit `1369447…`, fresh disposable
+database, filesystem object storage, durable job queue, stub AI provider, fake billing
+provider; API suite run once on a freshly started API):
+
+| Suite | Result | Before this batch |
+| --- | --- | --- |
+| API | 1871 passed / 0 failed / 11 skipped of 1882 (134 files) | 1805 / 0 / 11 of 1816 |
+| Playwright | 205 / 205 | 179 / 179 |
+| Mobile | 332 / 332 (26 files) | 332 / 332 |
+| Web unit + component | 55 / 55 (new suite) | — |
+| Workspace typecheck, API build, web build | pass | pass |
+
+The skipped API tests are the pre-existing, classified skips; none belongs to this batch.
+
 ## 8. Limits (by design, from the data that exists)
 
 - No payment amounts exist, so there is no collected-revenue figure and no revenue history;
