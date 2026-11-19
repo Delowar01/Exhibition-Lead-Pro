@@ -10,8 +10,8 @@ No new table, no schema change, no new provider, no new runtime dependency. The 
 only reads existing tables through seven new read-only endpoints.
 
 The existing Platform Dashboard (`/platform`) was aligned with the module's definitions in
-the final polish pass (§9). A separate, not-yet-approved proposal for timestamp indexes is
-in `docs/G7_INDEX_PROPOSAL.md`; no index is part of this branch.
+the final polish pass (§9). A separate, not-yet-approved proposal for indexes on four
+event tables is in `docs/G7_INDEX_PROPOSAL.md`; no index is part of this branch.
 
 ## 1. What the page shows
 
@@ -65,8 +65,8 @@ Code: `routes/platform-analytics.ts` → `services/platform-analytics.service.ts
 `subscriptionMetrics()`, `revenueSnapshot()`, the AI ledger aggregates of
 `ai.repository.ts`, and the dashboard's company/user totals. The three reporting
 definitions that more than one screen uses — company user, capture, card scan — are SQL
-fragments in one file, `repositories/platform-definitions.ts`, shared by the dashboard,
-the Analytics module and the per-company user count.
+fragments in one file, `repositories/platform-definitions.ts`, shared by the dashboard
+(totals and scan trend), the Analytics module and the per-company user and capture counts.
 
 ## 3. Definitions
 
@@ -136,10 +136,12 @@ rollout on the hosted database: indexes on `audit_logs`, `login_attempts`,
 Subscriptions tabs, the sign-in figures of the Overview and the billing counts of the
 Revenue tab scan those tables in full; the gate bounds the concurrency, not the duration.
 The analysis, the exact DDL, the measured plans and the rollout order are in
-`docs/G7_INDEX_PROPOSAL.md`: five lookup indexes (which also speed up the tenant audit
-log, the Security Center and the sign-in lockout check) and three BRIN time indexes for
-the Analytics ranges. An ordinary index on the timestamp was measured and is not
-recommended: it slows the audit list of users with access to several small companies.
+`docs/G7_INDEX_PROPOSAL.md`. It recommends five lookup indexes, which speed up the tenant
+audit log, the Security Center, plan history and the sign-in lockout check. It does
+**not** recommend a time-range index for the Analytics queries for now: an ordinary index
+on the timestamp slows the audit list of users with access to several small companies,
+and a BRIN index can turn from a gain into a loss when the table's physical order is
+disturbed. Analytics therefore keeps today's query times until that is decided.
 
 ## 6. Web
 
@@ -275,11 +277,13 @@ Left unchanged, for a separate decision:
   two-decimal currencies only; the form is a write path, so display and form should change
   together.
 - Money is formatted in US-English notation while the plain counts follow the browser's
-  language (as on the Analytics page).
+  language (as on the Analytics page). The plan price screens above still follow the
+  browser's language, so the same price can be written differently on two platform pages.
 - Existing visual defects of the dashboard, not caused by these changes and not touched:
   at 1440 px the "Total Companies" label is cut off and a long ARR amount runs past its
-  card; the legend of the Subscription Status chart overlaps the first row of the list
-  beneath it; "Recent Companies — Latest tenants" lists the five oldest companies.
+  card; the label and icon of the dark card are low-contrast (the figure was fixed, they
+  were not); the legend of the Subscription Status chart overlaps the first row of the
+  list beneath it; "Recent Companies — Latest tenants" lists the five oldest companies.
 - Outside the platform dashboard: the tenant dashboard's team count includes deleted users,
   and the total of `/platform/users` includes platform owner accounts (a user-management
   list, not a metric).
