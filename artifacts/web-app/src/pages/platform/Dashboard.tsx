@@ -22,7 +22,7 @@ import { formatMinor } from "@/lib/platform-analytics";
 //
 // G-7 — the figures use the same definitions as Platform Owner Analytics: users are
 // company users that exist today, a capture is any saved capture, a card scan is a
-// capture read by OCR, and money is formatted in the currency's own minor unit.
+// capture sent for OCR, and money is formatted in the currency's own minor unit.
 
 const STATUS_LABEL: Record<string, string> = {
   trialing: "Trialing",
@@ -136,12 +136,13 @@ export default function PlatformDashboard() {
         <div data-testid="dashboard-total-captures">
           <MetricCard
             label="Total Captures"
-            value={totalCaptures.toLocaleString()}
+            // The card is dark: the figure takes the card's own text colour so it can be read.
+            value={<span className="text-sidebar-foreground">{totalCaptures.toLocaleString()}</span>}
             icon={Zap}
             className="h-full bg-sidebar text-sidebar-foreground border-sidebar-border"
             footer={
               <span className="text-sidebar-foreground/70" data-testid="dashboard-card-scans">
-                {cardScans.toLocaleString()} card {cardScans === 1 ? "scan" : "scans"} read by OCR
+                {cardScans.toLocaleString()} card {cardScans === 1 ? "scan" : "scans"} sent for OCR
               </span>
             }
           />
@@ -228,7 +229,7 @@ export default function PlatformDashboard() {
       <Card className="shadow-sm" data-testid="dashboard-scan-trend">
         <CardHeader>
           <CardTitle>Card Scan Volume</CardTitle>
-          <CardDescription>Cards read by OCR per day across all tenants (last 30 days). Captures saved without OCR are not included.</CardDescription>
+          <CardDescription>Card scans sent for OCR per day across all tenants (last 30 days). Captures saved without OCR are not included.</CardDescription>
         </CardHeader>
         <CardContent>
           {scanPoints.length === 0 ? (

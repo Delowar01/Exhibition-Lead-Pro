@@ -7,7 +7,7 @@ import { API_BASE } from "./fixtures/seed-values";
 /**
  * ZH. G-7 — the Platform Dashboard (/platform) uses the same definitions as Platform Owner
  * Analytics: Total Users are company users that exist today, every capture is told apart
- * from the card scans read by OCR, and money is formatted in the currency's own minor unit.
+ * from the card scans sent for OCR, and money is formatted in the currency's own minor unit.
  *
  * Figures are compared with the API's own answer (the oracle); the currency cases intercept
  * the single stats request because a local database holds one currency at most. The design
@@ -111,7 +111,19 @@ test("totals follow the shared definitions and captures are told apart from card
   const captures = page.getByTestId("dashboard-total-captures");
   await expect(captures).toContainText("Total Captures");
   await expect(value(page, "dashboard-total-captures")).toHaveText(fmt(stats.totalCaptures));
-  await expect(page.getByTestId("dashboard-card-scans")).toHaveText(`${fmt(stats.totalScans)} card ${stats.totalScans === 1 ? "scan" : "scans"} read by OCR`);
+  await expect(page.getByTestId("dashboard-card-scans")).toHaveText(`${fmt(stats.totalScans)} card ${stats.totalScans === 1 ? "scan" : "scans"} sent for OCR`);
+  // The card is dark; its figure must be readable on it (it used to be dark on dark).
+  const contrast = await value(page, "dashboard-total-captures").evaluate((el) => {
+    const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+    const lum = (c: string) => {
+      const [r, g, b] = rgb(c).map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const fg = lum(getComputedStyle((el.firstElementChild as HTMLElement | null) ?? el).color);
+    const bg = lum(getComputedStyle(el.closest(".rounded-lg")!).backgroundColor);
+    return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+  });
+  expect(contrast).toBeGreaterThanOrEqual(4.5);
   // The ambiguous label is gone: nothing calls the capture total "scans".
   await expect(page.getByTestId("platform-dashboard").getByText("Total Scans", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("platform-dashboard").getByText("Cards captured system-wide")).toHaveCount(0);
@@ -119,7 +131,7 @@ test("totals follow the shared definitions and captures are told apart from card
   // The trend is named for what it counts.
   const trend = page.getByTestId("dashboard-scan-trend");
   await expect(trend).toContainText("Card Scan Volume");
-  await expect(trend).toContainText("Cards read by OCR per day");
+  await expect(trend).toContainText("Card scans sent for OCR per day");
   await expect(trend).toContainText("Captures saved without OCR are not included");
 
   // The dashboard and the analytics page report the same users.
@@ -129,7 +141,9 @@ test("totals follow the shared definitions and captures are told apart from card
   expect(errors, errors.join("\n")).toEqual([]);
 });
 
-test("the company table's Users column counts users that exist today", async ({ page }) => {
+// What the figure counts is proven against the database in the API suite
+// (g7-platform-dashboard.test.ts); here the page is checked against the API.
+test("the company table shows the API's Users figure for every company", async ({ page }) => {
   await seedAs(page, platform);
   const wait = page.waitForResponse((r) => new URL(r.url()).pathname.endsWith("/companies") && r.status() === 200);
   await openDashboard(page);
@@ -191,6 +205,32 @@ test.describe("money is formatted in the currency's own minor unit", () => {
   });
 });
 
+test("the Subscriptions page formats the same recurring revenue the same way", async ({ page }) => {
+  // The MRR card of /platform/subscriptions shows the figure of the dashboard's MRR card.
+  await seedAs(page, platform);
+  const real = (await api("GET", "/platform/subscriptions/metrics", platform.token)).json;
+  const revenue = { available: true, reason: null, currency: "jpy", monthlyRecurringMinor: 5000, countedSubscriptions: 3, unpricedSubscriptions: 0 };
+  await page.route("**/api/platform/subscriptions/metrics", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...real, revenue }) }));
+  await page.goto("/platform/subscriptions");
+  await expect(page.getByTestId("platform-subscriptions")).toBeVisible();
+  await expect(page.getByTestId("mrr-card")).toContainText("¥5,000");
+  await expect(page.getByTestId("mrr-card")).not.toContainText("¥50.00");
+});
+
+test("the company pages call the per-company figure Captures, not Scans", async ({ page }) => {
+  await seedAs(page, platform);
+  const listed = (await api("GET", "/companies?limit=1", platform.token)).json.companies as Array<{ id: number; scanCount: number }>;
+  expect(listed.length).toBe(1);
+  await page.goto("/platform/companies");
+  await expect(page.getByRole("columnheader", { name: "Captures", exact: true })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Scans", exact: true })).toHaveCount(0);
+
+  await page.goto(`/platform/companies/${listed[0].id}`);
+  const figure = page.getByTestId("count-scans");
+  await expect(figure).toHaveText(String(listed[0].scanCount));
+  await expect(figure.locator("xpath=..")).toContainText("Captures");
+});
+
 for (const vp of [
   { name: "desktop-1440", width: 1440, height: 900 },
   { name: "tablet-820", width: 820, height: 1180 },
@@ -215,10 +255,14 @@ for (const vp of [
       expect(Math.round(card), id).toBe(Math.round(cell));
     }
     if (vp.width >= 1440) {
-      // On one row, they are as tall as the unwrapped "Total Companies" and "Total Leads" cards.
-      const heights = await page.getByTestId("platform-dashboard").locator("div.grid").first().locator(":scope > *").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
-      expect(heights).toHaveLength(6);
-      expect(new Set(heights).size, heights.join(",")).toBe(1);
+      // On one row, the CARDS inside the two wrappers are as tall as the unwrapped
+      // "Total Companies" and "Total Leads" cards (grid cells are equal by construction;
+      // the cards themselves are what could fall short).
+      const cells = page.getByTestId("platform-dashboard").locator("div.grid").first().locator(":scope > *");
+      await expect(cells).toHaveCount(6);
+      const cardHeight = (i: number, wrapped: boolean) => cells.nth(i).evaluate((el, w) => Math.round((w ? el.firstElementChild! : el).getBoundingClientRect().height), wrapped);
+      const [companies, users, leads, captures] = await Promise.all([cardHeight(0, false), cardHeight(1, true), cardHeight(4, false), cardHeight(5, true)]);
+      expect([users, leads, captures], `cards: ${[companies, users, leads, captures].join(",")}`).toEqual([companies, companies, companies]);
     }
 
     const overflow = await page.evaluate(() => {

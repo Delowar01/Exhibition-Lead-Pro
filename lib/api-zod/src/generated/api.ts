@@ -788,8 +788,8 @@ export const GetPlatformStatsResponse = zod.object({
   "totalCompanies": zod.number(),
   "activeCompanies": zod.number().describe('Companies whose subscription grants full access today (active or trialing)'),
   "totalUsers": zod.number().describe('Company users that exist today. Deleted accounts and platform operators are not counted.'),
-  "totalCaptures": zod.number().describe('Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are not counted.'),
-  "totalScans": zod.number().describe('Card scans — the captures that were read by OCR (the definition of the scan trend). Always less than or equal to totalCaptures.'),
+  "totalCaptures": zod.number().describe('Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are not counted.'),
+  "totalScans": zod.number().describe('Card scans — the captures sent for OCR, whatever the outcome (the definition of the scan trend). Counted in the same statement as totalCaptures, so never greater than it.'),
   "totalLeads": zod.number().describe('Leads that exist today (deleted leads are not counted)'),
   "revenue": zod.object({
   "available": zod.boolean(),
@@ -909,11 +909,11 @@ export const GetPlatformAnalyticsOverviewResponse = zod.object({
   "activeUsers": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('Distinct company users with at least one successful sign-in in the window (platform operators are not counted)'),
+}).describe('Distinct company users that exist today with at least one successful sign-in in the window (deleted accounts and platform operators are not counted)'),
   "scans": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.'),
+}).describe('Card scans — captures sent for OCR, whatever the outcome. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.'),
   "contacts": zod.object({
   "current": zod.number(),
   "previous": zod.number()
@@ -1206,11 +1206,11 @@ export const GetPlatformAnalyticsActivityResponse = zod.object({
   "captures": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are excluded.'),
+}).describe('Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are excluded.'),
   "scans": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('Card scans — the captures that were read by OCR'),
+}).describe('Card scans — the captures sent for OCR, whatever the outcome'),
   "contacts": zod.object({
   "current": zod.number(),
   "previous": zod.number()
@@ -1393,7 +1393,7 @@ export const GetPlatformAnalyticsOperationsResponse = zod.object({
   "activeUsers": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('Distinct company users with at least one successful sign-in (platform operators are not counted)'),
+}).describe('Distinct company users that exist today with at least one successful sign-in (deleted accounts and platform operators are not counted)'),
   "series": zod.array(zod.object({
   "bucket": zod.string(),
   "successful": zod.number(),
@@ -4581,7 +4581,7 @@ export const ListCompaniesResponse = zod.object({
   "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
   "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
-  "scanCount": zod.number().optional().describe('Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard.'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -4657,7 +4657,7 @@ export const GetCompanyResponse = zod.object({
   "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
   "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
-  "scanCount": zod.number().optional().describe('Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard.'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -4716,7 +4716,7 @@ export const UpdateCompanyResponse = zod.object({
   "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
   "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
-  "scanCount": zod.number().optional().describe('Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard.'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -5001,7 +5001,7 @@ export const SuspendCompanyResponse = zod.object({
   "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
   "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
-  "scanCount": zod.number().optional().describe('Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard.'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -5045,7 +5045,7 @@ export const ActivateCompanyResponse = zod.object({
   "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
   "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
-  "scanCount": zod.number().optional().describe('Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard.'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),

@@ -1588,7 +1588,7 @@ export interface Company {
   userCount?: number;
   /** Contacts of the company that exist today (deleted contacts are not counted) */
   contactCount?: number;
-  /** Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard. */
+  /** Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard's totalCaptures, not its OCR card-scan figure. */
   scanCount?: number;
   subscription?: SubscriptionSummary | null;
   createdAt: string;
@@ -5800,9 +5800,9 @@ export interface PlatformStats {
   activeCompanies: number;
   /** Company users that exist today. Deleted accounts and platform operators are not counted. */
   totalUsers: number;
-  /** Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are not counted. */
+  /** Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are not counted. */
   totalCaptures: number;
-  /** Card scans — the captures that were read by OCR (the definition of the scan trend). Always less than or equal to totalCaptures. */
+  /** Card scans — the captures sent for OCR, whatever the outcome (the definition of the scan trend). Counted in the same statement as totalCaptures, so never greater than it. */
   totalScans: number;
   /** Leads that exist today (deleted leads are not counted) */
   totalLeads: number;
@@ -5878,9 +5878,9 @@ export type PlatformAnalyticsOverviewPeriod = {
   newUsers: PlatformAnalyticsCount;
   /** Companies with at least one card scan or new contact in the window */
   activeCompanies: PlatformAnalyticsCount;
-  /** Distinct company users with at least one successful sign-in in the window (platform operators are not counted) */
+  /** Distinct company users that exist today with at least one successful sign-in in the window (deleted accounts and platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
-  /** Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded. */
+  /** Card scans — captures sent for OCR, whatever the outcome. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded. */
   scans: PlatformAnalyticsCount;
   contacts: PlatformAnalyticsCount;
   leads: PlatformAnalyticsCount;
@@ -6150,9 +6150,9 @@ export interface PlatformAnalyticsRevenue {
 }
 
 export type PlatformAnalyticsActivityTotals = {
-  /** Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are excluded. */
+  /** Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are excluded. */
   captures: PlatformAnalyticsCount;
-  /** Card scans — the captures that were read by OCR */
+  /** Card scans — the captures sent for OCR, whatever the outcome */
   scans: PlatformAnalyticsCount;
   contacts: PlatformAnalyticsCount;
   leads: PlatformAnalyticsCount;
@@ -6266,7 +6266,7 @@ export type PlatformAnalyticsOperationsSignIns = {
   successful: PlatformAnalyticsCount;
   /** Failed sign-in attempts on the platform */
   failed: PlatformAnalyticsCount;
-  /** Distinct company users with at least one successful sign-in (platform operators are not counted) */
+  /** Distinct company users that exist today with at least one successful sign-in (deleted accounts and platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
   series: PlatformAnalyticsOperationsSignInsSeriesItem[];
 };

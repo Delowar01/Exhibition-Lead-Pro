@@ -59,7 +59,7 @@ export function OverviewSection({ params, onOpenTab }: SectionProps) {
             <div className="grid gap-6 lg:grid-cols-2">
               <ChartCard
                 title="Card scans"
-                description="Business cards read by OCR across all companies"
+                description="Business cards sent for OCR across all companies"
                 action={<TabLink onClick={() => onOpenTab("activity")}>Activity details</TabLink>}
                 testId="overview-scans-chart"
                 table={{

@@ -26,7 +26,7 @@ const MEASURES = [
 // Activity — capture volumes across all companies. Volumes only: no tenant record is shown.
 //
 // A "capture" is any contact a company saved from a card, a code, a tap or by hand. A "card
-// scan" is the subset that was read by OCR. The source breakdown covers every capture.
+// scan" is the subset that was sent for OCR. The source breakdown covers every capture.
 export function ActivitySection({ params }: SectionProps) {
   const query = useGetPlatformAnalyticsActivity(params, { query: sectionQuery(getGetPlatformAnalyticsActivityQueryKey(params)) });
   return (
@@ -83,7 +83,7 @@ export function ActivitySection({ params }: SectionProps) {
                 testId="activity-by-source"
                 footer={
                   <span data-testid="activity-capture-total">
-                    {plural(data.totals.captures.current, "capture")} in this period, of which {plural(data.totals.scans.current, "card scan")} read by OCR.
+                    {plural(data.totals.captures.current, "capture")} in this period, of which {plural(data.totals.scans.current, "card scan")} sent for OCR.
                   </span>
                 }
               >

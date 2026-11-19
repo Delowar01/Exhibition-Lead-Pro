@@ -17,6 +17,7 @@ import {
 } from "@workspace/db";
 import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNull, isNotNull, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { exec, type Executor } from "./base.js";
+import { OCR_CARD_SCAN } from "./platform-definitions.js";
 
 // Batch 20 — data access for the canonical subscription model. Every function
 // accepts an optional transaction executor so the services can compose atomic
@@ -551,7 +552,7 @@ export async function dailyScanCounts(days: number, now = new Date()): Promise<A
   const rows = await db
     .select({ day: sql<string>`to_char(date_trunc('day', ${scansTable.createdAt}), 'YYYY-MM-DD')`, n: count() })
     .from(scansTable)
-    .where(and(gte(scansTable.createdAt, since), isNull(scansTable.deletedAt), or(isNull(scansTable.extractionMethod), ne(scansTable.extractionMethod, "manual"))))
+    .where(and(gte(scansTable.createdAt, since), OCR_CARD_SCAN))
     .groupBy(sql`date_trunc('day', ${scansTable.createdAt})`);
   const byDay = new Map(rows.map((r) => [r.day, Number(r.n)]));
   const out: Array<{ date: string; value: number }> = [];

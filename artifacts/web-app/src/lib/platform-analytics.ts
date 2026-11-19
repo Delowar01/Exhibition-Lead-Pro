@@ -174,26 +174,36 @@ export function formatUsd(n: number): string {
   return `${n < 0 ? "-" : ""}$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: digits })}`;
 }
 
+// Currencies the billing provider reports without a fractional part (an amount of 5000 is
+// 5,000 yen) and with three decimals (an amount of 10000 is 10 dinars). Every other
+// currency is reported in hundredths. This is the provider's convention for the amounts it
+// sends, deliberately NOT the browser's Intl table: the two differ for some currencies
+// (Intl shows forints and Icelandic krónur without decimals, the provider reports them in
+// hundredths) and Intl data differs between browsers.
+const ZERO_DECIMAL_CURRENCIES = new Set(["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "VND", "VUV", "XAF", "XOF", "XPF"]);
+const THREE_DECIMAL_CURRENCIES = new Set(["BHD", "JOD", "KWD", "OMR", "TND"]);
+
 /**
- * How many decimal places a currency's minor unit has: 2 for USD, 0 for JPY, 3 for KWD.
- * The provider reports amounts in that smallest unit, so dividing by 100 is only right for
- * two-decimal currencies. An unknown code is treated as two-decimal.
+ * How many decimal places the provider's smallest unit of a currency has: 2 for USD, 0 for
+ * JPY, 3 for KWD. Dividing by 100 is only right for two-decimal currencies. A code that is
+ * in neither list, known or not, is two-decimal.
  */
 export function minorUnitDigits(currency: string): number {
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).resolvedOptions().maximumFractionDigits ?? 2;
-  } catch {
-    return 2;
-  }
+  const code = currency.toUpperCase();
+  if (ZERO_DECIMAL_CURRENCIES.has(code)) return 0;
+  if (THREE_DECIMAL_CURRENCIES.has(code)) return 3;
+  return 2;
 }
 
 /** Money held in the currency's smallest unit (cents, yen, fils), as the provider reports it. */
 export function formatMinor(minor: number, currency: string): string {
   const code = currency.toUpperCase();
+  const digits = minorUnitDigits(code);
+  const value = minor / 10 ** digits;
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(minor / 10 ** minorUnitDigits(code));
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: code, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
   } catch {
-    return `${(minor / 100).toFixed(2)} ${code}`;
+    return `${value.toFixed(digits)} ${code}`;
   }
 }
 

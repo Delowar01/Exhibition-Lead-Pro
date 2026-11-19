@@ -13,9 +13,9 @@ export type PlatformAnalyticsOverviewPeriod = {
   newUsers: PlatformAnalyticsCount;
   /** Companies with at least one card scan or new contact in the window */
   activeCompanies: PlatformAnalyticsCount;
-  /** Distinct company users with at least one successful sign-in in the window (platform operators are not counted) */
+  /** Distinct company users that exist today with at least one successful sign-in in the window (deleted accounts and platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
-  /** Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded. */
+  /** Card scans — captures sent for OCR, whatever the outcome. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded. */
   scans: PlatformAnalyticsCount;
   contacts: PlatformAnalyticsCount;
   leads: PlatformAnalyticsCount;

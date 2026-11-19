@@ -13,7 +13,7 @@ export type PlatformAnalyticsOperationsSignIns = {
   successful: PlatformAnalyticsCount;
   /** Failed sign-in attempts on the platform */
   failed: PlatformAnalyticsCount;
-  /** Distinct company users with at least one successful sign-in (platform operators are not counted) */
+  /** Distinct company users that exist today with at least one successful sign-in (deleted accounts and platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
   series: PlatformAnalyticsOperationsSignInsSeriesItem[];
 };

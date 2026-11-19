@@ -247,7 +247,7 @@ test.describe("live data", () => {
     // Card scans are a subset of captures, and the source breakdown covers every capture.
     expect(activity.totals.scans.current).toBeLessThanOrEqual(activity.totals.captures.current);
     expect((activity.capturesBySource as Array<{ count: number }>).reduce((a, c) => a + c.count, 0)).toBe(activity.totals.captures.current);
-    await expect(page.getByTestId("activity-capture-total")).toContainText(new RegExp(`^${fmt(activity.totals.captures.current)} captures? in this period, of which ${fmt(activity.totals.scans.current)} card scans? read by OCR`));
+    await expect(page.getByTestId("activity-capture-total")).toContainText(new RegExp(`^${fmt(activity.totals.captures.current)} captures? in this period, of which ${fmt(activity.totals.scans.current)} card scans? sent for OCR`));
     for (const c of activity.capturesBySource as Array<{ source: string; count: number }>) {
       await expect(page.getByTestId(`activity-source-list-row-${c.source}`)).toContainText(fmt(c.count));
     }
@@ -268,7 +268,8 @@ test.describe("live data", () => {
 
     const ai = (await openTab(page, "ai")).data;
     await expect(kpiValue(page, "ai-kpi-requests")).toHaveText(fmt(ai.totals.requests));
-    await expect(page.getByTestId("ai-kpi-failure-rate")).toContainText(`${fmt(ai.totals.errors)} failed`);
+    // With no AI request in the period there is no rate to show (true on a fresh database).
+    await expect(page.getByTestId("ai-kpi-failure-rate")).toContainText(ai.totals.requests === 0 ? "No requests in this period" : `${fmt(ai.totals.errors)} failed`);
     await expect(kpiValue(page, "ai-kpi-cache")).toHaveText(fmt(ai.totals.cacheHits));
     await expect(kpiValue(page, "ai-kpi-budget")).toHaveText(fmt(ai.totals.budgetDenied));
     await expect(page.getByTestId("ai-cost-chart")).toContainText("Estimate");

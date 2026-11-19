@@ -220,6 +220,14 @@ describe("formats", () => {
     expect(minorUnitDigits("JPY")).toBe(0);
     expect(minorUnitDigits("kwd")).toBe(3);
     expect(minorUnitDigits("not-a-currency")).toBe(2);
+    // The provider's convention, not the browser's: forints, Icelandic krónur and Ugandan
+    // shillings are reported in hundredths even where Intl prints them without decimals.
+    for (const code of ["huf", "ISK", "ugx", "twd", "eur", "aed", "sar"]) expect(minorUnitDigits(code), code).toBe(2);
+    for (const code of ["jpy", "KRW", "vnd", "clp", "xof"]) expect(minorUnitDigits(code), code).toBe(0);
+    for (const code of ["kwd", "BHD", "omr", "jod", "tnd"]) expect(minorUnitDigits(code), code).toBe(3);
+    expect(formatMinor(490000, "huf")).toContain("4,900.00");
+    expect(formatMinor(490000, "huf")).not.toContain("490,000");
+    expect(formatMinor(1250, "aed")).toContain("12.50");
     // 5,000 yen is ¥5,000 — not ¥50; 10,000 fils are 10 dinars — not 100.
     expect(formatMinor(5000, "jpy")).toBe("¥5,000");
     expect(formatMinor(10000, "kwd")).toContain("10.000");

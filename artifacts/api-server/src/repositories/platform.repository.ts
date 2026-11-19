@@ -23,18 +23,17 @@ export async function countUsers(): Promise<number> {
   return totalUsers;
 }
 
-// Every capture (card scans read by OCR plus contacts saved without OCR); soft-deleted
-// rows are excluded.
-export async function countCaptures(): Promise<number> {
-  const [{ totalCaptures }] = await db.select({ totalCaptures: count() }).from(scansTable).where(LIVE_CAPTURE);
-  return totalCaptures;
-}
-
-// Card scans: the captures that were read by OCR — the same definition as the dashboard's
-// scan trend (subscriptions.repository dailyScanCounts) and the analytics module.
-export async function countScans(): Promise<number> {
-  const [{ totalScans }] = await db.select({ totalScans: count() }).from(scansTable).where(OCR_CARD_SCAN);
-  return totalScans;
+// Every capture, and the card scans among them (the captures sent for OCR) — the same
+// definitions as the dashboard's scan trend and the analytics module. One statement, so
+// the two figures describe the same moment and scans can never exceed captures.
+export async function captureTotals(): Promise<{ captures: number; scans: number }> {
+  const [row] = await db
+    .select({
+      captures: sql<number>`count(*) filter (where ${LIVE_CAPTURE})`,
+      scans: sql<number>`count(*) filter (where ${OCR_CARD_SCAN})`,
+    })
+    .from(scansTable);
+  return { captures: Number(row?.captures ?? 0), scans: Number(row?.scans ?? 0) };
 }
 
 // leads is a soft-delete table: exclude soft-deleted rows from the count.

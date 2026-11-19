@@ -168,7 +168,7 @@ export default function PlatformCompanies() {
                     <TableHead>Access</TableHead>
                     <TableHead className="text-right">Users</TableHead>
                     <TableHead className="text-right">Contacts</TableHead>
-                    <TableHead className="text-right">Scans</TableHead>
+                    <TableHead className="text-right">Captures</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="w-[50px]"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>

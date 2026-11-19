@@ -10959,7 +10959,7 @@ components:
           description: Contacts of the company that exist today (deleted contacts are not counted)
         scanCount:
           type: integer
-          description: Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard.
+          description: Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard's totalCaptures, not its OCR card-scan figure.
         subscription:
           oneOf:
             - $ref: "#/components/schemas/SubscriptionSummary"
@@ -15761,10 +15761,10 @@ components:
           description: Company users that exist today. Deleted accounts and platform operators are not counted.
         totalCaptures:
           type: integer
-          description: Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are not counted.
+          description: Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are not counted.
         totalScans:
           type: integer
-          description: Card scans — the captures that were read by OCR (the definition of the scan trend). Always less than or equal to totalCaptures.
+          description: Card scans — the captures sent for OCR, whatever the outcome (the definition of the scan trend). Counted in the same statement as totalCaptures, so never greater than it.
         totalLeads:
           type: integer
           description: Leads that exist today (deleted leads are not counted)
@@ -15862,10 +15862,10 @@ components:
               description: Companies with at least one card scan or new contact in the window
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             activeUsers:
-              description: Distinct company users with at least one successful sign-in in the window (platform operators are not counted)
+              description: Distinct company users that exist today with at least one successful sign-in in the window (deleted accounts and platform operators are not counted)
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             scans:
-              description: Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.
+              description: Card scans — captures sent for OCR, whatever the outcome. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             contacts:
               $ref: "#/components/schemas/PlatformAnalyticsCount"
@@ -16217,10 +16217,10 @@ components:
           required: [captures, scans, contacts, leads, activeCompanies]
           properties:
             captures:
-              description: Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are excluded.
+              description: Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are excluded.
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             scans:
-              description: Card scans — the captures that were read by OCR
+              description: Card scans — the captures sent for OCR, whatever the outcome
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             contacts:
               $ref: "#/components/schemas/PlatformAnalyticsCount"
@@ -16339,7 +16339,7 @@ components:
               description: Failed sign-in attempts on the platform
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             activeUsers:
-              description: Distinct company users with at least one successful sign-in (platform operators are not counted)
+              description: Distinct company users that exist today with at least one successful sign-in (deleted accounts and platform operators are not counted)
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             series:
               type: array

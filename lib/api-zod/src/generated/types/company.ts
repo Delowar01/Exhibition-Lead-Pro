@@ -46,7 +46,7 @@ export interface Company {
   userCount?: number;
   /** Contacts of the company that exist today (deleted contacts are not counted) */
   contactCount?: number;
-  /** Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard. */
+  /** Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard's totalCaptures, not its OCR card-scan figure. */
   scanCount?: number;
   subscription?: SubscriptionSummary | null;
   createdAt: Date;
