@@ -506,7 +506,7 @@ export default function PlatformCompanyDetail() {
               <dl className="grid grid-cols-3 gap-3 text-center">
                 <div><dt className="text-xs text-muted-foreground">Users</dt><dd className="text-xl font-semibold tabular-nums" data-testid="count-users">{c.userCount ?? 0}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Contacts</dt><dd className="text-xl font-semibold tabular-nums" data-testid="count-contacts">{c.contactCount ?? 0}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">Scans</dt><dd className="text-xl font-semibold tabular-nums" data-testid="count-scans">{c.scanCount ?? 0}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Captures</dt><dd className="text-xl font-semibold tabular-nums" data-testid="count-scans">{c.scanCount ?? 0}</dd></div>
               </dl>
             </CardContent>
           </Card>

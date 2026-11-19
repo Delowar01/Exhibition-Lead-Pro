@@ -25,6 +25,7 @@ import { PageHeader, MetricCard, StatusBadge, TableSkeleton, ListSkeleton, Empty
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Search, Building2 } from "lucide-react";
 import { Link } from "wouter";
+import { formatMinor } from "@/lib/platform-analytics";
 import { SubscriptionManager, STATUSES, usePlanOptions, STATUS_LABEL, statusTone, fmt, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
 import { invalidatePlanQueries } from "@/components/platform/PlanVersions";
 import { StatusBadge as VerifiedBadge } from "@/components/ds";
@@ -52,14 +53,6 @@ const REVENUE_REASON: Record<string, string> = {
   MIXED_CURRENCIES: "Active subscriptions use more than one currency.",
   PARTIAL_UNPRICED: "Some active subscriptions are not bound to a registered price.",
 };
-
-function money(minor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(minor / 100);
-  } catch {
-    return `${(minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
-  }
-}
 
 function companyFromSearch(search: string): number | null {
   const raw = new URLSearchParams(search).get("company");
@@ -159,7 +152,7 @@ export default function PlatformSubscriptions() {
         <div data-testid="mrr-card">
           <MetricCard
             label="Monthly recurring revenue"
-            value={revenue?.available && revenue.currency && revenue.monthlyRecurringMinor != null ? money(revenue.monthlyRecurringMinor, revenue.currency) : <span className="text-xl font-semibold text-muted-foreground">Unavailable</span>}
+            value={revenue?.available && revenue.currency && revenue.monthlyRecurringMinor != null ? formatMinor(revenue.monthlyRecurringMinor, revenue.currency) : <span className="text-xl font-semibold text-muted-foreground">Unavailable</span>}
             icon={CreditCard}
             footer={revenue ? (revenue.available ? `${revenue.countedSubscriptions} verified online subscription(s)${revenue.unpricedSubscriptions ? `, ${revenue.unpricedSubscriptions} unpriced` : ""}` : REVENUE_REASON[revenue.reason ?? ""] ?? "Not configured") : "Loading…"}
           />
@@ -319,7 +312,7 @@ export default function PlatformSubscriptions() {
                       <TableRow key={p.id} data-testid={`price-row-${p.id}`}>
                         <TableCell className="capitalize">{p.planId}</TableCell>
                         <TableCell data-testid={`price-scope-${p.id}`}>{p.planVersionId == null ? "Plan-wide" : `v${p.planVersion ?? "?"} · ${p.planVersionState ?? "version"}`}</TableCell>
-                        <TableCell>{money(p.unitAmountMinor, p.currency)}</TableCell>
+                        <TableCell>{formatMinor(p.unitAmountMinor, p.currency)}</TableCell>
                         <TableCell>{p.intervalCount > 1 ? `${p.intervalCount} ${p.interval}s` : p.interval}</TableCell>
                         <TableCell className="font-mono text-xs">{p.providerPriceRef ?? "—"}<span className="ml-2 font-sans text-muted-foreground">({p.providerMode})</span></TableCell>
                         <TableCell data-testid={`price-verified-${p.id}`}>

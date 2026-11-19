@@ -13,8 +13,13 @@ export interface PlatformStats {
   totalCompanies: number;
   /** Companies whose subscription grants full access today (active or trialing) */
   activeCompanies: number;
+  /** Company users that exist today. Deleted accounts and platform operators are not counted. */
   totalUsers: number;
+  /** Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are not counted. */
+  totalCaptures: number;
+  /** Card scans — the captures sent for OCR, whatever the outcome (the definition of the scan trend). Counted in the same statement as totalCaptures, so never greater than it. */
   totalScans: number;
+  /** Leads that exist today (deleted leads are not counted) */
   totalLeads: number;
   revenue: RevenueSnapshot;
   subscriptions: PlatformSubscriptionMetrics;

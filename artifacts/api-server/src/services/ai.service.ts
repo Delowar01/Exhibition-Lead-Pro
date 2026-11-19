@@ -425,7 +425,7 @@ function formatSettings(s: EffectiveAiSettings) {
   };
 }
 
-function formatAgg(a: RawAgg) {
+export function formatAgg(a: RawAgg) {
   return {
     requests: a.requests,
     success: a.success,

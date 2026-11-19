@@ -42,8 +42,11 @@ export interface Company {
   suspendedReason?: string | null;
   /** @nullable */
   trialEndsAt?: Date | null;
+  /** Users of the company that exist today (deleted accounts are not counted) */
   userCount?: number;
+  /** Contacts of the company that exist today (deleted contacts are not counted) */
   contactCount?: number;
+  /** Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard's totalCaptures, not its OCR card-scan figure. */
   scanCount?: number;
   subscription?: SubscriptionSummary | null;
   createdAt: Date;

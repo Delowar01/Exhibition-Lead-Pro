@@ -16,6 +16,7 @@ import subscriptionsRouter from "./subscriptions.js";
 import platformRouter from "./platform.js";
 import platformBillingRouter from "./platform-billing.js";
 import platformPlansRouter from "./platform-plans.js";
+import platformAnalyticsRouter from "./platform-analytics.js";
 import reportsRouter from "./reports.js";
 import analyticsRouter from "./analytics.js";
 import pushRouter from "./push.js";
@@ -90,6 +91,8 @@ router.use(platformRouter);
 router.use(platformBillingRouter);
 // Batch 39: platform-owner READ-ONLY plan catalog (Plan Builder foundation).
 router.use(platformPlansRouter);
+// G-7: platform-owner analytics (read-only aggregates; counts only, never tenant records).
+router.use(platformAnalyticsRouter);
 router.use(reportsRouter);
 router.use(analyticsRouter);
 router.use(pushRouter);

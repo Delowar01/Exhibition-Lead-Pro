@@ -1084,6 +1084,168 @@ paths:
                 items:
                   $ref: "#/components/schemas/ActivityItem"
 
+  # PLATFORM ANALYTICS (G-7 — platform owner only; aggregates only, never tenant CRM records)
+  /platform/analytics/overview:
+    get:
+      operationId: getPlatformAnalyticsOverview
+      tags: [platform]
+      summary: Headline platform metrics for a reporting window, each with the preceding window of equal length
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/AnalyticsGranularity"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAnalyticsOverview"
+        "400":
+          description: Invalid reporting window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/analytics/growth:
+    get:
+      operationId: getPlatformAnalyticsGrowth
+      tags: [platform]
+      summary: Company and user growth (new per bucket and running total) from real creation dates
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/AnalyticsGranularity"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAnalyticsGrowth"
+        "400":
+          description: Invalid reporting window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/analytics/subscriptions:
+    get:
+      operationId: getPlatformAnalyticsSubscriptions
+      tags: [platform]
+      summary: Subscription status and plan distribution as of now, plus the subscription changes recorded in the audit trail inside the window
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/AnalyticsGranularity"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAnalyticsSubscriptions"
+        "400":
+          description: Invalid reporting window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/analytics/revenue:
+    get:
+      operationId: getPlatformAnalyticsRevenue
+      tags: [platform]
+      summary: Estimated recurring revenue from verified provider prices, kept apart from recorded payment events (payment amounts are not stored and are never invented)
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/AnalyticsGranularity"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAnalyticsRevenue"
+        "400":
+          description: Invalid reporting window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/analytics/activity:
+    get:
+      operationId: getPlatformAnalyticsActivity
+      tags: [platform]
+      summary: Card scans, contacts and leads created across all tenants (counts only), with the most active companies
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/AnalyticsGranularity"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAnalyticsActivity"
+        "400":
+          description: Invalid reporting window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/analytics/ai:
+    get:
+      operationId: getPlatformAnalyticsAi
+      tags: [platform]
+      summary: AI requests, tokens and estimated cost across all tenants from the invocation ledger (no prompt or response content)
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/AnalyticsGranularity"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAnalyticsAi"
+        "400":
+          description: Invalid reporting window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/analytics/operations:
+    get:
+      operationId: getPlatformAnalyticsOperations
+      tags: [platform]
+      summary: Sign-ins, audit and security events, billing notifications and the background job queue (counts only)
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/AnalyticsGranularity"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAnalyticsOperations"
+        "400":
+          description: Invalid reporting window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PLATFORM BILLING (Batch 20 — platform owner only)
   /platform/subscriptions:
     get:
@@ -8911,6 +9073,25 @@ components:
       required: true
       schema:
         type: integer
+    AnalyticsFrom:
+      name: from
+      in: query
+      description: First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.
+      schema:
+        type: string
+    AnalyticsTo:
+      name: to
+      in: query
+      description: Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.
+      schema:
+        type: string
+    AnalyticsGranularity:
+      name: granularity
+      in: query
+      description: Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.
+      schema:
+        type: string
+        enum: [day, week, month]
   schemas:
     HealthStatus:
       type: object
@@ -10772,10 +10953,13 @@ components:
           format: date-time
         userCount:
           type: integer
+          description: Users of the company that exist today (deleted accounts are not counted)
         contactCount:
           type: integer
+          description: Contacts of the company that exist today (deleted contacts are not counted)
         scanCount:
           type: integer
+          description: Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard's totalCaptures, not its OCR card-scan figure.
         subscription:
           oneOf:
             - $ref: "#/components/schemas/SubscriptionSummary"
@@ -13377,7 +13561,7 @@ components:
     RevenueSnapshot:
       type: object
       required: [available, reason, currency, monthlyRecurringMinor, countedSubscriptions, unpricedSubscriptions]
-      description: Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.
+      description: Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.
       properties:
         available:
           type: boolean
@@ -15565,7 +15749,7 @@ components:
 
     PlatformStats:
       type: object
-      required: [totalCompanies, activeCompanies, totalUsers, totalScans, totalLeads, revenue, subscriptions]
+      required: [totalCompanies, activeCompanies, totalUsers, totalCaptures, totalScans, totalLeads, revenue, subscriptions]
       properties:
         totalCompanies:
           type: integer
@@ -15574,10 +15758,16 @@ components:
           description: Companies whose subscription grants full access today (active or trialing)
         totalUsers:
           type: integer
+          description: Company users that exist today. Deleted accounts and platform operators are not counted.
+        totalCaptures:
+          type: integer
+          description: Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are not counted.
         totalScans:
           type: integer
+          description: Card scans — the captures sent for OCR, whatever the outcome (the definition of the scan trend). Counted in the same statement as totalCaptures, so never greater than it.
         totalLeads:
           type: integer
+          description: Leads that exist today (deleted leads are not counted)
         revenue:
           $ref: "#/components/schemas/RevenueSnapshot"
         subscriptions:
@@ -15586,6 +15776,648 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StatusCount"
+
+    PlatformAnalyticsRange:
+      type: object
+      description: The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.
+      required: [from, to, days, granularity, previousFrom, previousTo, timezone]
+      properties:
+        from:
+          type: string
+          description: First UTC day, inclusive (YYYY-MM-DD)
+        to:
+          type: string
+          description: Last UTC day, inclusive (YYYY-MM-DD)
+        days:
+          type: integer
+        granularity:
+          type: string
+          enum: [day, week, month]
+        previousFrom:
+          type: string
+        previousTo:
+          type: string
+        timezone:
+          type: string
+          enum: [UTC]
+
+    PlatformAnalyticsCount:
+      type: object
+      description: A counted metric for the window and for the preceding window of equal length
+      required: [current, previous]
+      properties:
+        current:
+          type: integer
+        previous:
+          type: integer
+
+    PlatformAnalyticsAmount:
+      type: object
+      description: A summed amount for the window and for the preceding window of equal length
+      required: [current, previous]
+      properties:
+        current:
+          type: number
+        previous:
+          type: number
+
+    PlatformAnalyticsStatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+
+    PlatformAnalyticsOverview:
+      type: object
+      required: [range, generatedAt, totals, period, subscriptions, revenue, ai, trends]
+      properties:
+        range:
+          $ref: "#/components/schemas/PlatformAnalyticsRange"
+        generatedAt:
+          type: string
+          format: date-time
+        totals:
+          type: object
+          description: Counts as of now
+          required: [companies, users]
+          properties:
+            companies:
+              type: integer
+            users:
+              type: integer
+              description: Company users that exist today (deleted accounts and platform operators are not counted)
+        period:
+          type: object
+          required: [newCompanies, newUsers, activeCompanies, activeUsers, scans, contacts, leads, aiRequests]
+          properties:
+            newCompanies:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            newUsers:
+              description: Company users created in the window that exist today (deleted accounts and platform operators are not counted)
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            activeCompanies:
+              description: Companies with at least one card scan or new contact in the window
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            activeUsers:
+              description: Distinct company users that exist today with at least one successful sign-in in the window (deleted accounts and platform operators are not counted)
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            scans:
+              description: Card scans — captures sent for OCR, whatever the outcome. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            contacts:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            leads:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            aiRequests:
+              description: AI provider calls
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+        subscriptions:
+          type: object
+          description: Canonical subscription state as of now
+          required: [total, fullAccess, byStatus, trialsExpiringWithin7Days]
+          properties:
+            total:
+              type: integer
+            fullAccess:
+              type: integer
+              description: Subscriptions whose status is active or trialing. A trial that has just run out is counted until the lifecycle sweep moves it.
+            byStatus:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAnalyticsStatusCount"
+            trialsExpiringWithin7Days:
+              type: integer
+        revenue:
+          $ref: "#/components/schemas/RevenueSnapshot"
+        ai:
+          type: object
+          required: [costUsd]
+          properties:
+            costUsd:
+              description: Estimated AI cost in USD (token usage × the platform price table)
+              $ref: "#/components/schemas/PlatformAnalyticsAmount"
+        trends:
+          type: object
+          description: The two series the overview charts, one point per bucket of the window
+          required: [scans, newCompanies]
+          properties:
+            scans:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAnalyticsSeriesPoint"
+            newCompanies:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAnalyticsSeriesPoint"
+
+    PlatformAnalyticsSeriesPoint:
+      type: object
+      required: [bucket, value]
+      properties:
+        bucket:
+          type: string
+          description: First UTC day of the bucket (YYYY-MM-DD)
+        value:
+          type: integer
+
+    PlatformAnalyticsGrowthSeries:
+      type: object
+      required: [startingTotal, endingTotal, added, series]
+      properties:
+        startingTotal:
+          type: integer
+          description: Existing rows created before the window
+        endingTotal:
+          type: integer
+          description: Existing rows created up to the end of the window
+        added:
+          $ref: "#/components/schemas/PlatformAnalyticsCount"
+        series:
+          type: array
+          items:
+            type: object
+            required: [bucket, added, cumulative]
+            properties:
+              bucket:
+                type: string
+                description: First UTC day of the bucket (YYYY-MM-DD)
+              added:
+                type: integer
+              cumulative:
+                type: integer
+
+    PlatformAnalyticsGrowth:
+      type: object
+      description: Growth by creation date of the companies and company users that exist today. Permanently deleted companies, deleted user accounts and platform operators are not counted.
+      required: [range, companies, users]
+      properties:
+        range:
+          $ref: "#/components/schemas/PlatformAnalyticsRange"
+        companies:
+          $ref: "#/components/schemas/PlatformAnalyticsGrowthSeries"
+        users:
+          $ref: "#/components/schemas/PlatformAnalyticsGrowthSeries"
+
+    PlatformAnalyticsLifecycleCounts:
+      type: object
+      description: Subscription changes recorded in the audit trail — new subscriptions, transitions INTO each status, and plan changes
+      required: [created, toTrialing, toActive, toPastDue, toCancelled, toExpired, toSuspended, planChanges]
+      properties:
+        created:
+          type: integer
+        toTrialing:
+          type: integer
+        toActive:
+          type: integer
+        toPastDue:
+          type: integer
+        toCancelled:
+          type: integer
+        toExpired:
+          type: integer
+        toSuspended:
+          type: integer
+        planChanges:
+          type: integer
+
+    PlatformAnalyticsLifecyclePoint:
+      type: object
+      required: [bucket, created, toTrialing, toActive, toPastDue, toCancelled, toExpired, toSuspended, planChanges]
+      properties:
+        bucket:
+          type: string
+        created:
+          type: integer
+        toTrialing:
+          type: integer
+        toActive:
+          type: integer
+        toPastDue:
+          type: integer
+        toCancelled:
+          type: integer
+        toExpired:
+          type: integer
+        toSuspended:
+          type: integer
+        planChanges:
+          type: integer
+
+    PlatformAnalyticsSubscriptions:
+      type: object
+      required: [range, snapshot, lifecycle]
+      properties:
+        range:
+          $ref: "#/components/schemas/PlatformAnalyticsRange"
+        snapshot:
+          type: object
+          description: Canonical subscription rows as of now (not window-dependent)
+          required: [total, fullAccess, byStatus, byPlan, byBillingSource, trialsExpiringWithin7Days]
+          properties:
+            total:
+              type: integer
+            fullAccess:
+              type: integer
+            byStatus:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAnalyticsStatusCount"
+            byPlan:
+              type: array
+              items:
+                type: object
+                required: [planId, planName, planStatus, total, byStatus]
+                properties:
+                  planId:
+                    type: string
+                  planName:
+                    type: ["string", "null"]
+                  planStatus:
+                    type: ["string", "null"]
+                    description: draft | published | archived (null when the plan row no longer exists)
+                  total:
+                    type: integer
+                  byStatus:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PlatformAnalyticsStatusCount"
+            byBillingSource:
+              type: array
+              items:
+                type: object
+                required: [billingSource, count]
+                properties:
+                  billingSource:
+                    type: string
+                  count:
+                    type: integer
+            trialsExpiringWithin7Days:
+              type: integer
+        lifecycle:
+          type: object
+          description: Derived only from audit rows written by the subscription lifecycle (before/after status and plan). Changes made before auditing existed are not represented.
+          required: [source, totals, previousTotals, series, planMoves]
+          properties:
+            source:
+              type: string
+              enum: [audit_log]
+            totals:
+              $ref: "#/components/schemas/PlatformAnalyticsLifecycleCounts"
+            previousTotals:
+              $ref: "#/components/schemas/PlatformAnalyticsLifecycleCounts"
+            series:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAnalyticsLifecyclePoint"
+            planMoves:
+              type: array
+              description: Most frequent plan changes in the window
+              items:
+                type: object
+                required: [fromPlan, toPlan, count]
+                properties:
+                  fromPlan:
+                    type: string
+                  toPlan:
+                    type: string
+                  count:
+                    type: integer
+
+    PlatformAnalyticsRevenue:
+      type: object
+      required: [range, estimate, collected, paymentEvents, checkouts, providerEvents, billingSources]
+      properties:
+        range:
+          $ref: "#/components/schemas/PlatformAnalyticsRange"
+        estimate:
+          type: object
+          description: An ESTIMATE of recurring revenue as of now — verified provider prices × active provider-managed subscriptions. It is not money received.
+          required: [basis, snapshot, byPlan]
+          properties:
+            basis:
+              type: string
+              enum: [verified_provider_prices]
+            snapshot:
+              $ref: "#/components/schemas/RevenueSnapshot"
+            byPlan:
+              type: array
+              description: Present only when the snapshot is available
+              items:
+                type: object
+                required: [planId, planName, subscriptions, monthlyRecurringMinor]
+                properties:
+                  planId:
+                    type: string
+                  planName:
+                    type: ["string", "null"]
+                  subscriptions:
+                    type: integer
+                  monthlyRecurringMinor:
+                    type: integer
+        collected:
+          type: object
+          description: Money actually received. This system stores no invoice or payment amounts, so collected revenue is reported as unavailable — never estimated.
+          required: [available, reason]
+          properties:
+            available:
+              type: boolean
+            reason:
+              type: ["string", "null"]
+        paymentEvents:
+          type: object
+          description: ACTUAL payment notifications received from the billing provider (counts only — the provider's amounts are not stored)
+          required: [paid, failed, series]
+          properties:
+            paid:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            failed:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            series:
+              type: array
+              items:
+                type: object
+                required: [bucket, paid, failed]
+                properties:
+                  bucket:
+                    type: string
+                  paid:
+                    type: integer
+                  failed:
+                    type: integer
+        checkouts:
+          type: object
+          description: Self-service checkout sessions started in the window, by their current state
+          required: [started, completed, expired, failed, open]
+          properties:
+            started:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            completed:
+              type: integer
+            expired:
+              type: integer
+            failed:
+              type: integer
+            open:
+              type: integer
+        providerEvents:
+          type: object
+          description: Billing provider notifications received in the window
+          required: [total, failed, byType, byOutcome]
+          properties:
+            total:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            failed:
+              type: integer
+              description: Notifications whose processing failed
+            byType:
+              type: array
+              items:
+                type: object
+                required: [eventType, count]
+                properties:
+                  eventType:
+                    type: string
+                  count:
+                    type: integer
+            byOutcome:
+              type: array
+              items:
+                type: object
+                required: [outcome, count]
+                properties:
+                  outcome:
+                    type: string
+                  count:
+                    type: integer
+        billingSources:
+          type: array
+          description: Subscriptions by how they are billed. Manually managed subscriptions carry no recorded price and are never part of the estimate.
+          items:
+            type: object
+            required: [billingSource, total, fullAccess]
+            properties:
+              billingSource:
+                type: string
+              total:
+                type: integer
+              fullAccess:
+                type: integer
+
+    PlatformAnalyticsActivity:
+      type: object
+      required: [range, totals, series, capturesBySource, scansByStatus, topCompanies]
+      properties:
+        range:
+          $ref: "#/components/schemas/PlatformAnalyticsRange"
+        totals:
+          type: object
+          required: [captures, scans, contacts, leads, activeCompanies]
+          properties:
+            captures:
+              description: Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are excluded.
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            scans:
+              description: Card scans — the captures sent for OCR, whatever the outcome
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            contacts:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            leads:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            activeCompanies:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+        series:
+          type: array
+          items:
+            type: object
+            required: [bucket, scans, contacts, leads]
+            properties:
+              bucket:
+                type: string
+              scans:
+                type: integer
+              contacts:
+                type: integer
+              leads:
+                type: integer
+        capturesBySource:
+          type: array
+          description: Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual; "unknown" when not recorded). A file import creates contacts, not captures. The counts add up to totals.captures.
+          items:
+            type: object
+            required: [source, count]
+            properties:
+              source:
+                type: string
+              count:
+                type: integer
+        scansByStatus:
+          type: array
+          description: Card scans (OCR) by processing status. The counts add up to totals.scans.
+          items:
+            $ref: "#/components/schemas/PlatformAnalyticsStatusCount"
+        topCompanies:
+          type: array
+          description: The most active companies in the window — volumes only, never tenant records
+          items:
+            type: object
+            required: [companyId, companyName, scans, contacts, leads]
+            properties:
+              companyId:
+                type: integer
+              companyName:
+                type: string
+              scans:
+                type: integer
+              contacts:
+                type: integer
+              leads:
+                type: integer
+
+    PlatformAnalyticsAiPoint:
+      allOf:
+        - $ref: "#/components/schemas/AiUsageAgg"
+        - type: object
+          required: [bucket]
+          properties:
+            bucket:
+              type: string
+
+    PlatformAnalyticsAi:
+      type: object
+      required: [range, costBasis, totals, previous, series, byFeature, topCompanies, failureCategories]
+      properties:
+        range:
+          $ref: "#/components/schemas/PlatformAnalyticsRange"
+        costBasis:
+          type: string
+          enum: [estimated]
+          description: Cost is estimated from token usage and the platform price table; it is not a provider invoice
+        totals:
+          $ref: "#/components/schemas/AiUsageAgg"
+        previous:
+          $ref: "#/components/schemas/AiUsageAgg"
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformAnalyticsAiPoint"
+        byFeature:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiFeatureUsage"
+        topCompanies:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCompanyUsage"
+        failureCategories:
+          type: array
+          items:
+            type: object
+            required: [category, count]
+            properties:
+              category:
+                type: string
+              count:
+                type: integer
+
+    PlatformAnalyticsOperations:
+      type: object
+      required: [range, signIns, auditEvents, securityEvents, billingEvents, jobs]
+      properties:
+        range:
+          $ref: "#/components/schemas/PlatformAnalyticsRange"
+        signIns:
+          type: object
+          required: [successful, failed, activeUsers, series]
+          properties:
+            successful:
+              description: Successful sign-in attempts on the platform
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            failed:
+              description: Failed sign-in attempts on the platform
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            activeUsers:
+              description: Distinct company users that exist today with at least one successful sign-in (deleted accounts and platform operators are not counted)
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            series:
+              type: array
+              items:
+                type: object
+                required: [bucket, successful, failed]
+                properties:
+                  bucket:
+                    type: string
+                  successful:
+                    type: integer
+                  failed:
+                    type: integer
+        auditEvents:
+          type: object
+          required: [total, byCategory, series]
+          properties:
+            total:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            byCategory:
+              type: array
+              description: Audit rows by the leading segment of their action (subscription, user, plan_version, …)
+              items:
+                type: object
+                required: [category, count]
+                properties:
+                  category:
+                    type: string
+                  count:
+                    type: integer
+            series:
+              type: array
+              items:
+                type: object
+                required: [bucket, value]
+                properties:
+                  bucket:
+                    type: string
+                  value:
+                    type: integer
+        securityEvents:
+          type: object
+          required: [total, byType]
+          properties:
+            total:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            byType:
+              type: array
+              items:
+                type: object
+                required: [type, count]
+                properties:
+                  type:
+                    type: string
+                  count:
+                    type: integer
+        billingEvents:
+          type: object
+          required: [received, failed]
+          properties:
+            received:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+            failed:
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
+        jobs:
+          type: object
+          description: The background job queue as of now (not window-dependent). With the in-process driver nothing is persisted and durable is false.
+          required: [durable, pending, running, dead]
+          properties:
+            durable:
+              type: boolean
+            pending:
+              type: integer
+            running:
+              type: integer
+            dead:
+              type: integer
+              description: Dead-lettered jobs still retained for diagnosis
 
     TrendDataPoint:
       type: object

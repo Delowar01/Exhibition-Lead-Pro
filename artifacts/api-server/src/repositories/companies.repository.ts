@@ -1,15 +1,19 @@
 import { db, companiesTable, usersTable, contactsTable, scansTable, activityLogsTable, subscriptionsTable } from "@workspace/db";
 import { eq, ilike, and, count, inArray, sql } from "drizzle-orm";
 import { notDeleted, exec, type Executor } from "./base.js";
+import { TENANT_USER, LIVE_CAPTURE } from "./platform-definitions.js";
 
 export type CompanyRow = typeof companiesTable.$inferSelect;
 
-// Per-company aggregate counts surfaced alongside each company record. Excludes
-// soft-deleted contacts so the count matches the rest of the API.
+// Per-company aggregate counts surfaced alongside each company record, by the platform's
+// definitions: users that exist today (no deleted account), contacts that exist today, and
+// captures that exist today (scanCount — every capture, with or without OCR). The
+// per-company figures therefore add up to the dashboard's "Total Users" and "Total
+// Captures".
 export async function counts(id: number): Promise<{ userCount: number; contactCount: number; scanCount: number }> {
-  const [userCount] = await db.select({ count: count() }).from(usersTable).where(eq(usersTable.companyId, id));
+  const [userCount] = await db.select({ count: count() }).from(usersTable).where(and(eq(usersTable.companyId, id), TENANT_USER));
   const [contactCount] = await db.select({ count: count() }).from(contactsTable).where(and(eq(contactsTable.companyId, id), notDeleted(contactsTable.deletedAt)));
-  const [scanCount] = await db.select({ count: count() }).from(scansTable).where(eq(scansTable.companyId, id));
+  const [scanCount] = await db.select({ count: count() }).from(scansTable).where(and(eq(scansTable.companyId, id), LIVE_CAPTURE));
   return { userCount: userCount.count, contactCount: contactCount.count, scanCount: scanCount.count };
 }
 

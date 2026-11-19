@@ -787,9 +787,10 @@ export const DeleteNotificationResponse = zod.object({
 export const GetPlatformStatsResponse = zod.object({
   "totalCompanies": zod.number(),
   "activeCompanies": zod.number().describe('Companies whose subscription grants full access today (active or trialing)'),
-  "totalUsers": zod.number(),
-  "totalScans": zod.number(),
-  "totalLeads": zod.number(),
+  "totalUsers": zod.number().describe('Company users that exist today. Deleted accounts and platform operators are not counted.'),
+  "totalCaptures": zod.number().describe('Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are not counted.'),
+  "totalScans": zod.number().describe('Card scans — the captures sent for OCR, whatever the outcome (the definition of the scan trend). Counted in the same statement as totalCaptures, so never greater than it.'),
+  "totalLeads": zod.number().describe('Leads that exist today (deleted leads are not counted)'),
   "revenue": zod.object({
   "available": zod.boolean(),
   "reason": zod.string().nullable(),
@@ -797,7 +798,7 @@ export const GetPlatformStatsResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.'),
+}).describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.'),
   "subscriptions": zod.object({
   "byStatus": zod.array(zod.object({
   "status": zod.string(),
@@ -819,7 +820,7 @@ export const GetPlatformStatsResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).optional().describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.')
+}).optional().describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.')
 }),
   "subscriptionDistribution": zod.array(zod.object({
   "status": zod.string(),
@@ -866,6 +867,580 @@ export const GetPlatformActivityResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const GetPlatformActivityResponse = zod.array(GetPlatformActivityResponseItem)
+
+
+/**
+ * @summary Headline platform metrics for a reporting window, each with the preceding window of equal length
+ */
+export const GetPlatformAnalyticsOverviewQueryParams = zod.object({
+  "from": zod.coerce.string().optional().describe('First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.'),
+  "to": zod.coerce.string().optional().describe('Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.'),
+  "granularity": zod.enum(['day', 'week', 'month']).optional().describe('Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.')
+})
+
+export const GetPlatformAnalyticsOverviewResponse = zod.object({
+  "range": zod.object({
+  "from": zod.string().describe('First UTC day, inclusive (YYYY-MM-DD)'),
+  "to": zod.string().describe('Last UTC day, inclusive (YYYY-MM-DD)'),
+  "days": zod.number(),
+  "granularity": zod.enum(['day', 'week', 'month']),
+  "previousFrom": zod.string(),
+  "previousTo": zod.string(),
+  "timezone": zod.enum(['UTC'])
+}).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
+  "generatedAt": zod.coerce.date(),
+  "totals": zod.object({
+  "companies": zod.number(),
+  "users": zod.number().describe('Company users that exist today (deleted accounts and platform operators are not counted)')
+}).describe('Counts as of now'),
+  "period": zod.object({
+  "newCompanies": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "newUsers": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Company users created in the window that exist today (deleted accounts and platform operators are not counted)'),
+  "activeCompanies": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Companies with at least one card scan or new contact in the window'),
+  "activeUsers": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Distinct company users that exist today with at least one successful sign-in in the window (deleted accounts and platform operators are not counted)'),
+  "scans": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Card scans — captures sent for OCR, whatever the outcome. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.'),
+  "contacts": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "leads": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "aiRequests": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('AI provider calls')
+}),
+  "subscriptions": zod.object({
+  "total": zod.number(),
+  "fullAccess": zod.number().describe('Subscriptions whose status is active or trialing. A trial that has just run out is counted until the lifecycle sweep moves it.'),
+  "byStatus": zod.array(zod.object({
+  "status": zod.string(),
+  "count": zod.number()
+})),
+  "trialsExpiringWithin7Days": zod.number()
+}).describe('Canonical subscription state as of now'),
+  "revenue": zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "currency": zod.string().nullable(),
+  "monthlyRecurringMinor": zod.number().nullable(),
+  "countedSubscriptions": zod.number(),
+  "unpricedSubscriptions": zod.number()
+}).describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.'),
+  "ai": zod.object({
+  "costUsd": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Estimated AI cost in USD (token usage × the platform price table)')
+}),
+  "trends": zod.object({
+  "scans": zod.array(zod.object({
+  "bucket": zod.string().describe('First UTC day of the bucket (YYYY-MM-DD)'),
+  "value": zod.number()
+})),
+  "newCompanies": zod.array(zod.object({
+  "bucket": zod.string().describe('First UTC day of the bucket (YYYY-MM-DD)'),
+  "value": zod.number()
+}))
+}).describe('The two series the overview charts, one point per bucket of the window')
+})
+
+
+/**
+ * @summary Company and user growth (new per bucket and running total) from real creation dates
+ */
+export const GetPlatformAnalyticsGrowthQueryParams = zod.object({
+  "from": zod.coerce.string().optional().describe('First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.'),
+  "to": zod.coerce.string().optional().describe('Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.'),
+  "granularity": zod.enum(['day', 'week', 'month']).optional().describe('Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.')
+})
+
+export const GetPlatformAnalyticsGrowthResponse = zod.object({
+  "range": zod.object({
+  "from": zod.string().describe('First UTC day, inclusive (YYYY-MM-DD)'),
+  "to": zod.string().describe('Last UTC day, inclusive (YYYY-MM-DD)'),
+  "days": zod.number(),
+  "granularity": zod.enum(['day', 'week', 'month']),
+  "previousFrom": zod.string(),
+  "previousTo": zod.string(),
+  "timezone": zod.enum(['UTC'])
+}).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
+  "companies": zod.object({
+  "startingTotal": zod.number().describe('Existing rows created before the window'),
+  "endingTotal": zod.number().describe('Existing rows created up to the end of the window'),
+  "added": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "series": zod.array(zod.object({
+  "bucket": zod.string().describe('First UTC day of the bucket (YYYY-MM-DD)'),
+  "added": zod.number(),
+  "cumulative": zod.number()
+}))
+}),
+  "users": zod.object({
+  "startingTotal": zod.number().describe('Existing rows created before the window'),
+  "endingTotal": zod.number().describe('Existing rows created up to the end of the window'),
+  "added": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "series": zod.array(zod.object({
+  "bucket": zod.string().describe('First UTC day of the bucket (YYYY-MM-DD)'),
+  "added": zod.number(),
+  "cumulative": zod.number()
+}))
+})
+}).describe('Growth by creation date of the companies and company users that exist today. Permanently deleted companies, deleted user accounts and platform operators are not counted.')
+
+
+/**
+ * @summary Subscription status and plan distribution as of now, plus the subscription changes recorded in the audit trail inside the window
+ */
+export const GetPlatformAnalyticsSubscriptionsQueryParams = zod.object({
+  "from": zod.coerce.string().optional().describe('First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.'),
+  "to": zod.coerce.string().optional().describe('Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.'),
+  "granularity": zod.enum(['day', 'week', 'month']).optional().describe('Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.')
+})
+
+export const GetPlatformAnalyticsSubscriptionsResponse = zod.object({
+  "range": zod.object({
+  "from": zod.string().describe('First UTC day, inclusive (YYYY-MM-DD)'),
+  "to": zod.string().describe('Last UTC day, inclusive (YYYY-MM-DD)'),
+  "days": zod.number(),
+  "granularity": zod.enum(['day', 'week', 'month']),
+  "previousFrom": zod.string(),
+  "previousTo": zod.string(),
+  "timezone": zod.enum(['UTC'])
+}).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
+  "snapshot": zod.object({
+  "total": zod.number(),
+  "fullAccess": zod.number(),
+  "byStatus": zod.array(zod.object({
+  "status": zod.string(),
+  "count": zod.number()
+})),
+  "byPlan": zod.array(zod.object({
+  "planId": zod.string(),
+  "planName": zod.string().nullable(),
+  "planStatus": zod.string().nullable().describe('draft | published | archived (null when the plan row no longer exists)'),
+  "total": zod.number(),
+  "byStatus": zod.array(zod.object({
+  "status": zod.string(),
+  "count": zod.number()
+}))
+})),
+  "byBillingSource": zod.array(zod.object({
+  "billingSource": zod.string(),
+  "count": zod.number()
+})),
+  "trialsExpiringWithin7Days": zod.number()
+}).describe('Canonical subscription rows as of now (not window-dependent)'),
+  "lifecycle": zod.object({
+  "source": zod.enum(['audit_log']),
+  "totals": zod.object({
+  "created": zod.number(),
+  "toTrialing": zod.number(),
+  "toActive": zod.number(),
+  "toPastDue": zod.number(),
+  "toCancelled": zod.number(),
+  "toExpired": zod.number(),
+  "toSuspended": zod.number(),
+  "planChanges": zod.number()
+}).describe('Subscription changes recorded in the audit trail — new subscriptions, transitions INTO each status, and plan changes'),
+  "previousTotals": zod.object({
+  "created": zod.number(),
+  "toTrialing": zod.number(),
+  "toActive": zod.number(),
+  "toPastDue": zod.number(),
+  "toCancelled": zod.number(),
+  "toExpired": zod.number(),
+  "toSuspended": zod.number(),
+  "planChanges": zod.number()
+}).describe('Subscription changes recorded in the audit trail — new subscriptions, transitions INTO each status, and plan changes'),
+  "series": zod.array(zod.object({
+  "bucket": zod.string(),
+  "created": zod.number(),
+  "toTrialing": zod.number(),
+  "toActive": zod.number(),
+  "toPastDue": zod.number(),
+  "toCancelled": zod.number(),
+  "toExpired": zod.number(),
+  "toSuspended": zod.number(),
+  "planChanges": zod.number()
+})),
+  "planMoves": zod.array(zod.object({
+  "fromPlan": zod.string(),
+  "toPlan": zod.string(),
+  "count": zod.number()
+})).describe('Most frequent plan changes in the window')
+}).describe('Derived only from audit rows written by the subscription lifecycle (before\/after status and plan). Changes made before auditing existed are not represented.')
+})
+
+
+/**
+ * @summary Estimated recurring revenue from verified provider prices, kept apart from recorded payment events (payment amounts are not stored and are never invented)
+ */
+export const GetPlatformAnalyticsRevenueQueryParams = zod.object({
+  "from": zod.coerce.string().optional().describe('First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.'),
+  "to": zod.coerce.string().optional().describe('Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.'),
+  "granularity": zod.enum(['day', 'week', 'month']).optional().describe('Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.')
+})
+
+export const GetPlatformAnalyticsRevenueResponse = zod.object({
+  "range": zod.object({
+  "from": zod.string().describe('First UTC day, inclusive (YYYY-MM-DD)'),
+  "to": zod.string().describe('Last UTC day, inclusive (YYYY-MM-DD)'),
+  "days": zod.number(),
+  "granularity": zod.enum(['day', 'week', 'month']),
+  "previousFrom": zod.string(),
+  "previousTo": zod.string(),
+  "timezone": zod.enum(['UTC'])
+}).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
+  "estimate": zod.object({
+  "basis": zod.enum(['verified_provider_prices']),
+  "snapshot": zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "currency": zod.string().nullable(),
+  "monthlyRecurringMinor": zod.number().nullable(),
+  "countedSubscriptions": zod.number(),
+  "unpricedSubscriptions": zod.number()
+}).describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.'),
+  "byPlan": zod.array(zod.object({
+  "planId": zod.string(),
+  "planName": zod.string().nullable(),
+  "subscriptions": zod.number(),
+  "monthlyRecurringMinor": zod.number()
+})).describe('Present only when the snapshot is available')
+}).describe('An ESTIMATE of recurring revenue as of now — verified provider prices × active provider-managed subscriptions. It is not money received.'),
+  "collected": zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable()
+}).describe('Money actually received. This system stores no invoice or payment amounts, so collected revenue is reported as unavailable — never estimated.'),
+  "paymentEvents": zod.object({
+  "paid": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "failed": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "series": zod.array(zod.object({
+  "bucket": zod.string(),
+  "paid": zod.number(),
+  "failed": zod.number()
+}))
+}).describe('ACTUAL payment notifications received from the billing provider (counts only — the provider\'s amounts are not stored)'),
+  "checkouts": zod.object({
+  "started": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "completed": zod.number(),
+  "expired": zod.number(),
+  "failed": zod.number(),
+  "open": zod.number()
+}).describe('Self-service checkout sessions started in the window, by their current state'),
+  "providerEvents": zod.object({
+  "total": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "failed": zod.number().describe('Notifications whose processing failed'),
+  "byType": zod.array(zod.object({
+  "eventType": zod.string(),
+  "count": zod.number()
+})),
+  "byOutcome": zod.array(zod.object({
+  "outcome": zod.string(),
+  "count": zod.number()
+}))
+}).describe('Billing provider notifications received in the window'),
+  "billingSources": zod.array(zod.object({
+  "billingSource": zod.string(),
+  "total": zod.number(),
+  "fullAccess": zod.number()
+})).describe('Subscriptions by how they are billed. Manually managed subscriptions carry no recorded price and are never part of the estimate.')
+})
+
+
+/**
+ * @summary Card scans, contacts and leads created across all tenants (counts only), with the most active companies
+ */
+export const GetPlatformAnalyticsActivityQueryParams = zod.object({
+  "from": zod.coerce.string().optional().describe('First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.'),
+  "to": zod.coerce.string().optional().describe('Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.'),
+  "granularity": zod.enum(['day', 'week', 'month']).optional().describe('Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.')
+})
+
+export const GetPlatformAnalyticsActivityResponse = zod.object({
+  "range": zod.object({
+  "from": zod.string().describe('First UTC day, inclusive (YYYY-MM-DD)'),
+  "to": zod.string().describe('Last UTC day, inclusive (YYYY-MM-DD)'),
+  "days": zod.number(),
+  "granularity": zod.enum(['day', 'week', 'month']),
+  "previousFrom": zod.string(),
+  "previousTo": zod.string(),
+  "timezone": zod.enum(['UTC'])
+}).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
+  "totals": zod.object({
+  "captures": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Every capture — card scans sent for OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in). Deleted rows are excluded.'),
+  "scans": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Card scans — the captures sent for OCR, whatever the outcome'),
+  "contacts": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "leads": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "activeCompanies": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length')
+}),
+  "series": zod.array(zod.object({
+  "bucket": zod.string(),
+  "scans": zod.number(),
+  "contacts": zod.number(),
+  "leads": zod.number()
+})),
+  "capturesBySource": zod.array(zod.object({
+  "source": zod.string(),
+  "count": zod.number()
+})).describe('Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual; \"unknown\" when not recorded). A file import creates contacts, not captures. The counts add up to totals.captures.'),
+  "scansByStatus": zod.array(zod.object({
+  "status": zod.string(),
+  "count": zod.number()
+})).describe('Card scans (OCR) by processing status. The counts add up to totals.scans.'),
+  "topCompanies": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string(),
+  "scans": zod.number(),
+  "contacts": zod.number(),
+  "leads": zod.number()
+})).describe('The most active companies in the window — volumes only, never tenant records')
+})
+
+
+/**
+ * @summary AI requests, tokens and estimated cost across all tenants from the invocation ledger (no prompt or response content)
+ */
+export const GetPlatformAnalyticsAiQueryParams = zod.object({
+  "from": zod.coerce.string().optional().describe('First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.'),
+  "to": zod.coerce.string().optional().describe('Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.'),
+  "granularity": zod.enum(['day', 'week', 'month']).optional().describe('Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.')
+})
+
+export const GetPlatformAnalyticsAiResponse = zod.object({
+  "range": zod.object({
+  "from": zod.string().describe('First UTC day, inclusive (YYYY-MM-DD)'),
+  "to": zod.string().describe('Last UTC day, inclusive (YYYY-MM-DD)'),
+  "days": zod.number(),
+  "granularity": zod.enum(['day', 'week', 'month']),
+  "previousFrom": zod.string(),
+  "previousTo": zod.string(),
+  "timezone": zod.enum(['UTC'])
+}).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
+  "costBasis": zod.enum(['estimated']).describe('Cost is estimated from token usage and the platform price table; it is not a provider invoice'),
+  "totals": zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
+  "success": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
+  "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}),
+  "previous": zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
+  "success": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
+  "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}),
+  "series": zod.array(zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
+  "success": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
+  "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "bucket": zod.string()
+}))),
+  "byFeature": zod.array(zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
+  "success": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
+  "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "feature": zod.string()
+}))),
+  "topCompanies": zod.array(zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
+  "success": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
+  "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "companyId": zod.number().nullable(),
+  "companyName": zod.string().nullable()
+}))),
+  "failureCategories": zod.array(zod.object({
+  "category": zod.string(),
+  "count": zod.number()
+}))
+})
+
+
+/**
+ * @summary Sign-ins, audit and security events, billing notifications and the background job queue (counts only)
+ */
+export const GetPlatformAnalyticsOperationsQueryParams = zod.object({
+  "from": zod.coerce.string().optional().describe('First day of the reporting window — a UTC calendar day (YYYY-MM-DD) or an ISO date-time, which is evaluated as its UTC day. Default — 29 days before `to`.'),
+  "to": zod.coerce.string().optional().describe('Last day of the reporting window, inclusive — a UTC calendar day (YYYY-MM-DD) or an ISO date-time. Default — today (UTC). The window may span at most 731 days.'),
+  "granularity": zod.enum(['day', 'week', 'month']).optional().describe('Bucket size of every series. Default — day up to 62 days, week up to 366 days, month beyond. `day` is refused for windows longer than 366 days.')
+})
+
+export const GetPlatformAnalyticsOperationsResponse = zod.object({
+  "range": zod.object({
+  "from": zod.string().describe('First UTC day, inclusive (YYYY-MM-DD)'),
+  "to": zod.string().describe('Last UTC day, inclusive (YYYY-MM-DD)'),
+  "days": zod.number(),
+  "granularity": zod.enum(['day', 'week', 'month']),
+  "previousFrom": zod.string(),
+  "previousTo": zod.string(),
+  "timezone": zod.enum(['UTC'])
+}).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
+  "signIns": zod.object({
+  "successful": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Successful sign-in attempts on the platform'),
+  "failed": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Failed sign-in attempts on the platform'),
+  "activeUsers": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Distinct company users that exist today with at least one successful sign-in (deleted accounts and platform operators are not counted)'),
+  "series": zod.array(zod.object({
+  "bucket": zod.string(),
+  "successful": zod.number(),
+  "failed": zod.number()
+}))
+}),
+  "auditEvents": zod.object({
+  "total": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "byCategory": zod.array(zod.object({
+  "category": zod.string(),
+  "count": zod.number()
+})).describe('Audit rows by the leading segment of their action (subscription, user, plan_version, …)'),
+  "series": zod.array(zod.object({
+  "bucket": zod.string(),
+  "value": zod.number()
+}))
+}),
+  "securityEvents": zod.object({
+  "total": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "byType": zod.array(zod.object({
+  "type": zod.string(),
+  "count": zod.number()
+}))
+}),
+  "billingEvents": zod.object({
+  "received": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length'),
+  "failed": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('A counted metric for the window and for the preceding window of equal length')
+}),
+  "jobs": zod.object({
+  "durable": zod.boolean(),
+  "pending": zod.number(),
+  "running": zod.number(),
+  "dead": zod.number().describe('Dead-lettered jobs still retained for diagnosis')
+}).describe('The background job queue as of now (not window-dependent). With the in-process driver nothing is persisted and durable is false.')
+})
 
 
 /**
@@ -929,7 +1504,7 @@ export const PlatformSubscriptionMetricsResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).optional().describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.')
+}).optional().describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.')
 })
 
 
@@ -4004,9 +4579,9 @@ export const ListCompaniesResponse = zod.object({
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
-  "userCount": zod.number().optional(),
-  "contactCount": zod.number().optional(),
-  "scanCount": zod.number().optional(),
+  "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
+  "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -4080,9 +4655,9 @@ export const GetCompanyResponse = zod.object({
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
-  "userCount": zod.number().optional(),
-  "contactCount": zod.number().optional(),
-  "scanCount": zod.number().optional(),
+  "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
+  "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -4139,9 +4714,9 @@ export const UpdateCompanyResponse = zod.object({
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
-  "userCount": zod.number().optional(),
-  "contactCount": zod.number().optional(),
-  "scanCount": zod.number().optional(),
+  "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
+  "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -4424,9 +4999,9 @@ export const SuspendCompanyResponse = zod.object({
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
-  "userCount": zod.number().optional(),
-  "contactCount": zod.number().optional(),
-  "scanCount": zod.number().optional(),
+  "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
+  "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
@@ -4468,9 +5043,9 @@ export const ActivateCompanyResponse = zod.object({
   "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "suspendedReason": zod.string().nullish(),
   "trialEndsAt": zod.coerce.date().nullish(),
-  "userCount": zod.number().optional(),
-  "contactCount": zod.number().optional(),
-  "scanCount": zod.number().optional(),
+  "userCount": zod.number().optional().describe('Users of the company that exist today (deleted accounts are not counted)'),
+  "contactCount": zod.number().optional().describe('Contacts of the company that exist today (deleted contacts are not counted)'),
+  "scanCount": zod.number().optional().describe('Captures of the company that exist today — card scans sent for OCR and contacts saved without OCR (deleted rows are not counted). The per-company share of the platform dashboard\'s totalCaptures, not its OCR card-scan figure.'),
   "subscription": zod.union([zod.object({
   "plan": zod.string(),
   "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),

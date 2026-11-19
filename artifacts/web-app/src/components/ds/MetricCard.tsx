@@ -12,6 +12,7 @@ export function MetricCard({
   value,
   delta,
   deltaLabel,
+  deltaIntent = "higher-better",
   icon: Icon,
   footer,
   className,
@@ -21,12 +22,20 @@ export function MetricCard({
   /** Positive = up (success), negative = down (destructive). */
   delta?: number;
   deltaLabel?: string;
+  /**
+   * What a rise means for this metric. "higher-better" (default) colours a rise as
+   * success; "lower-better" (failures, errors) colours a rise as destructive;
+   * "neutral" never colours the change. The arrow always follows the direction.
+   */
+  deltaIntent?: "higher-better" | "lower-better" | "neutral";
   icon?: ComponentType<{ className?: string }>;
   footer?: ReactNode;
   className?: string;
 }) {
   const up = typeof delta === "number" && delta > 0;
   const down = typeof delta === "number" && delta < 0;
+  const good = deltaIntent === "higher-better" ? up : deltaIntent === "lower-better" ? down : false;
+  const bad = deltaIntent === "higher-better" ? down : deltaIntent === "lower-better" ? up : false;
   return (
     <div className={cn("rounded-lg border border-card-border bg-card p-5 shadow-sm", className)}>
       <div className="flex items-center justify-between gap-2">
@@ -40,9 +49,9 @@ export function MetricCard({
             <span
               className={cn(
                 "inline-flex items-center gap-1 font-medium",
-                up && "text-success",
-                down && "text-destructive",
-                !up && !down && "text-muted-foreground",
+                good && "text-success",
+                bad && "text-destructive",
+                !good && !bad && "text-muted-foreground",
               )}
             >
               {up && <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />}

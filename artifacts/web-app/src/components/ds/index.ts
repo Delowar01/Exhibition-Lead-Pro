@@ -10,4 +10,7 @@ export { MetricCard } from "./MetricCard";
 export { EmptyState, ErrorState, TableSkeleton, CardGridSkeleton, ListSkeleton } from "./StateViews";
 export { Display, SectionTitle, SubsectionTitle, Body, Caption, KpiNumber, OverlineLabel } from "./Typography";
 export { ThemeToggle } from "./ThemeToggle";
+export { ChartCard, DataTable, type ChartTable, type ChartTableColumn } from "./ChartCard";
+export { TrendChart, ChartLegend, type TrendSeries } from "./TrendChart";
+export { BreakdownList, SegmentedBar, type BreakdownItem } from "./Breakdown";
 export * from "./workspace";
