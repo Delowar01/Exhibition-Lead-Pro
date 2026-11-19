@@ -179,7 +179,7 @@ pnpm --filter @workspace/web-app exec playwright test e2e/zg-platform-analytics.
   layouts, dark theme; `zh-platform-dashboard` — the dashboard (§9). Set `G7_SHOTS_DIR` to
   save screenshots.
 
-Full local regression on the code of this branch (commit `1c50a15…`, fresh disposable
+Full local regression on the code of this branch (commit `872703b…`, fresh disposable
 database, filesystem object storage, durable job queue, stub AI provider, fake billing
 provider; API suite run once on a freshly started API):
 
