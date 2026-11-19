@@ -6,6 +6,7 @@ import * as aiRepo from "../repositories/ai.repository.js";
 import { formatAgg } from "./ai.service.js";
 import { subscriptionMetrics, revenueSnapshot, isLiveProviderSubscription, monthlyRecurringMinorOf } from "./platform-billing.service.js";
 import { resolveWindow, describeWindow, fillBuckets, bucketStart, dayKey, type AnalyticsWindow } from "../lib/analytics-window.js";
+import { createReadGate } from "../lib/read-gate.js";
 
 // G-7 — Platform Owner Analytics.
 //
@@ -19,6 +20,14 @@ import { resolveWindow, describeWindow, fillBuckets, bucketStart, dayKey, type A
 //   * only aggregates leave this module — counts, sums, plan ids, company ids and names.
 
 export type WindowQuery = { from?: unknown; to?: unknown; granularity?: unknown };
+
+// One analytics request fans out into many aggregate queries, several of them over tables
+// that grow without bound. They run through a process-wide gate, at most two at a time, so
+// reporting can never occupy the connection pool that tenant requests share — however many
+// analytics requests are in flight. (A gated unit may itself issue a few queries, e.g. the
+// subscription metrics; the bound on pooled connections stays small either way.)
+const gate = createReadGate(2);
+const g = <T>(task: () => Promise<T>): Promise<T> => gate.run(task);
 
 function spans(w: AnalyticsWindow) {
   return {
@@ -70,27 +79,31 @@ export async function getOverview(query: WindowQuery, now: Date = new Date()) {
     prevAi,
     metrics,
     revenue,
+    scanTrend,
+    companyTrend,
   ] = await Promise.all([
-    platformRepo.countCompanies(),
-    platformRepo.countUsers(),
-    repo.countCompaniesCreated(current),
-    repo.countCompaniesCreated(previous),
-    repo.countUsersCreated(current),
-    repo.countUsersCreated(previous),
-    repo.countScans(current),
-    repo.countScans(previous),
-    repo.countContacts(current),
-    repo.countContacts(previous),
-    repo.countLeads(current),
-    repo.countLeads(previous),
-    repo.signInCounts(current),
-    repo.signInCounts(previous),
-    repo.activityByCompany(current),
-    repo.activityByCompany(previous),
-    aiRepo.usageTotals(undefined, aiC.from, aiC.to, true),
-    aiRepo.usageTotals(undefined, aiP.from, aiP.to, true),
-    subscriptionMetrics(now),
-    revenueSnapshot(),
+    g(() => platformRepo.countCompanies()),
+    g(() => repo.countUsers()),
+    g(() => repo.countCompaniesCreated(current)),
+    g(() => repo.countCompaniesCreated(previous)),
+    g(() => repo.countUsersCreated(current)),
+    g(() => repo.countUsersCreated(previous)),
+    g(() => repo.countScans(current)),
+    g(() => repo.countScans(previous)),
+    g(() => repo.countContacts(current)),
+    g(() => repo.countContacts(previous)),
+    g(() => repo.countLeads(current)),
+    g(() => repo.countLeads(previous)),
+    g(() => repo.signInCounts(current)),
+    g(() => repo.signInCounts(previous)),
+    g(() => repo.activityByCompany(current)),
+    g(() => repo.activityByCompany(previous)),
+    g(() => aiRepo.usageTotals(undefined, aiC.from, aiC.to, true)),
+    g(() => aiRepo.usageTotals(undefined, aiP.from, aiP.to, true)),
+    g(() => subscriptionMetrics(now)),
+    g(() => revenueSnapshot()),
+    g(() => repo.scansSeries(current, w.granularity)),
+    g(() => repo.companiesCreatedSeries(current, w.granularity)),
   ]);
   const statusCount = new Map(metrics.byStatus.map((s) => [s.status, s.count]));
   const total = metrics.byStatus.reduce((a, s) => a + s.count, 0);
@@ -118,6 +131,11 @@ export async function getOverview(query: WindowQuery, now: Date = new Date()) {
     },
     revenue,
     ai: { costUsd: pair(aiNow.costUsd, aiPrev.costUsd) },
+    // The two series the overview charts, so the landing view is one request.
+    trends: {
+      scans: fillBuckets(w, scanTrend, { value: 0 }),
+      newCompanies: fillBuckets(w, companyTrend, { value: 0 }),
+    },
   };
 }
 
@@ -135,14 +153,14 @@ export async function getGrowth(query: WindowQuery, now: Date = new Date()) {
   const w = resolveWindow(query, now);
   const { current, previous } = spans(w);
   const [cBefore, cAdded, cPrev, cSeries, uBefore, uAdded, uPrev, uSeries] = await Promise.all([
-    repo.countCompaniesCreatedBefore(w.start),
-    repo.countCompaniesCreated(current),
-    repo.countCompaniesCreated(previous),
-    repo.companiesCreatedSeries(current, w.granularity),
-    repo.countUsersCreatedBefore(w.start),
-    repo.countUsersCreated(current),
-    repo.countUsersCreated(previous),
-    repo.usersCreatedSeries(current, w.granularity),
+    g(() => repo.countCompaniesCreatedBefore(w.start)),
+    g(() => repo.countCompaniesCreated(current)),
+    g(() => repo.countCompaniesCreated(previous)),
+    g(() => repo.companiesCreatedSeries(current, w.granularity)),
+    g(() => repo.countUsersCreatedBefore(w.start)),
+    g(() => repo.countUsersCreated(current)),
+    g(() => repo.countUsersCreated(previous)),
+    g(() => repo.usersCreatedSeries(current, w.granularity)),
   ]);
   return {
     range: describeWindow(w),
@@ -156,13 +174,13 @@ export async function getSubscriptions(query: WindowQuery, now: Date = new Date(
   const w = resolveWindow(query, now);
   const { current, previous } = spans(w);
   const [metrics, byPlanStatus, plans, totals, previousTotals, series, moves] = await Promise.all([
-    subscriptionMetrics(now),
-    subsRepo.countSubscriptionsByPlanAndStatus(),
-    subsRepo.listPlans(false),
-    repo.lifecycleTotals(current),
-    repo.lifecycleTotals(previous),
-    repo.lifecycleSeries(current, w.granularity),
-    repo.planMoves(current, 10),
+    g(() => subscriptionMetrics(now)),
+    g(() => subsRepo.countSubscriptionsByPlanAndStatus()),
+    g(() => subsRepo.listPlans(false)),
+    g(() => repo.lifecycleTotals(current)),
+    g(() => repo.lifecycleTotals(previous)),
+    g(() => repo.lifecycleSeries(current, w.granularity)),
+    g(() => repo.planMoves(current, 10)),
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
   const grouped = new Map<string, Array<{ status: string; count: number }>>();
@@ -205,12 +223,14 @@ export async function getSubscriptions(query: WindowQuery, now: Date = new Date(
 }
 
 // ── revenue and billing ──────────────────────────────────────────────────────
-// The per-plan split of the SAME estimate revenueSnapshot() reports: identical
-// subscription filter and identical price normalization, grouped by plan. It is produced
-// only when the snapshot itself is available, so the two can never disagree.
+// The per-plan split of the estimate revenueSnapshot() reports: the same subscription filter
+// and the same price normalization, grouped by plan, and produced only when the snapshot
+// itself is available. Each plan is rounded to a whole minor unit, so the split can differ
+// from the headline by less than one minor unit per plan; and because the two are separate
+// reads, a subscription that changes between them can make them differ until the next request.
 async function revenueByPlan(available: boolean) {
   if (!available) return [];
-  const [stripeSubs, prices, plans] = await Promise.all([subsRepo.listStripeManaged(10_000), subsRepo.listPlanPrices({}), subsRepo.listPlans(false)]);
+  const [stripeSubs, prices, plans] = await Promise.all([g(() => subsRepo.listStripeManaged(10_000)), g(() => subsRepo.listPlanPrices({})), g(() => subsRepo.listPlans(false))]);
   const byProviderPrice = new Map(prices.map((p) => [p.providerPriceId, p]));
   const planName = new Map(plans.map((p) => [p.id, p.name]));
   const acc = new Map<string, { subscriptions: number; monthly: number }>();
@@ -231,15 +251,15 @@ export async function getRevenue(query: WindowQuery, now: Date = new Date()) {
   const w = resolveWindow(query, now);
   const { current, previous } = spans(w);
   const [snapshot, events, prevEvents, paymentSeries, byType, byOutcome, checkouts, prevCheckouts, billingSources] = await Promise.all([
-    revenueSnapshot(),
-    repo.providerEventCounts(current),
-    repo.providerEventCounts(previous),
-    repo.paymentEventSeries(current, w.granularity),
-    repo.providerEventsByType(current, 20),
-    repo.providerEventsByOutcome(current),
-    repo.checkoutCounts(current),
-    repo.checkoutCounts(previous),
-    repo.subscriptionsByBillingSource(),
+    g(() => revenueSnapshot()),
+    g(() => repo.providerEventCounts(current)),
+    g(() => repo.providerEventCounts(previous)),
+    g(() => repo.paymentEventSeries(current, w.granularity)),
+    g(() => repo.providerEventsByType(current, 20)),
+    g(() => repo.providerEventsByOutcome(current)),
+    g(() => repo.checkoutCounts(current)),
+    g(() => repo.checkoutCounts(previous)),
+    g(() => repo.subscriptionsByBillingSource()),
   ]);
   return {
     range: describeWindow(w),
@@ -276,21 +296,22 @@ export async function getRevenue(query: WindowQuery, now: Date = new Date()) {
 export async function getActivity(query: WindowQuery, now: Date = new Date()) {
   const w = resolveWindow(query, now);
   const { current, previous } = spans(w);
-  const [scans, prevScans, contacts, prevContacts, leads, prevLeads, sSeries, cSeries, lSeries, byMethod, byStatus, manualEntries, byCompany, prevByCompany] = await Promise.all([
-    repo.countScans(current),
-    repo.countScans(previous),
-    repo.countContacts(current),
-    repo.countContacts(previous),
-    repo.countLeads(current),
-    repo.countLeads(previous),
-    repo.scansSeries(current, w.granularity),
-    repo.contactsSeries(current, w.granularity),
-    repo.leadsSeries(current, w.granularity),
-    repo.scansByMethod(current),
-    repo.scansByStatus(current),
-    repo.countManualEntries(current),
-    repo.activityByCompany(current),
-    repo.activityByCompany(previous),
+  const [scans, prevScans, contacts, prevContacts, leads, prevLeads, sSeries, cSeries, lSeries, bySource, byStatus, captures, prevCaptures, byCompany, prevByCompany] = await Promise.all([
+    g(() => repo.countScans(current)),
+    g(() => repo.countScans(previous)),
+    g(() => repo.countContacts(current)),
+    g(() => repo.countContacts(previous)),
+    g(() => repo.countLeads(current)),
+    g(() => repo.countLeads(previous)),
+    g(() => repo.scansSeries(current, w.granularity)),
+    g(() => repo.contactsSeries(current, w.granularity)),
+    g(() => repo.leadsSeries(current, w.granularity)),
+    g(() => repo.capturesBySource(current)),
+    g(() => repo.scansByStatus(current)),
+    g(() => repo.countCaptures(current)),
+    g(() => repo.countCaptures(previous)),
+    g(() => repo.activityByCompany(current)),
+    g(() => repo.activityByCompany(previous)),
   ]);
   const merged = new Map<string, { scans: number; contacts: number; leads: number }>();
   const at = (bucket: string) => {
@@ -313,19 +334,19 @@ export async function getActivity(query: WindowQuery, now: Date = new Date()) {
   const top = [...byCompany.entries()]
     .sort((a, b) => b[1].scans + b[1].contacts - (a[1].scans + a[1].contacts) || b[1].leads - a[1].leads || a[0] - b[0])
     .slice(0, 10);
-  const names = await repo.companyNames(top.map(([id]) => id));
+  const names = await g(() => repo.companyNames(top.map(([id]) => id)));
   return {
     range: describeWindow(w),
     totals: {
+      captures: pair(captures, prevCaptures),
       scans: pair(scans, prevScans),
       contacts: pair(contacts, prevContacts),
       leads: pair(leads, prevLeads),
       activeCompanies: pair(activeCompaniesIn(byCompany), activeCompaniesIn(prevByCompany)),
     },
     series,
-    scansByMethod: byMethod,
+    capturesBySource: bySource,
     scansByStatus: byStatus,
-    manualEntries,
     topCompanies: top.map(([companyId, v]) => ({ companyId, companyName: names.get(companyId) ?? `Company ${companyId}`, ...v })),
   };
 }
@@ -369,12 +390,12 @@ export async function getAi(query: WindowQuery, now: Date = new Date()) {
   const c = aiBounds(current);
   const p = aiBounds(previous);
   const [totals, prev, byFeature, byDay, byCompany, failures] = await Promise.all([
-    aiRepo.usageTotals(undefined, c.from, c.to, true),
-    aiRepo.usageTotals(undefined, p.from, p.to, true),
-    aiRepo.usageByFeature(undefined, c.from, c.to, true),
-    aiRepo.usageByDay(undefined, c.from, c.to, true),
-    aiRepo.usageByCompany(c.from, c.to, undefined, 10, 0),
-    aiRepo.failureCategories(undefined, c.from, c.to, true),
+    g(() => aiRepo.usageTotals(undefined, c.from, c.to, true)),
+    g(() => aiRepo.usageTotals(undefined, p.from, p.to, true)),
+    g(() => aiRepo.usageByFeature(undefined, c.from, c.to, true)),
+    g(() => aiRepo.usageByDay(undefined, c.from, c.to, true)),
+    g(() => aiRepo.usageByCompany(c.from, c.to, undefined, 10, 0)),
+    g(() => aiRepo.failureCategories(undefined, c.from, c.to, true)),
   ]);
   return {
     range: describeWindow(w),
@@ -383,7 +404,10 @@ export async function getAi(query: WindowQuery, now: Date = new Date()) {
     previous: formatAgg(prev),
     series: bucketAi(w, byDay),
     byFeature: byFeature.map((f) => ({ feature: f.feature, ...formatAgg(f) })).sort((a, b) => b.costUsd - a.costUsd || b.requests - a.requests || a.feature.localeCompare(b.feature)),
-    topCompanies: byCompany.items.map((x) => ({ companyId: x.companyId, companyName: x.companyName, ...formatAgg(x) })),
+    // The ledger query ranks by cost only; ties are ordered here so the list is stable.
+    topCompanies: byCompany.items
+      .map((x) => ({ companyId: x.companyId, companyName: x.companyName, ...formatAgg(x) }))
+      .sort((a, b) => b.costUsd - a.costUsd || b.requests - a.requests || (a.companyId ?? 0) - (b.companyId ?? 0)),
     failureCategories: failures,
   };
 }
@@ -394,19 +418,19 @@ export async function getOperations(query: WindowQuery, now: Date = new Date()) 
   const { current, previous } = spans(w);
   const durable = config.jobs.driver === "postgres";
   const [signIns, prevSignIns, signInSeries, audit, prevAudit, auditCats, auditSeries, security, prevSecurity, securityTypes, billing, prevBilling, jobs] = await Promise.all([
-    repo.signInCounts(current),
-    repo.signInCounts(previous),
-    repo.signInSeries(current, w.granularity),
-    repo.countAuditEvents(current),
-    repo.countAuditEvents(previous),
-    repo.auditByCategory(current, 12),
-    repo.auditSeries(current, w.granularity),
-    repo.countSecurityEvents(current),
-    repo.countSecurityEvents(previous),
-    repo.securityByType(current, 12),
-    repo.providerEventCounts(current),
-    repo.providerEventCounts(previous),
-    durable ? repo.jobQueueSnapshot() : Promise.resolve({ pending: 0, running: 0, dead: 0 }),
+    g(() => repo.signInCounts(current)),
+    g(() => repo.signInCounts(previous)),
+    g(() => repo.signInSeries(current, w.granularity)),
+    g(() => repo.countAuditEvents(current)),
+    g(() => repo.countAuditEvents(previous)),
+    g(() => repo.auditByCategory(current, 12)),
+    g(() => repo.auditSeries(current, w.granularity)),
+    g(() => repo.countSecurityEvents(current)),
+    g(() => repo.countSecurityEvents(previous)),
+    g(() => repo.securityByType(current, 12)),
+    g(() => repo.providerEventCounts(current)),
+    g(() => repo.providerEventCounts(previous)),
+    durable ? g(() => repo.jobQueueSnapshot()) : Promise.resolve({ pending: 0, running: 0, dead: 0 }),
   ]);
   return {
     range: describeWindow(w),

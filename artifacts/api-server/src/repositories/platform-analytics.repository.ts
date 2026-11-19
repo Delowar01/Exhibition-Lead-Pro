@@ -41,11 +41,20 @@ function bucketOf(col: PgColumn, g: Granularity): SQL<string> {
 
 const n = (v: unknown): number => Number(v ?? 0);
 
-// A card scan, as the platform dashboard counts it: soft-deleted rows and the synthetic
-// "manual" interaction rows (written when a contact is typed in by hand) are not scans.
-const REAL_SCAN: SQL = and(isNull(scansTable.deletedAt), or(isNull(scansTable.extractionMethod), ne(scansTable.extractionMethod, "manual")))!;
+// The scans table holds one row per CAPTURE: card images read by OCR, and also every contact
+// saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported),
+// which is written with extraction_method = 'manual' and its real origin in capture_source.
+//   • a capture  — any row that is not soft-deleted;
+//   • a card scan — a capture that went through OCR, i.e. not a 'manual' row. This is the
+//     filter of the platform dashboard's scan trend ("OCR scans per day").
+const LIVE_CAPTURE: SQL = isNull(scansTable.deletedAt);
+const REAL_SCAN: SQL = and(LIVE_CAPTURE, or(isNull(scansTable.extractionMethod), ne(scansTable.extractionMethod, "manual")))!;
 const LIVE_CONTACT: SQL = isNull(contactsTable.deletedAt);
 const LIVE_LEAD: SQL = isNull(leadsTable.deletedAt);
+
+// A user of a company that exists today: not soft-deleted, and not a platform operator (the
+// operator's own account is not a customer user).
+const TENANT_USER: SQL = and(isNull(usersTable.deletedAt), sql`${usersTable.role} is distinct from 'platform_owner'`)!;
 
 // ── companies and users (creation dates of the rows that exist today) ─────────
 export async function countCompaniesCreated(s: Span): Promise<number> {
@@ -61,17 +70,21 @@ export async function companiesCreatedSeries(s: Span, g: Granularity): Promise<A
   const rows = await db.select({ bucket: b, c: count() }).from(companiesTable).where(within(companiesTable.createdAt, s)).groupBy(b);
   return rows.map((r) => ({ bucket: r.bucket, value: n(r.c) }));
 }
+export async function countUsers(): Promise<number> {
+  const [r] = await db.select({ c: count() }).from(usersTable).where(TENANT_USER);
+  return n(r?.c);
+}
 export async function countUsersCreated(s: Span): Promise<number> {
-  const [r] = await db.select({ c: count() }).from(usersTable).where(within(usersTable.createdAt, s));
+  const [r] = await db.select({ c: count() }).from(usersTable).where(and(TENANT_USER, within(usersTable.createdAt, s)));
   return n(r?.c);
 }
 export async function countUsersCreatedBefore(end: Date): Promise<number> {
-  const [r] = await db.select({ c: count() }).from(usersTable).where(lt(usersTable.createdAt, end));
+  const [r] = await db.select({ c: count() }).from(usersTable).where(and(TENANT_USER, lt(usersTable.createdAt, end)));
   return n(r?.c);
 }
 export async function usersCreatedSeries(s: Span, g: Granularity): Promise<Array<{ bucket: string; value: number }>> {
   const b = bucketOf(usersTable.createdAt, g);
-  const rows = await db.select({ bucket: b, c: count() }).from(usersTable).where(within(usersTable.createdAt, s)).groupBy(b);
+  const rows = await db.select({ bucket: b, c: count() }).from(usersTable).where(and(TENANT_USER, within(usersTable.createdAt, s))).groupBy(b);
   return rows.map((r) => ({ bucket: r.bucket, value: n(r.c) }));
 }
 
@@ -80,11 +93,8 @@ export async function countScans(s: Span): Promise<number> {
   const [r] = await db.select({ c: count() }).from(scansTable).where(and(REAL_SCAN, within(scansTable.createdAt, s)));
   return n(r?.c);
 }
-export async function countManualEntries(s: Span): Promise<number> {
-  const [r] = await db
-    .select({ c: count() })
-    .from(scansTable)
-    .where(and(isNull(scansTable.deletedAt), eq(scansTable.extractionMethod, "manual"), within(scansTable.createdAt, s)));
+export async function countCaptures(s: Span): Promise<number> {
+  const [r] = await db.select({ c: count() }).from(scansTable).where(and(LIVE_CAPTURE, within(scansTable.createdAt, s)));
   return n(r?.c);
 }
 export async function countContacts(s: Span): Promise<number> {
@@ -110,10 +120,13 @@ export async function leadsSeries(s: Span, g: Granularity): Promise<Array<{ buck
   const rows = await db.select({ bucket: b, c: count() }).from(leadsTable).where(and(LIVE_LEAD, within(leadsTable.createdAt, s))).groupBy(b);
   return rows.map((r) => ({ bucket: r.bucket, value: n(r.c) }));
 }
-export async function scansByMethod(s: Span): Promise<Array<{ method: string; count: number }>> {
-  const method = sql<string>`coalesce(${scansTable.extractionMethod}, 'unknown')`;
-  const rows = await db.select({ method, c: count() }).from(scansTable).where(and(REAL_SCAN, within(scansTable.createdAt, s))).groupBy(method).orderBy(desc(count()));
-  return rows.map((r) => ({ method: r.method, count: n(r.c) }));
+// Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc,
+// manual, import). The values are a closed set written by the API; a row without one is
+// reported as "unknown".
+export async function capturesBySource(s: Span): Promise<Array<{ source: string; count: number }>> {
+  const source = sql<string>`coalesce(${scansTable.captureSource}, 'unknown')`;
+  const rows = await db.select({ source, c: count() }).from(scansTable).where(and(LIVE_CAPTURE, within(scansTable.createdAt, s))).groupBy(source).orderBy(desc(count()), source);
+  return rows.map((r) => ({ source: r.source, count: n(r.c) }));
 }
 export async function scansByStatus(s: Span): Promise<Array<{ status: string; count: number }>> {
   const rows = await db
@@ -121,7 +134,7 @@ export async function scansByStatus(s: Span): Promise<Array<{ status: string; co
     .from(scansTable)
     .where(and(REAL_SCAN, within(scansTable.createdAt, s)))
     .groupBy(scansTable.status)
-    .orderBy(desc(count()));
+    .orderBy(desc(count()), scansTable.status);
   return rows.map((r) => ({ status: r.status, count: n(r.c) }));
 }
 
@@ -155,12 +168,16 @@ export async function companyNames(ids: number[]): Promise<Map<number, string>> 
 }
 
 // ── sign-ins (counts only — never the e-mail or address of an attempt) ───────
+// `successful` and `failed` count every attempt on the platform. `activeUsers` counts the
+// distinct company users who signed in: the platform operator's own sign-ins are attempts,
+// but the operator is not a customer user.
 export async function signInCounts(s: Span): Promise<{ successful: number; failed: number; activeUsers: number }> {
+  const tenantUser = sql`exists (select 1 from ${usersTable} where ${usersTable.id} = ${loginAttemptsTable.userId} and ${usersTable.role} is distinct from 'platform_owner')`;
   const [r] = await db
     .select({
       successful: sql<number>`count(*) filter (where ${loginAttemptsTable.success})`,
       failed: sql<number>`count(*) filter (where not ${loginAttemptsTable.success})`,
-      activeUsers: sql<number>`count(distinct ${loginAttemptsTable.userId}) filter (where ${loginAttemptsTable.success} and ${loginAttemptsTable.userId} is not null)`,
+      activeUsers: sql<number>`count(distinct ${loginAttemptsTable.userId}) filter (where ${loginAttemptsTable.success} and ${tenantUser})`,
     })
     .from(loginAttemptsTable)
     .where(within(loginAttemptsTable.createdAt, s));

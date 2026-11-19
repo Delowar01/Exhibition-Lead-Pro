@@ -36,6 +36,8 @@ let tenant: Auth;
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const DAY = 86_400_000;
 const utcDay = (offsetDays = 0) => new Date(Date.now() + offsetDays * DAY).toISOString().slice(0, 10);
+/** A day relative to another one (used with the page's own "today", so a run across UTC midnight cannot disagree with it). */
+const shiftDay = (day: string, offsetDays: number) => new Date(Date.parse(`${day}T00:00:00Z`) + offsetDays * DAY).toISOString().slice(0, 10);
 
 async function api(method: string, p: string, token: string | null = null, body?: unknown) {
   const res = await fetch(`${API_BASE}${p}`, {
@@ -186,23 +188,18 @@ test.describe("live data", () => {
       if (section) requested.push(section);
     });
     await openTab(page, "overview");
-    // The overview reads the overview plus the two series it charts — nothing else.
-    expect([...new Set(requested)].sort()).toEqual(["activity", "growth", "overview"]);
+    // The landing view is ONE request: the overview carries the two series it charts.
+    expect(requested).toEqual(["overview"]);
 
     for (const tab of TABS.slice(1)) {
       const before = requested.length;
-      const wait = tab === "growth" || tab === "activity" ? null : page.waitForResponse((r) => isSection(r, tab) && r.status() === 200);
+      const wait = page.waitForResponse((r) => isSection(r, tab) && r.status() === 200);
       await page.getByTestId(`analytics-tab-${tab}`).click();
+      await wait;
       await expect(page).toHaveURL(new RegExp(`[?&]tab=${tab}(&|$)`));
       await expect(page.getByTestId(`analytics-${tab}`)).toBeVisible();
       await expect(page.getByTestId(`analytics-tab-${tab}`)).toHaveAttribute("aria-selected", "true");
-      if (wait) {
-        await wait;
-        expect(requested.slice(before), tab).toEqual([tab]);
-      } else {
-        // Already loaded for the overview charts: served from the cache, no second request.
-        expect(requested.slice(before), tab).toEqual([]);
-      }
+      expect(requested.slice(before), tab).toEqual([tab]);
       for (const other of TABS) if (other !== tab) await expect(page.getByTestId(`analytics-${other}`)).toHaveCount(0);
     }
 
@@ -243,11 +240,20 @@ test.describe("live data", () => {
     await expect(page.getByTestId("subs-note")).toContainText("audit trail");
 
     const activity = (await openTab(page, "activity")).data;
+    await expect(kpiValue(page, "activity-kpi-captures")).toHaveText(fmt(activity.totals.captures.current));
     await expect(kpiValue(page, "activity-kpi-scans")).toHaveText(fmt(activity.totals.scans.current));
     await expect(kpiValue(page, "activity-kpi-contacts")).toHaveText(fmt(activity.totals.contacts.current));
     await expect(kpiValue(page, "activity-kpi-leads")).toHaveText(fmt(activity.totals.leads.current));
-    await expect(kpiValue(page, "activity-kpi-companies")).toHaveText(fmt(activity.totals.activeCompanies.current));
-    await expect(page.getByTestId("activity-manual-entries")).toContainText(new RegExp(`^${fmt(activity.manualEntries)} manual entr`));
+    // Card scans are a subset of captures, and the source breakdown covers every capture.
+    expect(activity.totals.scans.current).toBeLessThanOrEqual(activity.totals.captures.current);
+    expect((activity.capturesBySource as Array<{ count: number }>).reduce((a, c) => a + c.count, 0)).toBe(activity.totals.captures.current);
+    await expect(page.getByTestId("activity-capture-total")).toContainText(new RegExp(`^${fmt(activity.totals.captures.current)} captures? in this period, of which ${fmt(activity.totals.scans.current)} card scans? read by OCR`));
+    for (const c of activity.capturesBySource as Array<{ source: string; count: number }>) {
+      await expect(page.getByTestId(`activity-source-list-row-${c.source}`)).toContainText(fmt(c.count));
+    }
+    await expect(page.getByTestId("activity-by-source")).not.toContainText(/typed by hand|manual entr/i);
+    await expect(page.getByTestId("activity-definitions")).toContainText("read from a card image by OCR");
+    await expect(page.getByTestId("activity-top-companies")).toContainText(`${fmt(activity.totals.activeCompanies.current)} compan`);
     if (activity.topCompanies.length > 0) {
       const first = activity.topCompanies[0];
       const row = page.getByTestId("activity-top-table").locator("tbody tr").first();
@@ -281,9 +287,8 @@ test.describe("live data", () => {
 
   test("a chart can be read as a table with one row per period", async ({ page }) => {
     await seedAs(page, platform);
-    const wait = page.waitForResponse((r) => isSection(r, "activity") && r.status() === 200);
-    await openTab(page, "overview");
-    const activity = await (await wait).json();
+    const { data } = await openTab(page, "overview");
+    const series = data.trends.scans as Array<{ bucket: string; value: number }>;
     const card = page.getByTestId("overview-scans-chart");
     const chartButton = card.getByRole("button", { name: "Chart" });
     const tableButton = card.getByRole("button", { name: "Table" });
@@ -296,9 +301,11 @@ test.describe("live data", () => {
     const table = card.getByRole("table");
     await expect(table).toBeVisible();
     await expect(table.getByRole("columnheader")).toHaveText(["Day", "Card scans"]);
-    await expect(table.locator("tbody tr")).toHaveCount(activity.series.length);
-    const last = activity.series[activity.series.length - 1];
-    await expect(table.locator("tbody tr").last().locator("td").last()).toHaveText(fmt(last.scans));
+    await expect(table.locator("tbody tr")).toHaveCount(series.length);
+    expect(series.length).toBe(data.range.days);
+    await expect(table.locator("tbody tr").last().locator("td").last()).toHaveText(fmt(series[series.length - 1].value));
+    await expect(table.locator("tbody tr").first().locator("td").last()).toHaveText(fmt(series[0].value));
+    expect(series.reduce((a, p) => a + p.value, 0)).toBe(data.period.scans.current);
     // The selected view is white text on the brand orange.
     await expect(tableButton).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(tableButton).toHaveCSS("background-color", "rgb(255, 102, 0)");
@@ -329,6 +336,8 @@ test.describe("live data", () => {
     await expect(page).toHaveURL(/tab=revenue/);
     await expect(page).toHaveURL(/range=7d/);
     await expect(page.getByTestId("analytics-revenue")).toBeVisible();
+    // The link's own panel is gone: focus lands on the tab that was opened, not on nothing.
+    await expect(page.getByTestId("analytics-tab-revenue")).toBeFocused();
   });
 
   test("the sidebar opens the page", async ({ page }) => {
@@ -344,19 +353,19 @@ test.describe("live data", () => {
 test.describe("period filter", () => {
   test("a preset changes the window, the URL and every request", async ({ page }) => {
     await seedAs(page, platform);
-    await openTab(page, "overview");
-    const wait = page.waitForResponse((r) => isSection(r, "overview") && new URL(r.url()).searchParams.get("from") === utcDay(-6));
+    const today = (await openTab(page, "overview")).data.range.to as string;
+    const wait = page.waitForResponse((r) => isSection(r, "overview") && new URL(r.url()).searchParams.get("from") === shiftDay(today, -6));
     await page.getByTestId("analytics-period").click();
     await page.getByRole("option", { name: "Last 7 days" }).click();
     const res = await wait;
     const data = await res.json();
-    expect(data.range).toMatchObject({ from: utcDay(-6), to: utcDay(0), days: 7, granularity: "day" });
+    expect(data.range).toMatchObject({ from: shiftDay(today, -6), to: today, days: 7, granularity: "day" });
     await expect(page).toHaveURL(/[?&]range=7d/);
     await expect(page.getByTestId("analytics-range-summary")).toContainText("7 days");
     await expect(kpiValue(page, "kpi-scans")).toHaveText(fmt(data.period.scans.current));
 
     // 12 months: the API groups by week on its own and the summary says so.
-    const yearWait = page.waitForResponse((r) => isSection(r, "overview") && new URL(r.url()).searchParams.get("from") === utcDay(-364));
+    const yearWait = page.waitForResponse((r) => isSection(r, "overview") && new URL(r.url()).searchParams.get("from") === shiftDay(today, -364));
     await page.getByTestId("analytics-period").click();
     await page.getByRole("option", { name: "Last 12 months" }).click();
     expect((await (await yearWait).json()).range).toMatchObject({ days: 365, granularity: "week" });
@@ -421,7 +430,7 @@ test.describe("period filter", () => {
 
   test("group-by is sent to the API and a deep link restores the whole view", async ({ page }) => {
     await seedAs(page, platform);
-    await openTab(page, "activity", "range=90d");
+    const today = (await openTab(page, "activity", "range=90d")).data.range.to as string;
     const wait = page.waitForResponse((r) => isSection(r, "activity") && new URL(r.url()).searchParams.get("granularity") === "month");
     await page.getByTestId("analytics-granularity").click();
     await page.getByRole("option", { name: "Month" }).click();
@@ -436,7 +445,7 @@ test.describe("period filter", () => {
     await page.goto(url);
     const restored = new URL((await again).url());
     expect(restored.searchParams.get("granularity")).toBe("month");
-    expect(restored.searchParams.get("from")).toBe(utcDay(-89));
+    expect(restored.searchParams.get("from")).toBe(shiftDay(today, -89));
     await expect(page.getByTestId("analytics-tab-activity")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("analytics-period")).toContainText("Last 90 days");
     await expect(page.getByTestId("analytics-granularity")).toContainText("Month");
@@ -565,12 +574,17 @@ test.describe("states", () => {
 
     await openTab(page, "activity", window);
     await expect(page.getByTestId("activity-chart-scans").getByTestId("chart-empty")).toBeVisible();
-    await expect(page.getByTestId("activity-method-list-empty")).toHaveText("No cards were scanned in this period.");
+    await expect(page.getByTestId("activity-source-list-empty")).toHaveText("Nothing was captured in this period.");
     await expect(page.getByTestId("activity-top-companies")).toContainText("No company captured a card or a contact in this period.");
-    await expect(page.getByTestId("activity-manual-entries")).toContainText("0 manual entries");
+    await expect(page.getByTestId("activity-capture-total")).toContainText("0 captures in this period");
+    await expect(kpiValue(page, "activity-kpi-captures")).toHaveText("0");
 
     await openTab(page, "ai", window);
     await expect(kpiValue(page, "ai-kpi-requests")).toHaveText("0");
+    // A rate or an average over zero requests is shown as a dash, never as "0%" or "0 ms".
+    await expect(kpiValue(page, "ai-kpi-failure-rate")).toHaveText("—");
+    await expect(kpiValue(page, "ai-kpi-latency")).toHaveText("—");
+    await expect(page.getByTestId("ai-kpi-failure-rate")).toContainText("No requests in this period");
     await expect(page.getByTestId("ai-requests-chart").getByTestId("chart-empty")).toHaveText("No AI requests were made in this period.");
     await expect(page.getByTestId("ai-by-feature")).toContainText("No AI requests were made in this period.");
     await expect(page.getByTestId("ai-failure-list-empty")).toHaveText("No AI request failed in this period.");
@@ -691,6 +705,42 @@ test.describe("revenue is never overstated", () => {
   });
 });
 
+test.describe("shares of a longer list", () => {
+  test("a top-N breakdown is measured against the true total and shows the remainder", async ({ page }) => {
+    await seedAs(page, platform);
+    const real = (await api("GET", `/platform/analytics/operations?from=${utcDay(-29)}&to=${utcDay(0)}`, platform.token)).json;
+    // 1,000 audit events, of which the API lists only the two largest areas.
+    const patched = {
+      ...real,
+      auditEvents: {
+        ...real.auditEvents,
+        total: { current: 1000, previous: 800 },
+        byCategory: [
+          { category: "user", count: 300 },
+          { category: "workflow", count: 100 },
+        ],
+      },
+      securityEvents: { total: { current: 4, previous: 0 }, byType: [{ type: "mfa_challenge", count: 4 }] },
+    };
+    await page.route("**/api/platform/analytics/operations**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(patched) }));
+    await page.goto("/platform/analytics?tab=operations");
+    await expect(page.getByTestId("analytics-operations")).toBeVisible();
+
+    await expect(kpiValue(page, "ops-kpi-audit")).toHaveText("1,000");
+    const areas = page.getByTestId("ops-audit-list");
+    await expect(areas.locator("li")).toHaveCount(3);
+    await expect(page.getByTestId("ops-audit-list-row-user")).toContainText("30%");
+    await expect(page.getByTestId("ops-audit-list-row-workflow")).toContainText("10%");
+    const other = page.getByTestId("ops-audit-list-row-__other");
+    await expect(other).toContainText("Other areas");
+    await expect(other).toContainText("600");
+    await expect(other).toContainText("60%");
+    // Nothing is hidden when the list is complete: no remainder row, shares of the listed rows.
+    await expect(page.getByTestId("ops-security-list").locator("li")).toHaveCount(1);
+    await expect(page.getByTestId("ops-security-list-row-mfa_challenge")).toContainText("100%");
+  });
+});
+
 test.describe("access", () => {
   test("a tenant admin cannot open the page or read its data", async ({ page }) => {
     const analyticsResponses: number[] = [];
@@ -732,16 +782,38 @@ test.describe("keyboard and semantics", () => {
     await expect(overviewTab).toHaveCSS("background-color", "rgb(255, 102, 0)");
     await expect(page.getByRole("tab", { name: "Growth" })).not.toHaveCSS("background-color", "rgb(255, 102, 0)");
 
+    // Arrow keys move along the bar without opening (and loading) every tab on the way;
+    // Enter or Space opens the focused one.
+    const requested: string[] = [];
+    page.on("request", (r) => {
+      const section = sectionOf(r.url());
+      if (section) requested.push(section);
+    });
     await overviewTab.focus();
     await page.keyboard.press("ArrowRight");
-    await expect(page.getByRole("tab", { name: "Growth" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: "Growth" })).toBeFocused();
-    await expect(page).toHaveURL(/tab=growth/);
+    await expect(overviewTab).toHaveAttribute("aria-selected", "true");
+    // (each press is awaited: the tab bar moves focus on the next tick)
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "Subscriptions" })).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "Revenue & billing" })).toBeFocused();
+    await expect(page.getByTestId("analytics-overview")).toBeVisible();
+    expect(requested).toEqual([]);
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("tab", { name: "Revenue & billing" })).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/tab=revenue/);
+    await expect(page.getByTestId("analytics-revenue")).toBeVisible();
+    expect(requested).toEqual(["revenue"]);
     await expect(page.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", /.+/);
     await page.keyboard.press("End");
+    await expect(page.getByRole("tab", { name: "Operations" })).toBeFocused();
+    await page.keyboard.press("Space");
     await expect(page.getByRole("tab", { name: "Operations" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("analytics-operations")).toBeVisible();
     await page.keyboard.press("Home");
+    await expect(overviewTab).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(overviewTab).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("analytics-overview")).toBeVisible();
 
@@ -754,8 +826,12 @@ test.describe("keyboard and semantics", () => {
     await expect(page.getByRole("option", { name: "Last 90 days" })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    // One h1; sections and charts are named.
+    // One h1, then the open tab as h2, then the cards as h3 — no level is skipped.
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole("tabpanel").getByRole("heading", { level: 2, name: "Overview" })).toHaveCount(1);
+    await expect(page.getByRole("tabpanel").getByRole("heading", { level: 3, name: "Card scans" })).toBeVisible();
+    const levels = await page.locator("main").locator("h1, h2, h3, h4, h5, h6").evaluateAll((els) => els.map((el) => Number(el.tagName[1])));
+    for (let i = 1; i < levels.length; i += 1) expect(levels[i] - levels[i - 1], `heading ${i} of ${levels.join(",")}`).toBeLessThanOrEqual(1);
     await expect(page.getByRole("region", { name: "Card scans" })).toBeVisible();
     await expect(page.getByRole("figure", { name: "Card scans over time" }).or(page.getByTestId("overview-scans-chart").getByTestId("chart-empty"))).toBeVisible();
     await expect(page.getByRole("img", { name: /^Subscriptions by status:/ })).toBeVisible();
@@ -805,7 +881,11 @@ for (const vp of VIEWPORTS) {
       const active = await page.getByTestId(`analytics-tab-${tab}`).boundingBox();
       expect(active, tab).not.toBeNull();
       expect(active!.x, `${tab} tab at ${vp.name}`).toBeGreaterThanOrEqual(0);
-      expect(active!.x + active!.width, `${tab} tab at ${vp.name}`).toBeLessThanOrEqual(vp.width);
+      const bar = await page.getByTestId("analytics-tabs-scroller").boundingBox();
+      const scrolls = await page.getByTestId("analytics-tabs-scroller").evaluate((el) => el.scrollWidth > el.clientWidth);
+      // Where the bar scrolls, its right 40px fade out: the selected tab must sit clear of that edge.
+      const rightLimit = scrolls ? bar!.x + bar!.width - 40 : vp.width;
+      expect(active!.x + active!.width, `${tab} tab at ${vp.name}`).toBeLessThanOrEqual(rightLimit);
 
       if (SHOTS) {
         const height = await page.evaluate(() => document.querySelector("main")?.scrollHeight ?? document.body.scrollHeight);

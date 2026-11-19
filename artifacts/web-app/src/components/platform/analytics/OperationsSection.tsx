@@ -29,7 +29,7 @@ export function OperationsSection({ params }: SectionProps) {
             <KpiGrid columns={3}>
               <Kpi label="Successful sign-ins" count={signIns.successful} icon={LogIn} testId="ops-kpi-signins" />
               <Kpi label="Failed sign-ins" count={signIns.failed} icon={KeyRound} intent="lower-better" testId="ops-kpi-failed-signins" />
-              <Kpi label="Users who signed in" count={signIns.activeUsers} icon={UserCheck} testId="ops-kpi-active-users" />
+              <Kpi label="Company users who signed in" count={signIns.activeUsers} icon={UserCheck} testId="ops-kpi-active-users" />
               <Kpi label="Audit events" count={auditEvents.total} icon={ClipboardList} intent="neutral" testId="ops-kpi-audit" />
               <Kpi label="Security events" count={securityEvents.total} icon={ShieldAlert} intent="lower-better" testId="ops-kpi-security" />
               <Kpi label="Billing notifications" count={billingEvents.received} icon={BellRing} intent="neutral" testId="ops-kpi-billing" />
@@ -38,7 +38,7 @@ export function OperationsSection({ params }: SectionProps) {
             <div className="grid gap-6 lg:grid-cols-2">
               <ChartCard
                 title="Sign-ins"
-                description="Successful and failed sign-in attempts across all companies"
+                description="Every successful and failed sign-in attempt on the platform"
                 testId="ops-signins-chart"
                 table={{
                   caption: "Sign-in attempts per period",
@@ -90,6 +90,8 @@ export function OperationsSection({ params }: SectionProps) {
               <ChartCard title="Audit events by area" description="Which parts of the product recorded changes" testId="ops-audit-areas">
                 <BreakdownList
                   items={auditEvents.byCategory.map((c) => ({ key: c.category, label: humanize(c.category), value: c.count }))}
+                  total={auditEvents.total.current}
+                  otherLabel="Other areas"
                   label="Audit events by area"
                   empty="No audit events were recorded in this period."
                   testId="ops-audit-list"
@@ -99,6 +101,8 @@ export function OperationsSection({ params }: SectionProps) {
               <ChartCard title="Security events by type" description="Sign-in protection and account security signals" testId="ops-security">
                 <BreakdownList
                   items={securityEvents.byType.map((t) => ({ key: t.type, label: humanize(t.type), value: t.count }))}
+                  total={securityEvents.total.current}
+                  otherLabel="Other types"
                   label="Security events by type"
                   empty="No security events were recorded in this period."
                   testId="ops-security-list"

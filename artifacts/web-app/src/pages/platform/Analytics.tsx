@@ -42,8 +42,10 @@ import { OperationsSection } from "@/components/platform/analytics/OperationsSec
 //
 // One reporting window (whole UTC days) scopes every tab; the window, the bucket size and the
 // open tab live in the URL so a view can be bookmarked and shared. Each tab loads its own
-// endpoint, so only what is on screen is fetched. Every figure comes from the API: nothing is
-// derived or simulated here, and a figure the platform cannot compute says "Unavailable".
+// endpoint, so only what is on screen is fetched. Figures come from the API and nothing is
+// simulated; the few values worked out here (a change against the previous period, a share
+// of a total, the annual run rate as the monthly estimate × 12) are labelled as such, and a
+// figure the platform cannot compute says "Unavailable".
 
 const SECTIONS: Record<AnalyticsTab, (props: SectionProps) => React.ReactNode> = {
   overview: OverviewSection,
@@ -61,7 +63,10 @@ export default function PlatformAnalytics() {
   const search = useSearch();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
-  const [today] = useState(() => todayUtc());
+  // "Today" is read on every render, so a page left open past midnight (UTC) moves on to the
+  // new day at the next interaction instead of staying on yesterday's window.
+  const today = todayUtc();
+  const [, rerender] = useState(0);
   const state = useMemo(() => parseAnalyticsSearch(search, today), [search, today]);
 
   const update = useCallback(
@@ -76,11 +81,13 @@ export default function PlatformAnalytics() {
   const [draftFrom, setDraftFrom] = useState(state.from);
   const [draftTo, setDraftTo] = useState(state.to);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  // The form follows the URL: a link to a preset (or to the bare page) closes the custom
+  // range, and a link to a custom range opens it with its dates.
   useEffect(() => {
     setDraftFrom(state.from);
     setDraftTo(state.to);
     setRangeError(null);
-    if (state.preset === "custom") setCustomOpen(true);
+    setCustomOpen(state.preset === "custom");
   }, [state.from, state.to, state.preset]);
 
   const onPreset = (value: string) => {
@@ -114,16 +121,34 @@ export default function PlatformAnalytics() {
 
   const openTab = useCallback((tab: AnalyticsTab) => update({ tab }), [update]);
 
+  // A link inside a panel ("Revenue details") opens another tab. Its panel is then removed,
+  // so keyboard focus is moved to the newly selected tab instead of being dropped.
+  const focusSelectedTab = useRef(false);
+  const openTabFromPanel = useCallback(
+    (tab: AnalyticsTab) => {
+      focusSelectedTab.current = true;
+      update({ tab });
+    },
+    [update],
+  );
+
   // On narrow screens the tab bar scrolls sideways: keep the open tab in view (deep links included).
   const tabsScroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    tabsScroller.current?.querySelector<HTMLElement>('[role="tab"][data-state="active"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const selected = tabsScroller.current?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
+    selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (focusSelectedTab.current) {
+      focusSelectedTab.current = false;
+      selected?.focus();
+    }
   }, [state.tab]);
 
-  const refresh = () =>
+  const refresh = () => {
+    rerender((n) => n + 1);
     void queryClient.invalidateQueries({
       predicate: (q) => typeof q.queryKey[0] === "string" && q.queryKey[0].startsWith("/api/platform/analytics/"),
     });
+  };
 
   return (
     <div className="space-y-6" data-testid="platform-analytics">
@@ -234,11 +259,14 @@ export default function PlatformAnalytics() {
         </p>
       </section>
 
-      <Tabs value={state.tab} onValueChange={(v) => openTab(v as AnalyticsTab)}>
-        {/* The fading right edge shows that the bar scrolls; the trailing padding lets the last tab clear the fade. */}
+      {/* Manual activation: arrow keys move between tabs and Enter or Space opens one, so
+          stepping along the bar does not load every tab on the way. */}
+      <Tabs value={state.tab} onValueChange={(v) => openTab(v as AnalyticsTab)} activationMode="manual">
+        {/* The fading right edge shows that the bar scrolls. The trailing padding lets the last tab
+            clear the fade, and the scroll padding keeps a tab scrolled into view clear of it too. */}
         <div
           ref={tabsScroller}
-          className="-mx-4 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,#000_calc(100%-2.5rem),transparent)] sm:mx-0 sm:px-0"
+          className="-mx-4 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,#000_calc(100%-2.5rem),transparent)] [scroll-padding-inline:3.5rem] sm:mx-0 sm:px-0"
           data-testid="analytics-tabs-scroller"
         >
           <div className="w-max pr-10">
@@ -260,7 +288,8 @@ export default function PlatformAnalytics() {
           const Section = SECTIONS[t.id];
           return (
             <TabsContent key={t.id} value={t.id} className="mt-5">
-              <Section params={params} onOpenTab={openTab} />
+              <h2 className="sr-only">{t.label}</h2>
+              <Section params={params} onOpenTab={openTabFromPanel} />
             </TabsContent>
           );
         })}

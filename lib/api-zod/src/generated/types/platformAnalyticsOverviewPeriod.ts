@@ -9,12 +9,13 @@ import type { PlatformAnalyticsCount } from './platformAnalyticsCount';
 
 export type PlatformAnalyticsOverviewPeriod = {
   newCompanies: PlatformAnalyticsCount;
+  /** Company users created in the window that exist today (deleted accounts and platform operators are not counted) */
   newUsers: PlatformAnalyticsCount;
   /** Companies with at least one card scan or new contact in the window */
   activeCompanies: PlatformAnalyticsCount;
-  /** Distinct users with at least one successful sign-in in the window */
+  /** Distinct company users with at least one successful sign-in in the window (platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
-  /** Card scans (manual-entry interaction rows and deleted rows excluded) */
+  /** Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded. */
   scans: PlatformAnalyticsCount;
   contacts: PlatformAnalyticsCount;
   leads: PlatformAnalyticsCount;

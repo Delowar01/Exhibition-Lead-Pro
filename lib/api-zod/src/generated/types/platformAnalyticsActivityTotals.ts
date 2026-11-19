@@ -8,6 +8,9 @@
 import type { PlatformAnalyticsCount } from './platformAnalyticsCount';
 
 export type PlatformAnalyticsActivityTotals = {
+  /** Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are excluded. */
+  captures: PlatformAnalyticsCount;
+  /** Card scans — the captures that were read by OCR */
   scans: PlatformAnalyticsCount;
   contacts: PlatformAnalyticsCount;
   leads: PlatformAnalyticsCount;

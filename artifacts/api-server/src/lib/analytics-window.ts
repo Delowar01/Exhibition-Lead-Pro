@@ -38,26 +38,45 @@ export function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** A UTC calendar day from `YYYY-MM-DD` or any ISO date-time (evaluated as its UTC day). */
+// Calendar years a window may touch. The lower bound predates any data this system can hold;
+// the upper bound keeps every derived instant inside the four-digit years the database and
+// the ISO format handle.
+const MIN_YEAR = 1970;
+const MAX_YEAR = 2100;
+const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/;
+
+/** UTC midnight of a real calendar day, or a refusal (2026-02-30 is not rolled over to March). */
+function calendarDay(y: number, mo: number, da: number, name: "from" | "to"): Date {
+  const d = new Date(Date.UTC(y, mo - 1, da));
+  if (d.getUTCFullYear() !== y || d.getUTCMonth() !== mo - 1 || d.getUTCDate() !== da) invalid(`Invalid ${name} date`);
+  return d;
+}
+
+/**
+ * A UTC calendar day from `YYYY-MM-DD`, or from an ISO date-time WITH an explicit zone
+ * (`Z` or an offset), which is evaluated as its UTC day. A date-time without a zone is
+ * refused: it would otherwise depend on the server's local time zone.
+ */
 export function parseDay(raw: unknown, name: "from" | "to"): Date | null {
   if (raw == null || raw === "") return null;
   if (typeof raw !== "string") invalid(`Invalid ${name} date`);
   const s = raw.trim();
+  let day: Date;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (m) {
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const da = Number(m[3]);
-    const d = new Date(Date.UTC(y, mo - 1, da));
-    // Reject impossible calendar days (2026-02-30) instead of rolling them over.
-    if (d.getUTCFullYear() !== y || d.getUTCMonth() !== mo - 1 || d.getUTCDate() !== da) invalid(`Invalid ${name} date`);
-    return d;
+    day = calendarDay(Number(m[1]), Number(m[2]), Number(m[3]), name);
+  } else {
+    const dt = ISO_DATE_TIME.exec(s);
+    if (!dt) invalid(`Invalid ${name} date`);
+    // The written date must itself be a real day before the instant is converted to UTC.
+    calendarDay(Number(dt[1]), Number(dt[2]), Number(dt[3]), name);
+    const t = new Date(s);
+    if (Number.isNaN(t.getTime())) invalid(`Invalid ${name} date`);
+    day = utcDay(t);
   }
-  // Anything else must be a full ISO date-time; bare numbers and free text are refused.
-  if (!/^\d{4}-\d{2}-\d{2}T/.test(s)) invalid(`Invalid ${name} date`);
-  const t = new Date(s);
-  if (Number.isNaN(t.getTime())) invalid(`Invalid ${name} date`);
-  return utcDay(t);
+  const year = day.getUTCFullYear();
+  if (year < MIN_YEAR || year > MAX_YEAR) invalid(`The ${name} date must be between ${MIN_YEAR} and ${MAX_YEAR}`);
+  return day;
 }
 
 export function defaultGranularity(days: number): Granularity {

@@ -12,7 +12,7 @@ import type { PlatformAnalyticsStatusCount } from './platformAnalyticsStatusCoun
  */
 export type PlatformAnalyticsOverviewSubscriptions = {
   total: number;
-  /** Subscriptions that grant full access today (active or trialing) */
+  /** Subscriptions whose status is active or trialing. A trial that has just run out is counted until the lifecycle sweep moves it. */
   fullAccess: number;
   byStatus: PlatformAnalyticsStatusCount[];
   trialsExpiringWithin7Days: number;

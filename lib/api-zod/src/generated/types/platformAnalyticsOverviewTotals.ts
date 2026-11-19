@@ -7,9 +7,10 @@
  */
 
 /**
- * All-time counts as of now (the platform dashboard's definitions)
+ * Counts as of now
  */
 export type PlatformAnalyticsOverviewTotals = {
   companies: number;
+  /** Company users that exist today (deleted accounts and platform operators are not counted) */
   users: number;
 };

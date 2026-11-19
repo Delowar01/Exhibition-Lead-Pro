@@ -88,6 +88,28 @@ describe("BreakdownList", () => {
     expect(m).not.toContain("100%</span>");
   });
 
+  it("with a true total, shares are of that total and the remainder is its own row", () => {
+    // The rows are the top 2 of a longer list: 300 + 100 of 1,000 events.
+    const top = [
+      { key: "user", label: "User", value: 300 },
+      { key: "workflow", label: "Workflow", value: 100 },
+    ];
+    const m = html(<BreakdownList items={top} total={1000} otherLabel="Other areas" label="Audit events by area" testId="areas" />);
+    expect(text(m)).toBe("User 300 30% Workflow 100 10% Other areas 600 60%");
+    expect(m).toContain('data-testid="areas-row-__other"');
+    // without the total the same rows would wrongly read 75% and 25%
+    expect(text(html(<BreakdownList items={top} label="x" />))).toBe("User 300 75% Workflow 100 25%");
+  });
+
+  it("adds no remainder row when the rows already make up the total", () => {
+    const rows = [{ key: "a", label: "A", value: 6 }, { key: "b", label: "B", value: 4 }];
+    expect(text(html(<BreakdownList items={rows} total={10} label="x" />))).toBe("A 6 60% B 4 40%");
+    // a total smaller than the rows (a count that moved between two reads) never yields a negative remainder
+    expect(text(html(<BreakdownList items={rows} total={8} label="x" />))).toBe("A 6 60% B 4 40%");
+    // rows that are all zero but a non-zero total: everything is "other"
+    expect(text(html(<BreakdownList items={[]} total={5} otherLabel="Other types" label="x" />))).toBe("Other types 5 100%");
+  });
+
   it("uses a row's own colour for its swatch and bar when one is given", () => {
     const m = html(<BreakdownList items={[{ key: "active", label: "Active", value: 5, color: "hsl(var(--success))" }]} label="x" />);
     expect(m.match(/hsl\(var\(--success\)\)/g)).toHaveLength(2);

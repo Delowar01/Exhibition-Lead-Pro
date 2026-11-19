@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PlatformAnalyticsActivityScansByMethodItem = {
-  method: string;
+export type PlatformAnalyticsActivityCapturesBySourceItem = {
+  source: string;
   count: number;
 };

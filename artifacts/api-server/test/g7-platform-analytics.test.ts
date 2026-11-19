@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNull, like, lt, or, sql } from "drizzle-orm";
 import {
   db,
   companiesTable,
@@ -94,6 +94,7 @@ beforeAll(async () => {
     throw new Error(`API not reachable at ${BASE} (${String(err)})`);
   });
   if (!health.ok) throw new Error(`API health check failed: ${health.status}`);
+  await purgeSynthetic();
   platformToken = await loginToken(PLATFORM);
 
   // ── a real tenant with one user per tenant role (for the access-control checks) ──
@@ -132,23 +133,32 @@ beforeAll(async () => {
       { email: `a1-${SUFFIX}@g7-synthetic.test`, passwordHash: "synthetic-not-a-hash", name: `${SECRET} user A1`, role: "primary_admin", companyId: aId, createdAt: at("2001-01-05T09:30:00") },
       { email: `a2-${SUFFIX}@g7-synthetic.test`, passwordHash: "synthetic-not-a-hash", name: `${SECRET} user A2`, role: "employee", companyId: aId, createdAt: at("2001-01-06T09:30:00") },
       { email: `b1-${SUFFIX}@g7-synthetic.test`, passwordHash: "synthetic-not-a-hash", name: `${SECRET} user B1`, role: "primary_admin", companyId: bId, createdAt: at("2001-01-20T16:00:00") },
+      // A deleted account is not a user that exists today: it must not be counted in any period.
+      { email: `gone-${SUFFIX}@g7-synthetic.test`, passwordHash: "synthetic-not-a-hash", name: `${SECRET} user deleted`, role: "employee", companyId: aId, isActive: false, createdAt: at("2001-01-07T09:30:00"), deletedAt: at("2001-01-09T09:30:00") },
     ])
     .returning({ id: usersTable.id });
   userIds.push(...users.map((u) => u.id));
   const [uP, uA1, uA2] = userIds;
 
-  // ── scans: 6 real ones in the window (both edges included), plus rows that must NOT count ──
+  // ── captures, written the way the API writes them ──
+  // OCR card scans carry extraction_method "ai_vision" (or NULL while pending / after a
+  // failure); a contact saved WITHOUT OCR is a row with extraction_method "manual" whose real
+  // origin is in capture_source. 6 OCR scans + 3 other captures fall inside the window.
+  const ocr = { extractionMethod: "ai_vision", captureSource: "camera" } as const;
   await db.insert(scansTable).values([
-    { companyId: aId, status: "completed", extractionMethod: "ai_vision", createdAt: at("2001-01-01T00:00:00.000"), notes: `${SECRET} scan note` },
-    { companyId: aId, status: "completed", extractionMethod: "ai_vision", createdAt: at("2001-01-10T12:00:00") },
-    { companyId: aId, status: "completed", extractionMethod: "qr", createdAt: at("2001-01-10T13:00:00") },
-    { companyId: aId, status: "failed", extractionMethod: null, createdAt: at("2001-01-31T23:59:59.999") },
-    { companyId: aId, status: "completed", extractionMethod: "manual", createdAt: at("2001-01-11T10:00:00") }, // manual entry — not a scan
-    { companyId: aId, status: "completed", extractionMethod: "ai_vision", createdAt: at("2001-01-12T10:00:00"), deletedAt: at("2001-01-13T10:00:00") }, // deleted
-    { companyId: aId, status: "completed", extractionMethod: "ai_vision", createdAt: at("2001-02-01T00:00:00.000") }, // first instant AFTER the window
-    { companyId: bId, status: "completed", extractionMethod: "nfc", createdAt: at("2001-01-22T08:00:00") },
-    { companyId: bId, status: "pending", extractionMethod: "ai_vision", createdAt: at("2001-01-22T09:00:00") },
-    { companyId: pId, status: "completed", extractionMethod: "ai_vision", createdAt: at("2000-12-31T23:59:59") }, // previous window
+    { companyId: aId, status: "completed", ...ocr, createdAt: at("2001-01-01T00:00:00.000"), notes: `${SECRET} scan note` }, // first instant of the window
+    { companyId: aId, status: "completed", ...ocr, createdAt: at("2001-01-10T12:00:00") },
+    { companyId: aId, status: "completed", ...ocr, createdAt: at("2001-01-10T13:00:00") },
+    { companyId: aId, status: "failed", extractionMethod: null, captureSource: "camera", createdAt: at("2001-01-31T23:59:59.999") }, // last millisecond
+    { companyId: aId, status: "completed", extractionMethod: "manual", captureSource: "qr", createdAt: at("2001-01-11T10:00:00") }, // QR capture — not a scan
+    { companyId: aId, status: "completed", extractionMethod: "manual", captureSource: "manual", createdAt: at("2001-01-11T11:00:00") }, // typed in — not a scan
+    { companyId: aId, status: "completed", ...ocr, createdAt: at("2001-01-12T10:00:00"), deletedAt: at("2001-01-13T10:00:00") }, // deleted — nothing at all
+    { companyId: aId, status: "completed", ...ocr, createdAt: at("2001-02-01T00:00:00.000") }, // first instant AFTER the window
+    { companyId: bId, status: "completed", extractionMethod: "ai_vision", captureSource: "nfc", createdAt: at("2001-01-22T08:00:00") },
+    { companyId: bId, status: "pending", extractionMethod: null, captureSource: null, createdAt: at("2001-01-22T09:00:00") }, // origin not recorded
+    { companyId: bId, status: "completed", extractionMethod: "manual", captureSource: "vcard", createdAt: at("2001-01-23T09:00:00") }, // vCard — not a scan
+    { companyId: pId, status: "completed", ...ocr, createdAt: at("2000-12-31T23:59:59") }, // previous window
+    { companyId: pId, status: "completed", extractionMethod: "manual", captureSource: "qr", createdAt: at("2000-12-30T09:00:00") }, // previous window
   ]);
 
   await db.insert(contactsTable).values([
@@ -238,24 +248,35 @@ beforeAll(async () => {
   ]);
 });
 
+// Removes every synthetic row of this suite. Run before the fixtures as well, so an earlier
+// run that was killed before its afterAll cannot leave rows behind in the isolated windows
+// (the exact figures below depend on January 2001 holding nothing but this run's rows).
+async function purgeSynthetic() {
+  const companies = await db
+    .select({ id: companiesTable.id })
+    .from(companiesTable)
+    .where(or(like(companiesTable.name, "G7 Prev %"), like(companiesTable.name, "G7 Alpha %"), like(companiesTable.name, "G7 Beta %")));
+  const ids = companies.map((c) => c.id);
+  const isolated = and(gte(auditLogsTable.createdAt, at("2000-12-01T00:00:00")), lt(auditLogsTable.createdAt, at("2001-02-02T00:00:00")));
+  await db.delete(billingProviderEventsTable).where(like(billingProviderEventsTable.eventId, "evt_g7_%"));
+  await db.delete(loginAttemptsTable).where(like(loginAttemptsTable.email, "g7secret%@login.test"));
+  await db.delete(auditLogsTable).where(and(isolated, isNull(auditLogsTable.companyId), eq(auditLogsTable.action, "plan_version.publish")));
+  await db.delete(planPricesTable).where(like(planPricesTable.providerPriceId, "price_g7_%"));
+  if (ids.length === 0) return;
+  await db.delete(aiInvocationsTable).where(inArray(aiInvocationsTable.companyId, ids));
+  await db.delete(billingCheckoutSessionsTable).where(inArray(billingCheckoutSessionsTable.companyId, ids));
+  await db.delete(securityEventsTable).where(inArray(securityEventsTable.companyId, ids));
+  await db.delete(auditLogsTable).where(inArray(auditLogsTable.companyId, ids));
+  await db.delete(leadsTable).where(inArray(leadsTable.companyId, ids));
+  await db.delete(contactsTable).where(inArray(contactsTable.companyId, ids));
+  await db.delete(scansTable).where(inArray(scansTable.companyId, ids));
+  await db.delete(subscriptionsTable).where(inArray(subscriptionsTable.companyId, ids));
+  await db.delete(usersTable).where(inArray(usersTable.companyId, ids));
+  await db.delete(companiesTable).where(inArray(companiesTable.id, ids));
+}
+
 afterAll(async () => {
-  const synthetic = [pId, aId, bId].filter(Boolean);
-  if (synthetic.length > 0) {
-    await db.delete(aiInvocationsTable).where(inArray(aiInvocationsTable.companyId, synthetic));
-    await db.delete(billingProviderEventsTable).where(sql`${billingProviderEventsTable.eventId} like ${`evt_g7_${SUFFIX}_%`}`);
-    await db.delete(billingCheckoutSessionsTable).where(inArray(billingCheckoutSessionsTable.companyId, synthetic));
-    await db.delete(securityEventsTable).where(inArray(securityEventsTable.companyId, synthetic));
-    await db.delete(auditLogsTable).where(inArray(auditLogsTable.companyId, synthetic));
-    await db.delete(auditLogsTable).where(sql`${auditLogsTable.action} = 'plan_version.publish' and ${auditLogsTable.createdAt} = ${"2001-01-08 09:00:00"}`);
-    await db.delete(loginAttemptsTable).where(eq(loginAttemptsTable.email, `${SECRET.toLowerCase()}@login.test`));
-    await db.delete(leadsTable).where(inArray(leadsTable.companyId, synthetic));
-    await db.delete(contactsTable).where(inArray(contactsTable.companyId, synthetic));
-    await db.delete(scansTable).where(inArray(scansTable.companyId, synthetic));
-    await db.delete(subscriptionsTable).where(inArray(subscriptionsTable.companyId, synthetic));
-    await db.delete(usersTable).where(inArray(usersTable.companyId, synthetic));
-    await db.delete(companiesTable).where(inArray(companiesTable.id, synthetic));
-  }
-  await db.delete(planPricesTable).where(eq(planPricesTable.providerPriceId, priceId));
+  await purgeSynthetic();
   if (roleCompanyId) {
     await db.delete(subscriptionsTable).where(eq(subscriptionsTable.companyId, roleCompanyId));
     await db.delete(usersTable).where(eq(usersTable.companyId, roleCompanyId));
@@ -322,10 +343,12 @@ describe("reporting window", () => {
     expect(body.range.granularity).toBe("day");
   });
 
-  it("evaluates an ISO date-time as its UTC day", async () => {
-    const body = await analytics("growth", "from=2001-01-01T23:30:00%2B05:00&to=2001-01-31T00:30:00-03:00");
+  it("evaluates an ISO date-time as its UTC day, not as the date written in it", async () => {
+    // 02:00 at +05:00 on 2 Jan is still 1 Jan in UTC; 22:30 at -03:00 on 30 Jan is already 31 Jan in UTC.
+    const body = await analytics("growth", "from=2001-01-02T02:00:00%2B05:00&to=2001-01-30T22:30:00-03:00");
     expect(body.range.from).toBe("2001-01-01");
     expect(body.range.to).toBe("2001-01-31");
+    expect(body.companies.added.current).toBe(2);
   });
 
   it("picks day, week or month buckets from the length of the window", async () => {
@@ -353,6 +376,10 @@ describe("reporting window", () => {
       "from=2001-01-01&to=2002-01-02&granularity=day", // daily buckets beyond 366 days
       "from=yesterday&to=2001-01-31",
       "from=20010101&to=2001-01-31",
+      "from=2001-01-01T00:00:00&to=2001-01-31", // a date-time without a zone
+      "from=2001-02-30T00:00:00Z&to=2001-03-05", // impossible day inside a date-time
+      "from=9999-12-01&to=9999-12-31", // beyond the supported years
+      "to=1969-12-31",
       "from=2001-01-01&from=2001-01-02&to=2001-01-31", // repeated parameter
       "from=2001-01-01&to=2001-01-31&granularity=day&granularity=week",
     ];
@@ -377,7 +404,10 @@ describe("reporting window", () => {
     expect(activity.series).toHaveLength(7);
     expect(activity.series.every((p: any) => p.scans === 0 && p.contacts === 0 && p.leads === 0)).toBe(true);
     expect(activity.topCompanies).toEqual([]);
-    expect(activity.scansByMethod).toEqual([]);
+    expect(activity.capturesBySource).toEqual([]);
+    expect(activity.totals.captures).toEqual({ current: 0, previous: 0 });
+    expect(overview.trends.scans.every((p: any) => p.value === 0)).toBe(true);
+    expect(overview.trends.scans).toHaveLength(7);
     const ai = await analytics("ai", q);
     expect(ai.totals.requests).toBe(0);
     expect(ai.totals.failureRate).toBe(0);
@@ -406,11 +436,56 @@ describe("overview", () => {
     expect(Number.isNaN(Date.parse(body.generatedAt))).toBe(false);
   });
 
-  it("all-time totals and the subscription state match the platform dashboard", async () => {
+  it("carries the two series it charts: card scans and new companies per bucket", async () => {
+    const body = await analytics("overview");
+    const scans = body.trends.scans as Array<{ bucket: string; value: number }>;
+    const companies = body.trends.newCompanies as Array<{ bucket: string; value: number }>;
+    expect(scans).toHaveLength(31);
+    expect(companies).toHaveLength(31);
+    expect(scans[0]).toEqual({ bucket: "2001-01-01", value: 1 });
+    expect(scans.find((p) => p.bucket === "2001-01-10")).toEqual({ bucket: "2001-01-10", value: 2 });
+    expect(scans.find((p) => p.bucket === "2001-01-11")).toEqual({ bucket: "2001-01-11", value: 0 }); // QR and typed-in captures are not scans
+    expect(sum(scans, (p) => p.value)).toBe(body.period.scans.current);
+    expect(companies.filter((p) => p.value > 0)).toEqual([
+      { bucket: "2001-01-05", value: 1 },
+      { bucket: "2001-01-20", value: 1 },
+    ]);
+    expect(sum(companies, (p) => p.value)).toBe(body.period.newCompanies.current);
+    const weekly = await analytics("overview", `${WINDOW}&granularity=week`);
+    expect(weekly.trends.scans.map((p: any) => p.value)).toEqual([1, 2, 0, 2, 1]);
+  });
+
+  it("counts company users only: no deleted account and no platform operator", async () => {
+    // The oracle is SQL written here, independently of the API's own queries.
+    const liveTenantUser = sql`${usersTable.deletedAt} is null and ${usersTable.role} is distinct from 'platform_owner'`;
+    const [{ live }] = await db.select({ live: count() }).from(usersTable).where(liveTenantUser);
+    const [{ all }] = await db.select({ all: count() }).from(usersTable);
+    const body = await analytics("overview");
+    expect(body.totals.users).toBe(Number(live));
+    // The deleted synthetic account and the platform owner exist as rows but are not users.
+    expect(Number(all)).toBeGreaterThanOrEqual(Number(live) + 2);
+
+    // The platform owner has signed in during the current period (this suite did), yet is not an "active user".
+    const now = await analytics("overview", "");
+    const from = at(`${now.range.from}T00:00:00`);
+    const to = new Date(at(`${now.range.to}T00:00:00`).getTime() + 86_400_000);
+    const inWindow = and(gte(loginAttemptsTable.createdAt, from), lt(loginAttemptsTable.createdAt, to), eq(loginAttemptsTable.success, true));
+    const signedIn = await db
+      .selectDistinct({ userId: loginAttemptsTable.userId, role: usersTable.role })
+      .from(loginAttemptsTable)
+      .innerJoin(usersTable, eq(usersTable.id, loginAttemptsTable.userId))
+      .where(inWindow);
+    expect(signedIn.some((u) => u.role === "platform_owner")).toBe(true);
+    expect(now.period.activeUsers.current).toBe(signedIn.filter((u) => u.role !== "platform_owner").length);
+  });
+
+  it("company totals and the subscription state are the platform dashboard's own figures", async () => {
     const [body, statsRes] = await Promise.all([analytics("overview"), api("GET", "/platform/stats", platformToken)]);
     expect(statsRes.status).toBe(200);
     const stats = await statsRes.json();
-    expect(body.totals).toEqual({ companies: stats.totalCompanies, users: stats.totalUsers });
+    const [{ companies }] = await db.select({ companies: count() }).from(companiesTable);
+    expect(body.totals.companies).toBe(Number(companies));
+    expect(body.totals.companies).toBe(stats.totalCompanies);
     expect(body.revenue).toEqual(stats.revenue);
     expect(sorted(body.subscriptions.byStatus, "status")).toEqual(sorted(stats.subscriptions.byStatus, "status"));
     expect(body.subscriptions.trialsExpiringWithin7Days).toBe(stats.subscriptions.trialsExpiringWithin7Days);
@@ -440,6 +515,9 @@ describe("growth", () => {
     const users = body.users.series as Array<{ bucket: string; added: number; cumulative: number }>;
     expect(sum(users, (p) => p.added)).toBe(3);
     expect(users[30].cumulative).toBe(4);
+    // 1 before the window + 5 Jan + 6 Jan = 3; 7 Jan holds only the deleted account, which adds nothing.
+    expect(users.find((p) => p.bucket === "2001-01-06")).toEqual({ bucket: "2001-01-06", added: 1, cumulative: 3 });
+    expect(users.find((p) => p.bucket === "2001-01-07")).toEqual({ bucket: "2001-01-07", added: 0, cumulative: 3 });
   });
 
   it("re-buckets by ISO week (Monday) and by month without losing a row", async () => {
@@ -628,32 +706,40 @@ describe("revenue and billing", () => {
 });
 
 describe("activity", () => {
-  it("counts real scans, live contacts and leads — both window edges inclusive", async () => {
+  it("separates OCR card scans from other captures and reports every capture by its real source", async () => {
     const body = await analytics("activity");
     expect(body.totals).toEqual({
+      captures: { current: 9, previous: 2 },
       scans: { current: 6, previous: 1 },
       contacts: { current: 4, previous: 2 },
       leads: { current: 2, previous: 0 },
       activeCompanies: { current: 2, previous: 1 },
     });
-    expect(body.manualEntries).toBe(1);
-    expect(sorted(body.scansByMethod, "method")).toEqual([
-      { method: "ai_vision", count: 3 },
-      { method: "nfc", count: 1 },
-      { method: "qr", count: 1 },
-      { method: "unknown", count: 1 },
+    // capture_source is the origin; extraction_method only says whether OCR ran.
+    expect(sorted(body.capturesBySource, "source")).toEqual([
+      { source: "camera", count: 4 },
+      { source: "manual", count: 1 },
+      { source: "nfc", count: 1 },
+      { source: "qr", count: 1 },
+      { source: "unknown", count: 1 },
+      { source: "vcard", count: 1 },
     ]);
+    expect(body.capturesBySource[0]).toEqual({ source: "camera", count: 4 }); // largest first
+    expect(sum(body.capturesBySource as Array<{ count: number }>, (c) => c.count)).toBe(body.totals.captures.current);
     expect(sorted(body.scansByStatus, "status")).toEqual([
       { status: "completed", count: 4 },
       { status: "failed", count: 1 },
       { status: "pending", count: 1 },
     ]);
+    expect(sum(body.scansByStatus as Array<{ count: number }>, (c) => c.count)).toBe(body.totals.scans.current);
+    expect(body).not.toHaveProperty("scansByMethod");
+    expect(body).not.toHaveProperty("manualEntries");
 
     const series = body.series as Array<{ bucket: string; scans: number; contacts: number; leads: number }>;
     expect(series).toHaveLength(31);
     expect(series[0]).toEqual({ bucket: "2001-01-01", scans: 1, contacts: 0, leads: 0 }); // first instant of the window
     expect(series.find((p) => p.bucket === "2001-01-10")).toEqual({ bucket: "2001-01-10", scans: 2, contacts: 2, leads: 0 });
-    expect(series.find((p) => p.bucket === "2001-01-11")).toEqual({ bucket: "2001-01-11", scans: 0, contacts: 0, leads: 1 }); // the manual entry is not a scan
+    expect(series.find((p) => p.bucket === "2001-01-11")).toEqual({ bucket: "2001-01-11", scans: 0, contacts: 0, leads: 1 }); // QR and typed-in captures are not scans
     expect(series.find((p) => p.bucket === "2001-01-12")).toEqual({ bucket: "2001-01-12", scans: 0, contacts: 0, leads: 0 }); // the deleted scan
     expect(series.find((p) => p.bucket === "2001-01-16")).toEqual({ bucket: "2001-01-16", scans: 0, contacts: 0, leads: 0 }); // the deleted contact
     expect(series[30]).toEqual({ bucket: "2001-01-31", scans: 1, contacts: 0, leads: 0 }); // last millisecond of the window

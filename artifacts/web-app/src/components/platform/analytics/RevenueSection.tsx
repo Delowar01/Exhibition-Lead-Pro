@@ -68,7 +68,7 @@ export function RevenueSection({ params }: SectionProps) {
                 <Stat
                   label="Estimated ARR"
                   value={estimate.available ? estimate.arr : <Unavailable />}
-                  note={estimate.available ? "Annual run rate — monthly estimate × 12" : "Needs the monthly estimate"}
+                  note={estimate.available ? "Annual run rate — the monthly estimate × 12" : "Needs the monthly estimate"}
                   icon={CalendarRange}
                   testId="revenue-arr"
                 />
@@ -128,7 +128,7 @@ export function RevenueSection({ params }: SectionProps) {
                         columns: [
                           { key: "source", label: "Billing method" },
                           { key: "total", label: "Subscriptions", align: "right" },
-                          { key: "fullAccess", label: "With full access", align: "right" },
+                          { key: "fullAccess", label: "Active or trialing", align: "right" },
                         ],
                         rows: data.billingSources.map((s) => ({
                           source: BILLING_SOURCE_LABEL[s.billingSource] ?? humanize(s.billingSource),
@@ -164,7 +164,7 @@ export function RevenueSection({ params }: SectionProps) {
             <div className="space-y-4" data-testid="revenue-activity">
               <SectionHeading
                 title="Billing activity in this period"
-                description="Notifications actually received from the billing provider and checkouts started by customers. These are counts — the provider's amounts are not stored."
+                description="Notifications actually received from the billing provider and checkouts started by customers. These are counts — the provider's amounts are not stored, so a paid invoice says nothing about how much was paid."
                 badge={
                   <StatusBadge tone="success" showDot={false}>
                     Actual events · counts only
@@ -172,7 +172,7 @@ export function RevenueSection({ params }: SectionProps) {
                 }
               />
               <KpiGrid>
-                <Kpi label="Successful payments" count={paymentEvents.paid} icon={CircleDollarSign} testId="revenue-kpi-paid" />
+                <Kpi label="Paid invoices" count={paymentEvents.paid} icon={CircleDollarSign} testId="revenue-kpi-paid" />
                 <Kpi label="Failed payments" count={paymentEvents.failed} icon={TriangleAlert} intent="lower-better" testId="revenue-kpi-failed" />
                 <Kpi label="Checkouts started" count={checkouts.started} icon={ShoppingCart} testId="revenue-kpi-checkouts" />
                 <Kpi label="Provider notifications" count={providerEvents.total} icon={BellRing} intent="neutral" testId="revenue-kpi-events" />
@@ -181,26 +181,26 @@ export function RevenueSection({ params }: SectionProps) {
               <div className="grid gap-6 lg:grid-cols-2">
                 <ChartCard
                   title="Payment notifications"
-                  description="Successful and failed invoice payments reported by the provider"
+                  description="Paid-invoice and failed-payment notifications from the provider that matched a subscription"
                   testId="revenue-payments-chart"
                   table={{
                     caption: "Payment notifications per period",
                     columns: [
                       { key: "bucket", label: bucketColumnLabel(data.range.granularity) },
-                      { key: "paid", label: "Successful", align: "right" },
-                      { key: "failed", label: "Failed", align: "right" },
+                      { key: "paid", label: "Paid invoices", align: "right" },
+                      { key: "failed", label: "Failed payments", align: "right" },
                     ],
                     rows: paymentEvents.series.map((p) => ({ bucket: f.xLabel(p.bucket), paid: formatCount(p.paid), failed: formatCount(p.failed) })),
                   }}
                 >
                   <TrendChart
-                    ariaLabel="Successful and failed payment notifications over time"
+                    ariaLabel="Paid-invoice and failed-payment notifications over time"
                     kind="bar"
                     stacked
                     data={paymentEvents.series}
                     series={[
-                      { key: "paid", label: "Successful", color: SERIES.secondary },
-                      { key: "failed", label: "Failed", color: SERIES.failure },
+                      { key: "paid", label: "Paid invoices", color: SERIES.secondary },
+                      { key: "failed", label: "Failed payments", color: SERIES.failure },
                     ]}
                     empty={<EmptyNote>No payment notifications were received in this period.</EmptyNote>}
                     {...f}
@@ -225,9 +225,11 @@ export function RevenueSection({ params }: SectionProps) {
                   />
                 </ChartCard>
 
-                <ChartCard title="Notifications by type" description="Every billing notification received in this period" testId="revenue-events-type">
+                <ChartCard title="Notifications by type" description="Billing notifications received in this period" testId="revenue-events-type">
                   <BreakdownList
                     items={providerEvents.byType.map((t) => ({ key: t.eventType, label: humanize(t.eventType), value: t.count }))}
+                    total={providerEvents.total.current}
+                    otherLabel="Other types"
                     label="Billing notifications by type"
                     empty="No billing notifications were received in this period."
                     testId="revenue-type-list"

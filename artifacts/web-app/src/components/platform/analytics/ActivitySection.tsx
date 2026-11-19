@@ -1,8 +1,8 @@
 import { Link } from "wouter";
 import { useGetPlatformAnalyticsActivity, getGetPlatformAnalyticsActivityQueryKey } from "@workspace/api-client-react";
-import { Building2, Camera, Contact, Target } from "lucide-react";
+import { Camera, Contact, Inbox, Target } from "lucide-react";
 import { BreakdownList, ChartCard, DataTable, TrendChart } from "@/components/ds";
-import { SERIES, formatCount, humanize, plural } from "@/lib/platform-analytics";
+import { CAPTURE_SOURCE_LABEL, SERIES, formatCount, humanize, plural } from "@/lib/platform-analytics";
 import {
   EmptyNote,
   Kpi,
@@ -24,6 +24,9 @@ const MEASURES = [
 ] as const;
 
 // Activity — capture volumes across all companies. Volumes only: no tenant record is shown.
+//
+// A "capture" is any contact a company saved from a card, a code, a tap or by hand. A "card
+// scan" is the subset that was read by OCR. The source breakdown covers every capture.
 export function ActivitySection({ params }: SectionProps) {
   const query = useGetPlatformAnalyticsActivity(params, { query: sectionQuery(getGetPlatformAnalyticsActivityQueryKey(params)) });
   return (
@@ -48,11 +51,15 @@ export function ActivitySection({ params }: SectionProps) {
         return (
           <div className="space-y-6" data-testid="analytics-activity">
             <KpiGrid>
+              <Kpi label="Captures" count={data.totals.captures} icon={Inbox} testId="activity-kpi-captures" />
               <Kpi label="Card scans" count={data.totals.scans} icon={Camera} testId="activity-kpi-scans" />
               <Kpi label="New contacts" count={data.totals.contacts} icon={Contact} testId="activity-kpi-contacts" />
               <Kpi label="New leads" count={data.totals.leads} icon={Target} testId="activity-kpi-leads" />
-              <Kpi label="Active companies" count={data.totals.activeCompanies} icon={Building2} testId="activity-kpi-companies" />
             </KpiGrid>
+            <Note testId="activity-definitions">
+              A capture is any contact saved from a card, a QR code, a vCard, an NFC tap, an e-mail signature or by hand. Card
+              scans are the captures read from a card image by OCR.
+            </Note>
 
             <div className="grid gap-6 lg:grid-cols-3" data-testid="activity-trends">
               {MEASURES.map((m) => (
@@ -71,23 +78,23 @@ export function ActivitySection({ params }: SectionProps) {
 
             <div className="grid gap-6 lg:grid-cols-2">
               <ChartCard
-                title="Scans by capture method"
-                description="How cards were captured"
-                testId="activity-by-method"
+                title="Captures by source"
+                description="Where the contacts captured in this period came from"
+                testId="activity-by-source"
                 footer={
-                  <span data-testid="activity-manual-entries">
-                    {plural(data.manualEntries, "manual entry", "manual entries")} in this period — typed by hand, so not counted as scans.
+                  <span data-testid="activity-capture-total">
+                    {plural(data.totals.captures.current, "capture")} in this period, of which {plural(data.totals.scans.current, "card scan")} read by OCR.
                   </span>
                 }
               >
                 <BreakdownList
-                  items={data.scansByMethod.map((m) => ({ key: m.method, label: humanize(m.method), value: m.count }))}
-                  label="Card scans by capture method"
-                  empty="No cards were scanned in this period."
-                  testId="activity-method-list"
+                  items={data.capturesBySource.map((c) => ({ key: c.source, label: CAPTURE_SOURCE_LABEL[c.source] ?? humanize(c.source), value: c.count }))}
+                  label="Captures by source"
+                  empty="Nothing was captured in this period."
+                  testId="activity-source-list"
                 />
               </ChartCard>
-              <ChartCard title="Scans by processing status" description="Where the scans of this period stand now" testId="activity-by-status">
+              <ChartCard title="Card scans by processing status" description="Where the card scans of this period stand now" testId="activity-by-status">
                 <BreakdownList
                   items={data.scansByStatus.map((s) => ({ key: s.status, label: humanize(s.status), value: s.count }))}
                   label="Card scans by processing status"
@@ -99,7 +106,7 @@ export function ActivitySection({ params }: SectionProps) {
 
             <ChartCard
               title="Most active companies"
-              description="Ranked by cards scanned and contacts created in this period"
+              description={`Ranked by cards scanned and contacts created — ${plural(data.totals.activeCompanies.current, "company", "companies")} active in this period, ${formatCount(data.totals.activeCompanies.previous)} in the previous one`}
               action={<PageLink href="/platform/companies" testId="link-companies">View all companies</PageLink>}
               testId="activity-top-companies"
             >

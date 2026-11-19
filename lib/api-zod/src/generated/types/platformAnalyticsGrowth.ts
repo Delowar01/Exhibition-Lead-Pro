@@ -9,7 +9,7 @@ import type { PlatformAnalyticsGrowthSeries } from './platformAnalyticsGrowthSer
 import type { PlatformAnalyticsRange } from './platformAnalyticsRange';
 
 /**
- * Growth by creation date of the rows that exist today (hard-deleted companies are not tracked)
+ * Growth by creation date of the companies and company users that exist today. Permanently deleted companies, deleted user accounts and platform operators are not counted.
  */
 export interface PlatformAnalyticsGrowth {
   range: PlatformAnalyticsRange;

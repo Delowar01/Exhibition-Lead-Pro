@@ -36,10 +36,38 @@ describe("parseDay", () => {
     expect(iso(parseDay(" 2024-02-29 ", "to")!)).toBe("2024-02-29T00:00:00.000Z"); // leap day, trimmed
   });
 
-  it("evaluates an ISO date-time as its UTC day", () => {
+  it("evaluates an ISO date-time with a zone as its UTC day", () => {
     expect(iso(parseDay("2026-03-01T23:30:00+05:00", "from")!)).toBe("2026-03-01T00:00:00.000Z");
-    expect(iso(parseDay("2026-03-01T22:30:00-03:00", "from")!)).toBe("2026-03-02T00:00:00.000Z");
+    expect(iso(parseDay("2026-03-01T22:30:00-03:00", "from")!)).toBe("2026-03-02T00:00:00.000Z"); // next UTC day
+    expect(iso(parseDay("2026-03-01T02:00:00+05:00", "from")!)).toBe("2026-02-28T00:00:00.000Z"); // previous UTC day
     expect(iso(parseDay("2026-03-01T10:00:00Z", "to")!)).toBe("2026-03-01T00:00:00.000Z");
+    expect(iso(parseDay("2026-03-01T10:00Z", "to")!)).toBe("2026-03-01T00:00:00.000Z");
+    expect(iso(parseDay("2026-03-01T10:00:00.123456Z", "to")!)).toBe("2026-03-01T00:00:00.000Z");
+    expect(iso(parseDay("2026-03-01T10:00:00+0530", "to")!)).toBe("2026-03-01T00:00:00.000Z");
+  });
+
+  it("refuses a date-time without a zone — it would depend on the server's time zone", () => {
+    for (const bad of ["2026-03-01T10:00:00", "2026-03-01T10:00", "2026-03-01T", "2026-03-01T10", "2026-03-01 10:00:00Z"]) {
+      expect(refusal(() => parseDay(bad, "from")).status, bad).toBe(400);
+    }
+  });
+
+  it("refuses an impossible day inside a date-time instead of rolling it over", () => {
+    for (const bad of ["2026-02-30T00:00:00Z", "2025-02-29T12:00:00+02:00", "2026-13-01T00:00:00Z", "2026-04-31T23:59:59Z", "2026-03-01T25:00:00Z"]) {
+      expect(refusal(() => parseDay(bad, "to")).status, bad).toBe(400);
+    }
+  });
+
+  it("refuses years outside the supported range", () => {
+    expect(iso(parseDay("1970-01-01", "from")!)).toBe("1970-01-01T00:00:00.000Z");
+    expect(iso(parseDay("2100-12-31", "to")!)).toBe("2100-12-31T00:00:00.000Z");
+    for (const bad of ["1969-12-31", "2101-01-01", "9999-12-31", "0001-01-01", "9999-12-31T00:00:00Z"]) {
+      const r = refusal(() => parseDay(bad, "to"));
+      expect(r.status, bad).toBe(400);
+      expect(r.code, bad).toBe("INVALID_ANALYTICS_WINDOW");
+    }
+    // An offset can push a date-time over the edge of the range.
+    expect(refusal(() => parseDay("2100-12-31T23:00:00-05:00", "to")).status).toBe(400);
   });
 
   it("treats a missing value as absent", () => {

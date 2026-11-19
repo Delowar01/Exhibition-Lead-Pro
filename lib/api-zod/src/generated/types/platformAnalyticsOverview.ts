@@ -9,17 +9,20 @@ import type { PlatformAnalyticsOverviewAi } from './platformAnalyticsOverviewAi'
 import type { PlatformAnalyticsOverviewPeriod } from './platformAnalyticsOverviewPeriod';
 import type { PlatformAnalyticsOverviewSubscriptions } from './platformAnalyticsOverviewSubscriptions';
 import type { PlatformAnalyticsOverviewTotals } from './platformAnalyticsOverviewTotals';
+import type { PlatformAnalyticsOverviewTrends } from './platformAnalyticsOverviewTrends';
 import type { PlatformAnalyticsRange } from './platformAnalyticsRange';
 import type { RevenueSnapshot } from './revenueSnapshot';
 
 export interface PlatformAnalyticsOverview {
   range: PlatformAnalyticsRange;
   generatedAt: Date;
-  /** All-time counts as of now (the platform dashboard's definitions) */
+  /** Counts as of now */
   totals: PlatformAnalyticsOverviewTotals;
   period: PlatformAnalyticsOverviewPeriod;
   /** Canonical subscription state as of now */
   subscriptions: PlatformAnalyticsOverviewSubscriptions;
   revenue: RevenueSnapshot;
   ai: PlatformAnalyticsOverviewAi;
+  /** The two series the overview charts, one point per bucket of the window */
+  trends: PlatformAnalyticsOverviewTrends;
 }

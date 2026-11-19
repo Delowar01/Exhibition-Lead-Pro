@@ -7,7 +7,6 @@ import {
   bucketLabel,
   bucketTick,
   buildAnalyticsSearch,
-  comparisonText,
   daysBetween,
   defaultGranularity,
   deltaOf,
@@ -19,7 +18,7 @@ import {
   formatPercent,
   formatUsd,
   humanize,
-  isEmptySeries,
+  minorUnitDigits,
   parseAnalyticsSearch,
   parseDay,
   plural,
@@ -30,7 +29,7 @@ import {
   subscriptionStatusItems,
   todayUtc,
   validateRange,
-  withShares,
+  CAPTURE_SOURCE_LABEL,
   type AnalyticsState,
 } from "./platform-analytics";
 
@@ -186,10 +185,6 @@ describe("comparison with the previous period", () => {
     expect(Object.is(deltaOf(99_999, 100_000).pct, -0)).toBe(false);
   });
 
-  it("words the previous figure", () => {
-    expect(comparisonText(994)).toBe("994 in the previous period");
-    expect(comparisonText(0.5, formatUsd)).toBe("$0.50 in the previous period");
-  });
 });
 
 describe("formats", () => {
@@ -218,6 +213,19 @@ describe("formats", () => {
     expect(formatMinor(5000, "USD")).toBe("$50.00");
     expect(formatMinor(1999, "eur")).toContain("19.99");
     expect(formatMinor(100, "not-a-currency")).toBe("1.00 NOT-A-CURRENCY");
+  });
+
+  it("does not assume every currency has cents", () => {
+    expect(minorUnitDigits("usd")).toBe(2);
+    expect(minorUnitDigits("JPY")).toBe(0);
+    expect(minorUnitDigits("kwd")).toBe(3);
+    expect(minorUnitDigits("not-a-currency")).toBe(2);
+    // 5,000 yen is ¥5,000 — not ¥50; 10,000 fils are 10 dinars — not 100.
+    expect(formatMinor(5000, "jpy")).toBe("¥5,000");
+    expect(formatMinor(10000, "kwd")).toContain("10.000");
+    expect(formatMinor(10000, "kwd")).not.toContain("100.0");
+    // the annual run rate of a yen estimate is formatted the same way
+    expect(revenueEstimateView({ available: true, reason: null, currency: "jpy", monthlyRecurringMinor: 5000, countedSubscriptions: 1, unpricedSubscriptions: 0 })).toMatchObject({ mrr: "¥5,000", arr: "¥60,000" });
   });
 
   it("percentages", () => {
@@ -275,16 +283,13 @@ describe("chart data helpers", () => {
     expect(subscriptionStatusItems([])).toEqual([]);
   });
 
-  it("detects a series with nothing to draw", () => {
-    expect(isEmptySeries([{ a: 0, b: 0 }, { a: 0, b: 0 }], ["a", "b"])).toBe(true);
-    expect(isEmptySeries([{ a: 0, b: 0 }, { a: 0, b: 3 }], ["a", "b"])).toBe(false);
-    expect(isEmptySeries([{ a: 0, b: 3 }], ["a"])).toBe(true);
-    expect(isEmptySeries([], ["a"] as never[])).toBe(true);
-  });
-
-  it("computes shares without dividing by zero", () => {
-    expect(withShares([{ count: 3 }, { count: 1 }]).map((r) => r.share)).toEqual([0.75, 0.25]);
-    expect(withShares([{ count: 0 }, { count: 0 }]).map((r) => r.share)).toEqual([0, 0]);
+  it("names every capture source the API can report", () => {
+    for (const source of ["camera", "qr", "vcard", "digital_card", "email_signature", "nfc", "manual", "import", "unknown"]) {
+      expect(CAPTURE_SOURCE_LABEL[source], source).toBeTruthy();
+    }
+    // "manual" is a contact typed in by hand; it is never presented as a kind of scan.
+    expect(CAPTURE_SOURCE_LABEL.manual).toBe("Typed in");
+    expect(Object.values(CAPTURE_SOURCE_LABEL).some((l) => /scan/i.test(l))).toBe(false);
   });
 });
 

@@ -1,13 +1,5 @@
-import {
-  useGetPlatformAnalyticsOverview,
-  useGetPlatformAnalyticsActivity,
-  useGetPlatformAnalyticsGrowth,
-  getGetPlatformAnalyticsOverviewQueryKey,
-  getGetPlatformAnalyticsActivityQueryKey,
-  getGetPlatformAnalyticsGrowthQueryKey,
-} from "@workspace/api-client-react";
+import { useGetPlatformAnalyticsOverview, getGetPlatformAnalyticsOverviewQueryKey } from "@workspace/api-client-react";
 import { Building2, Camera, Contact, Sparkles, Target, UserCheck, UserPlus, Users } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { BreakdownList, ChartCard, SegmentedBar, StatusBadge, TrendChart } from "@/components/ds";
 import {
   SERIES,
@@ -35,12 +27,9 @@ import {
 } from "./shared";
 
 // Overview — the headline figures of the window, the two trends an owner reads first, and
-// the state of subscriptions, estimated revenue and AI spend.
+// the state of subscriptions, estimated revenue and AI spend. One request serves it all.
 export function OverviewSection({ params, onOpenTab }: SectionProps) {
   const overview = useGetPlatformAnalyticsOverview(params, { query: sectionQuery(getGetPlatformAnalyticsOverviewQueryKey(params)) });
-  const activity = useGetPlatformAnalyticsActivity(params, { query: sectionQuery(getGetPlatformAnalyticsActivityQueryKey(params)) });
-  const growth = useGetPlatformAnalyticsGrowth(params, { query: sectionQuery(getGetPlatformAnalyticsGrowthQueryKey(params)) });
-  const chartSkeleton = <Skeleton className="h-[340px] w-full rounded-xl" />;
 
   return (
     <QueryBoundary query={overview} skeleton={<SectionSkeleton cards={8} charts={2} />}>
@@ -48,6 +37,7 @@ export function OverviewSection({ params, onOpenTab }: SectionProps) {
         const statuses = subscriptionStatusItems(data.subscriptions.byStatus);
         const revenue = revenueEstimateView(data.revenue);
         const aiCost = deltaOf(data.ai.costUsd.current, data.ai.costUsd.previous);
+        const f = bucketFormatters(data.range.granularity);
         return (
           <div className="space-y-6" data-testid="analytics-overview">
             <KpiGrid>
@@ -61,75 +51,57 @@ export function OverviewSection({ params, onOpenTab }: SectionProps) {
               <Kpi label="AI requests" count={data.period.aiRequests} icon={Sparkles} intent="neutral" testId="kpi-ai-requests" />
             </KpiGrid>
             <Note>
-              Active companies captured at least one card or contact in the period; active users signed in at least once.
-              Platform totals today: {plural(data.totals.companies, "company", "companies")} and {plural(data.totals.users, "user")}.
+              Active companies scanned at least one card or added a contact in the period; active users are company users
+              who signed in at least once. Today the platform has {plural(data.totals.companies, "company", "companies")} and{" "}
+              {plural(data.totals.users, "company user")}.
             </Note>
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <QueryBoundary query={activity} skeleton={chartSkeleton}>
-                {(a) => {
-                  const f = bucketFormatters(a.range.granularity);
-                  return (
-                    <ChartCard
-                      title="Card scans"
-                      description="Cards captured across all companies"
-                      action={<TabLink onClick={() => onOpenTab("activity")}>Activity details</TabLink>}
-                      testId="overview-scans-chart"
-                      table={{
-                        caption: "Card scans per period",
-                        columns: [
-                          { key: "bucket", label: bucketColumnLabel(a.range.granularity) },
-                          { key: "scans", label: "Card scans", align: "right" },
-                        ],
-                        rows: a.series.map((p) => ({ bucket: f.xLabel(p.bucket), scans: formatCount(p.scans) })),
-                      }}
-                    >
-                      <TrendChart
-                        ariaLabel="Card scans over time"
-                        data={a.series}
-                        series={[{ key: "scans", label: "Card scans", color: SERIES.primary }]}
-                        empty={<EmptyNote>No cards were scanned in this period.</EmptyNote>}
-                        {...f}
-                      />
-                    </ChartCard>
-                  );
+              <ChartCard
+                title="Card scans"
+                description="Business cards read by OCR across all companies"
+                action={<TabLink onClick={() => onOpenTab("activity")}>Activity details</TabLink>}
+                testId="overview-scans-chart"
+                table={{
+                  caption: "Card scans per period",
+                  columns: [
+                    { key: "bucket", label: bucketColumnLabel(data.range.granularity) },
+                    { key: "scans", label: "Card scans", align: "right" },
+                  ],
+                  rows: data.trends.scans.map((p) => ({ bucket: f.xLabel(p.bucket), scans: formatCount(p.value) })),
                 }}
-              </QueryBoundary>
-              <QueryBoundary query={growth} skeleton={chartSkeleton}>
-                {(g) => {
-                  const f = bucketFormatters(g.range.granularity);
-                  return (
-                    <ChartCard
-                      title="New companies"
-                      description="Companies created in each period"
-                      action={<TabLink onClick={() => onOpenTab("growth")}>Growth details</TabLink>}
-                      testId="overview-companies-chart"
-                      table={{
-                        caption: "New companies per period",
-                        columns: [
-                          { key: "bucket", label: bucketColumnLabel(g.range.granularity) },
-                          { key: "added", label: "New companies", align: "right" },
-                          { key: "cumulative", label: "Total companies", align: "right" },
-                        ],
-                        rows: g.companies.series.map((p) => ({
-                          bucket: f.xLabel(p.bucket),
-                          added: formatCount(p.added),
-                          cumulative: formatCount(p.cumulative),
-                        })),
-                      }}
-                    >
-                      <TrendChart
-                        ariaLabel="New companies over time"
-                        kind="bar"
-                        data={g.companies.series}
-                        series={[{ key: "added", label: "New companies", color: SERIES.secondary }]}
-                        empty={<EmptyNote>No companies were created in this period.</EmptyNote>}
-                        {...f}
-                      />
-                    </ChartCard>
-                  );
+              >
+                <TrendChart
+                  ariaLabel="Card scans over time"
+                  data={data.trends.scans}
+                  series={[{ key: "value", label: "Card scans", color: SERIES.primary }]}
+                  empty={<EmptyNote>No cards were scanned in this period.</EmptyNote>}
+                  {...f}
+                />
+              </ChartCard>
+              <ChartCard
+                title="New companies"
+                description="Companies created in each period"
+                action={<TabLink onClick={() => onOpenTab("growth")}>Growth details</TabLink>}
+                testId="overview-companies-chart"
+                table={{
+                  caption: "New companies per period",
+                  columns: [
+                    { key: "bucket", label: bucketColumnLabel(data.range.granularity) },
+                    { key: "added", label: "New companies", align: "right" },
+                  ],
+                  rows: data.trends.newCompanies.map((p) => ({ bucket: f.xLabel(p.bucket), added: formatCount(p.value) })),
                 }}
-              </QueryBoundary>
+              >
+                <TrendChart
+                  ariaLabel="New companies over time"
+                  kind="bar"
+                  data={data.trends.newCompanies}
+                  series={[{ key: "value", label: "New companies", color: SERIES.secondary }]}
+                  empty={<EmptyNote>No companies were created in this period.</EmptyNote>}
+                  {...f}
+                />
+              </ChartCard>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-3">
@@ -141,8 +113,8 @@ export function OverviewSection({ params, onOpenTab }: SectionProps) {
                 testId="overview-subscriptions"
                 footer={
                   <span data-testid="overview-subscription-facts">
-                    {formatCount(data.subscriptions.fullAccess)} of {plural(data.subscriptions.total, "subscription")} grant full
-                    access today · {plural(data.subscriptions.trialsExpiringWithin7Days, "trial")} ending within 7 days
+                    {formatCount(data.subscriptions.fullAccess)} of {plural(data.subscriptions.total, "subscription")} are active or
+                    trialing · {plural(data.subscriptions.trialsExpiringWithin7Days, "trial")} ending within 7 days
                   </span>
                 }
               >

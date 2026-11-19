@@ -5,7 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { PlatformAnalyticsActivityScansByMethodItem } from './platformAnalyticsActivityScansByMethodItem';
+import type { PlatformAnalyticsActivityCapturesBySourceItem } from './platformAnalyticsActivityCapturesBySourceItem';
 import type { PlatformAnalyticsActivitySeriesItem } from './platformAnalyticsActivitySeriesItem';
 import type { PlatformAnalyticsActivityTopCompaniesItem } from './platformAnalyticsActivityTopCompaniesItem';
 import type { PlatformAnalyticsActivityTotals } from './platformAnalyticsActivityTotals';
@@ -16,11 +16,10 @@ export interface PlatformAnalyticsActivity {
   range: PlatformAnalyticsRange;
   totals: PlatformAnalyticsActivityTotals;
   series: PlatformAnalyticsActivitySeriesItem[];
-  /** Card scans by extraction method (manual-entry rows are reported separately) */
-  scansByMethod: PlatformAnalyticsActivityScansByMethodItem[];
+  /** Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual, import; "unknown" when not recorded). The counts add up to totals.captures. */
+  capturesBySource: PlatformAnalyticsActivityCapturesBySourceItem[];
+  /** Card scans (OCR) by processing status. The counts add up to totals.scans. */
   scansByStatus: PlatformAnalyticsStatusCount[];
-  /** Manual-entry interaction rows in the window (not counted as scans) */
-  manualEntries: number;
   /** The most active companies in the window — volumes only, never tenant records */
   topCompanies: PlatformAnalyticsActivityTopCompaniesItem[];
 }

@@ -9,8 +9,11 @@ import type { PlatformAnalyticsCount } from './platformAnalyticsCount';
 import type { PlatformAnalyticsOperationsSignInsSeriesItem } from './platformAnalyticsOperationsSignInsSeriesItem';
 
 export type PlatformAnalyticsOperationsSignIns = {
+  /** Successful sign-in attempts on the platform */
   successful: PlatformAnalyticsCount;
+  /** Failed sign-in attempts on the platform */
   failed: PlatformAnalyticsCount;
+  /** Distinct company users with at least one successful sign-in (platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
   series: PlatformAnalyticsOperationsSignInsSeriesItem[];
 };

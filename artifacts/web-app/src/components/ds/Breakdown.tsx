@@ -55,11 +55,17 @@ export function SegmentedBar({ items, label, className }: { items: BreakdownItem
  * Ranked horizontal bars: a name, a bar and a figure per row, bars on one baseline.
  * The part-to-whole and "top N" pattern for analytics pages (used instead of a donut —
  * close values stay comparable and every row prints its own figure and share).
+ *
+ * When the rows are only the largest parts of a longer list, pass the true `total`: the
+ * shares are then computed against it, and the remainder is shown as its own "Other" row
+ * instead of silently disappearing.
  */
 export function BreakdownList({
   items,
   valueFormat = defaultFormat,
   showShare = true,
+  total,
+  otherLabel = "Other",
   empty = "No data for this period.",
   label,
   testId,
@@ -69,15 +75,21 @@ export function BreakdownList({
   valueFormat?: (n: number) => string;
   /** Print each row's share of the total beside its figure. */
   showShare?: boolean;
+  /** The total the rows are parts of, when it is larger than their sum (a truncated list). */
+  total?: number;
+  /** Name of the row that carries the remainder up to `total`. */
+  otherLabel?: string;
   empty?: ReactNode;
   /** Names the list for assistive technology. */
   label: string;
   testId?: string;
   className?: string;
 }) {
-  const total = items.reduce((a, i) => a + i.value, 0);
-  const max = items.reduce((a, i) => Math.max(a, i.value), 0);
-  if (items.length === 0 || total === 0) {
+  const listed = items.reduce((a, i) => a + i.value, 0);
+  const whole = Math.max(total ?? listed, listed);
+  const rows: BreakdownItem[] = whole > listed ? [...items, { key: "__other", label: otherLabel, value: whole - listed, color: "hsl(var(--muted-foreground))" }] : items;
+  const max = rows.reduce((a, i) => Math.max(a, i.value), 0);
+  if (rows.length === 0 || whole === 0) {
     return (
       <p className={cn("py-6 text-center text-sm text-muted-foreground", className)} data-testid={testId ? `${testId}-empty` : undefined}>
         {empty}
@@ -86,7 +98,7 @@ export function BreakdownList({
   }
   return (
     <ul aria-label={label} className={cn("space-y-3", className)} data-testid={testId}>
-      {items.map((i) => (
+      {rows.map((i) => (
         <li key={i.key} data-testid={testId ? `${testId}-row-${i.key}` : undefined}>
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-2">
@@ -101,7 +113,7 @@ export function BreakdownList({
             </span>
             <span className="shrink-0 tabular-nums text-foreground">
               <span className="font-semibold">{valueFormat(i.value)}</span>
-              {showShare && <span className="ml-2 text-xs text-muted-foreground">{shareText(i.value, total)}</span>}
+              {showShare && <span className="ml-2 text-xs text-muted-foreground">{shareText(i.value, whole)}</span>}
             </span>
           </div>
           <div aria-hidden="true" className="mt-1.5 h-2 w-full rounded-full bg-muted">

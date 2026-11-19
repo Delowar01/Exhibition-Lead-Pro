@@ -153,11 +153,6 @@ export function deltaOf(current: number, previous: number): Delta {
   return { pct, kind: pct > 0 ? "up" : "down" };
 }
 
-/** The sentence under a KPI: what the previous window measured. */
-export function comparisonText(previous: number, format: (n: number) => string = formatCount): string {
-  return `${format(previous)} in the previous period`;
-}
-
 // ── number and label formats ─────────────────────────────────────────────────
 export function formatCount(n: number): string {
   return Math.round(n).toLocaleString("en-US");
@@ -179,11 +174,24 @@ export function formatUsd(n: number): string {
   return `${n < 0 ? "-" : ""}$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: digits })}`;
 }
 
-/** Money held in minor units (cents) in the provider's currency. */
+/**
+ * How many decimal places a currency's minor unit has: 2 for USD, 0 for JPY, 3 for KWD.
+ * The provider reports amounts in that smallest unit, so dividing by 100 is only right for
+ * two-decimal currencies. An unknown code is treated as two-decimal.
+ */
+export function minorUnitDigits(currency: string): number {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
+}
+
+/** Money held in the currency's smallest unit (cents, yen, fils), as the provider reports it. */
 export function formatMinor(minor: number, currency: string): string {
   const code = currency.toUpperCase();
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(minor / 100);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(minor / 10 ** minorUnitDigits(code));
   } catch {
     return `${(minor / 100).toFixed(2)} ${code}`;
   }
@@ -240,7 +248,7 @@ export function humanize(id: string): string {
 }
 
 // ── domain labels ────────────────────────────────────────────────────────────
-export const SUBSCRIPTION_STATUS_LABEL: Record<string, string> = {
+const SUBSCRIPTION_STATUS_LABEL: Record<string, string> = {
   trialing: "Trialing",
   active: "Active",
   past_due: "Past due",
@@ -249,22 +257,12 @@ export const SUBSCRIPTION_STATUS_LABEL: Record<string, string> = {
   suspended: "Suspended",
 };
 
-export type Tone = "success" | "warning" | "info" | "destructive" | "primary" | "neutral";
-
-export function subscriptionStatusTone(status: string): Tone {
-  if (status === "active") return "success";
-  if (status === "trialing") return "info";
-  if (status === "past_due" || status === "cancelled") return "warning";
-  if (status === "expired" || status === "suspended") return "destructive";
-  return "neutral";
-}
-
 /**
  * Mark colours per subscription status. A subscription status is a state, so it wears the
  * design system's status tokens (never a categorical series colour); every use also prints
  * the status name and its count, so the colour is never the only signal.
  */
-export const SUBSCRIPTION_STATUS_COLOR: Record<string, string> = {
+const SUBSCRIPTION_STATUS_COLOR: Record<string, string> = {
   active: "hsl(var(--success))",
   trialing: "hsl(var(--info))",
   past_due: "hsl(var(--warning))",
@@ -305,6 +303,19 @@ export const REVENUE_REASON: Record<string, string> = {
   PAYMENT_AMOUNTS_NOT_RECORDED: "Invoice and payment amounts are not stored by this system.",
 };
 
+/** Where a capture came from (the closed set of `scans.capture_source`). */
+export const CAPTURE_SOURCE_LABEL: Record<string, string> = {
+  camera: "Camera",
+  qr: "QR code",
+  vcard: "vCard",
+  digital_card: "Digital card",
+  email_signature: "Email signature",
+  nfc: "NFC",
+  manual: "Typed in",
+  import: "Import",
+  unknown: "Not recorded",
+};
+
 export const BILLING_SOURCE_LABEL: Record<string, string> = {
   manual: "Managed manually",
   stripe: "Billing provider",
@@ -320,19 +331,6 @@ export const LIFECYCLE_FIELDS = [
   { key: "toSuspended", label: "Suspended" },
   { key: "planChanges", label: "Plan changes" },
 ] as const;
-
-export type LifecycleKey = (typeof LIFECYCLE_FIELDS)[number]["key"];
-
-/** True when every numeric field of every point is zero (nothing to chart). */
-export function isEmptySeries<T extends object>(series: readonly T[], keys: ReadonlyArray<keyof T>): boolean {
-  return series.every((p) => keys.every((k) => !Number(p[k])));
-}
-
-/** Share of each row in the total, for proportional bars (0 when the total is 0). */
-export function withShares<T extends { count: number }>(rows: readonly T[]): Array<T & { share: number }> {
-  const total = rows.reduce((a, r) => a + r.count, 0);
-  return rows.map((r) => ({ ...r, share: total > 0 ? r.count / total : 0 }));
-}
 
 // ── revenue estimate ─────────────────────────────────────────────────────────
 export interface RevenueEstimateInput {

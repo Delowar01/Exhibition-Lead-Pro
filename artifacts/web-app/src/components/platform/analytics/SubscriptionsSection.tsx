@@ -67,9 +67,9 @@ export function SubscriptionsSection({ params }: SectionProps) {
               <KpiGrid>
                 <Stat label="Subscriptions" value={formatCount(snapshot.total)} note="One per company" icon={CreditCard} testId="subs-total" />
                 <Stat
-                  label="With full access"
+                  label="Active or trialing"
                   value={formatCount(snapshot.fullAccess)}
-                  note={snapshot.total > 0 ? `${formatPercent(snapshot.fullAccess / snapshot.total)} of all subscriptions` : "Active or trialing"}
+                  note={snapshot.total > 0 ? `${formatPercent(snapshot.fullAccess / snapshot.total)} of all subscriptions` : "No subscriptions yet"}
                   icon={ShieldCheck}
                   testId="subs-full-access"
                 />
@@ -106,13 +106,13 @@ export function SubscriptionsSection({ params }: SectionProps) {
                       testId="subs-source-list"
                     />
                   </ChartCard>
-                  <ChartCard title="Access today" description="Active and trialing subscriptions grant full access" testId="subs-access">
+                  <ChartCard title="Standing today" description="Subscriptions in good standing against those that are not" testId="subs-access">
                     <BreakdownList
                       items={[
-                        { key: "full", label: "With full access", value: snapshot.fullAccess, color: "hsl(var(--success))" },
-                        { key: "none", label: "Without full access", value: withoutAccess, color: "hsl(var(--muted-foreground))" },
+                        { key: "full", label: "Active or trialing", value: snapshot.fullAccess, color: "hsl(var(--success))" },
+                        { key: "none", label: "Past due, cancelled, expired or suspended", value: withoutAccess, color: "hsl(var(--muted-foreground))" },
                       ]}
-                      label="Subscriptions by access"
+                      label="Subscriptions by standing"
                       empty="No subscriptions yet."
                       testId="subs-access-list"
                     />

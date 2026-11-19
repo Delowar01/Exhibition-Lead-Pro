@@ -7,7 +7,7 @@
  */
 
 /**
- * Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.
+ * Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.
  */
 export interface RevenueSnapshot {
   available: boolean;

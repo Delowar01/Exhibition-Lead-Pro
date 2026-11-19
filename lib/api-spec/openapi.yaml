@@ -13558,7 +13558,7 @@ components:
     RevenueSnapshot:
       type: object
       required: [available, reason, currency, monthlyRecurringMinor, countedSubscriptions, unpricedSubscriptions]
-      description: Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.
+      description: Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.
       properties:
         available:
           type: boolean
@@ -15823,7 +15823,7 @@ components:
 
     PlatformAnalyticsOverview:
       type: object
-      required: [range, generatedAt, totals, period, subscriptions, revenue, ai]
+      required: [range, generatedAt, totals, period, subscriptions, revenue, ai, trends]
       properties:
         range:
           $ref: "#/components/schemas/PlatformAnalyticsRange"
@@ -15832,13 +15832,14 @@ components:
           format: date-time
         totals:
           type: object
-          description: All-time counts as of now (the platform dashboard's definitions)
+          description: Counts as of now
           required: [companies, users]
           properties:
             companies:
               type: integer
             users:
               type: integer
+              description: Company users that exist today (deleted accounts and platform operators are not counted)
         period:
           type: object
           required: [newCompanies, newUsers, activeCompanies, activeUsers, scans, contacts, leads, aiRequests]
@@ -15846,15 +15847,16 @@ components:
             newCompanies:
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             newUsers:
+              description: Company users created in the window that exist today (deleted accounts and platform operators are not counted)
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             activeCompanies:
               description: Companies with at least one card scan or new contact in the window
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             activeUsers:
-              description: Distinct users with at least one successful sign-in in the window
+              description: Distinct company users with at least one successful sign-in in the window (platform operators are not counted)
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             scans:
-              description: Card scans (manual-entry interaction rows and deleted rows excluded)
+              description: Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             contacts:
               $ref: "#/components/schemas/PlatformAnalyticsCount"
@@ -15872,7 +15874,7 @@ components:
               type: integer
             fullAccess:
               type: integer
-              description: Subscriptions that grant full access today (active or trialing)
+              description: Subscriptions whose status is active or trialing. A trial that has just run out is counted until the lifecycle sweep moves it.
             byStatus:
               type: array
               items:
@@ -15888,6 +15890,29 @@ components:
             costUsd:
               description: Estimated AI cost in USD (token usage × the platform price table)
               $ref: "#/components/schemas/PlatformAnalyticsAmount"
+        trends:
+          type: object
+          description: The two series the overview charts, one point per bucket of the window
+          required: [scans, newCompanies]
+          properties:
+            scans:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAnalyticsSeriesPoint"
+            newCompanies:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAnalyticsSeriesPoint"
+
+    PlatformAnalyticsSeriesPoint:
+      type: object
+      required: [bucket, value]
+      properties:
+        bucket:
+          type: string
+          description: First UTC day of the bucket (YYYY-MM-DD)
+        value:
+          type: integer
 
     PlatformAnalyticsGrowthSeries:
       type: object
@@ -15917,7 +15942,7 @@ components:
 
     PlatformAnalyticsGrowth:
       type: object
-      description: Growth by creation date of the rows that exist today (hard-deleted companies are not tracked)
+      description: Growth by creation date of the companies and company users that exist today. Permanently deleted companies, deleted user accounts and platform operators are not counted.
       required: [range, companies, users]
       properties:
         range:
@@ -16174,15 +16199,19 @@ components:
 
     PlatformAnalyticsActivity:
       type: object
-      required: [range, totals, series, scansByMethod, scansByStatus, manualEntries, topCompanies]
+      required: [range, totals, series, capturesBySource, scansByStatus, topCompanies]
       properties:
         range:
           $ref: "#/components/schemas/PlatformAnalyticsRange"
         totals:
           type: object
-          required: [scans, contacts, leads, activeCompanies]
+          required: [captures, scans, contacts, leads, activeCompanies]
           properties:
+            captures:
+              description: Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are excluded.
+              $ref: "#/components/schemas/PlatformAnalyticsCount"
             scans:
+              description: Card scans — the captures that were read by OCR
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             contacts:
               $ref: "#/components/schemas/PlatformAnalyticsCount"
@@ -16204,24 +16233,22 @@ components:
                 type: integer
               leads:
                 type: integer
-        scansByMethod:
+        capturesBySource:
           type: array
-          description: Card scans by extraction method (manual-entry rows are reported separately)
+          description: Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual, import; "unknown" when not recorded). The counts add up to totals.captures.
           items:
             type: object
-            required: [method, count]
+            required: [source, count]
             properties:
-              method:
+              source:
                 type: string
               count:
                 type: integer
         scansByStatus:
           type: array
+          description: Card scans (OCR) by processing status. The counts add up to totals.scans.
           items:
             $ref: "#/components/schemas/PlatformAnalyticsStatusCount"
-        manualEntries:
-          type: integer
-          description: Manual-entry interaction rows in the window (not counted as scans)
         topCompanies:
           type: array
           description: The most active companies in the window — volumes only, never tenant records
@@ -16297,10 +16324,13 @@ components:
           required: [successful, failed, activeUsers, series]
           properties:
             successful:
+              description: Successful sign-in attempts on the platform
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             failed:
+              description: Failed sign-in attempts on the platform
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             activeUsers:
+              description: Distinct company users with at least one successful sign-in (platform operators are not counted)
               $ref: "#/components/schemas/PlatformAnalyticsCount"
             series:
               type: array

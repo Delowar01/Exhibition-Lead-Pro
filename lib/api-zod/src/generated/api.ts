@@ -797,7 +797,7 @@ export const GetPlatformStatsResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.'),
+}).describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.'),
   "subscriptions": zod.object({
   "byStatus": zod.array(zod.object({
   "status": zod.string(),
@@ -819,7 +819,7 @@ export const GetPlatformStatsResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).optional().describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.')
+}).optional().describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.')
 }),
   "subscriptionDistribution": zod.array(zod.object({
   "status": zod.string(),
@@ -890,8 +890,8 @@ export const GetPlatformAnalyticsOverviewResponse = zod.object({
   "generatedAt": zod.coerce.date(),
   "totals": zod.object({
   "companies": zod.number(),
-  "users": zod.number()
-}).describe('All-time counts as of now (the platform dashboard\'s definitions)'),
+  "users": zod.number().describe('Company users that exist today (deleted accounts and platform operators are not counted)')
+}).describe('Counts as of now'),
   "period": zod.object({
   "newCompanies": zod.object({
   "current": zod.number(),
@@ -900,7 +900,7 @@ export const GetPlatformAnalyticsOverviewResponse = zod.object({
   "newUsers": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('A counted metric for the window and for the preceding window of equal length'),
+}).describe('Company users created in the window that exist today (deleted accounts and platform operators are not counted)'),
   "activeCompanies": zod.object({
   "current": zod.number(),
   "previous": zod.number()
@@ -908,11 +908,11 @@ export const GetPlatformAnalyticsOverviewResponse = zod.object({
   "activeUsers": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('Distinct users with at least one successful sign-in in the window'),
+}).describe('Distinct company users with at least one successful sign-in in the window (platform operators are not counted)'),
   "scans": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('Card scans (manual-entry interaction rows and deleted rows excluded)'),
+}).describe('Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded.'),
   "contacts": zod.object({
   "current": zod.number(),
   "previous": zod.number()
@@ -928,7 +928,7 @@ export const GetPlatformAnalyticsOverviewResponse = zod.object({
 }),
   "subscriptions": zod.object({
   "total": zod.number(),
-  "fullAccess": zod.number().describe('Subscriptions that grant full access today (active or trialing)'),
+  "fullAccess": zod.number().describe('Subscriptions whose status is active or trialing. A trial that has just run out is counted until the lifecycle sweep moves it.'),
   "byStatus": zod.array(zod.object({
   "status": zod.string(),
   "count": zod.number()
@@ -942,13 +942,23 @@ export const GetPlatformAnalyticsOverviewResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.'),
+}).describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.'),
   "ai": zod.object({
   "costUsd": zod.object({
   "current": zod.number(),
   "previous": zod.number()
 }).describe('Estimated AI cost in USD (token usage × the platform price table)')
-})
+}),
+  "trends": zod.object({
+  "scans": zod.array(zod.object({
+  "bucket": zod.string().describe('First UTC day of the bucket (YYYY-MM-DD)'),
+  "value": zod.number()
+})),
+  "newCompanies": zod.array(zod.object({
+  "bucket": zod.string().describe('First UTC day of the bucket (YYYY-MM-DD)'),
+  "value": zod.number()
+}))
+}).describe('The two series the overview charts, one point per bucket of the window')
 })
 
 
@@ -997,7 +1007,7 @@ export const GetPlatformAnalyticsGrowthResponse = zod.object({
   "cumulative": zod.number()
 }))
 })
-}).describe('Growth by creation date of the rows that exist today (hard-deleted companies are not tracked)')
+}).describe('Growth by creation date of the companies and company users that exist today. Permanently deleted companies, deleted user accounts and platform operators are not counted.')
 
 
 /**
@@ -1112,7 +1122,7 @@ export const GetPlatformAnalyticsRevenueResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.'),
+}).describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.'),
   "byPlan": zod.array(zod.object({
   "planId": zod.string(),
   "planName": zod.string().nullable(),
@@ -1192,10 +1202,14 @@ export const GetPlatformAnalyticsActivityResponse = zod.object({
   "timezone": zod.enum(['UTC'])
 }).describe('The evaluated reporting window. Windows are whole UTC calendar days; the previous window has the same length and ends the day before `from`.'),
   "totals": zod.object({
+  "captures": zod.object({
+  "current": zod.number(),
+  "previous": zod.number()
+}).describe('Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are excluded.'),
   "scans": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('A counted metric for the window and for the preceding window of equal length'),
+}).describe('Card scans — the captures that were read by OCR'),
   "contacts": zod.object({
   "current": zod.number(),
   "previous": zod.number()
@@ -1215,15 +1229,14 @@ export const GetPlatformAnalyticsActivityResponse = zod.object({
   "contacts": zod.number(),
   "leads": zod.number()
 })),
-  "scansByMethod": zod.array(zod.object({
-  "method": zod.string(),
+  "capturesBySource": zod.array(zod.object({
+  "source": zod.string(),
   "count": zod.number()
-})).describe('Card scans by extraction method (manual-entry rows are reported separately)'),
+})).describe('Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual, import; \"unknown\" when not recorded). The counts add up to totals.captures.'),
   "scansByStatus": zod.array(zod.object({
   "status": zod.string(),
   "count": zod.number()
-})),
-  "manualEntries": zod.number().describe('Manual-entry interaction rows in the window (not counted as scans)'),
+})).describe('Card scans (OCR) by processing status. The counts add up to totals.scans.'),
   "topCompanies": zod.array(zod.object({
   "companyId": zod.number(),
   "companyName": zod.string(),
@@ -1371,15 +1384,15 @@ export const GetPlatformAnalyticsOperationsResponse = zod.object({
   "successful": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('A counted metric for the window and for the preceding window of equal length'),
+}).describe('Successful sign-in attempts on the platform'),
   "failed": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('A counted metric for the window and for the preceding window of equal length'),
+}).describe('Failed sign-in attempts on the platform'),
   "activeUsers": zod.object({
   "current": zod.number(),
   "previous": zod.number()
-}).describe('A counted metric for the window and for the preceding window of equal length'),
+}).describe('Distinct company users with at least one successful sign-in (platform operators are not counted)'),
   "series": zod.array(zod.object({
   "bucket": zod.string(),
   "successful": zod.number(),
@@ -1490,7 +1503,7 @@ export const PlatformSubscriptionMetricsResponse = zod.object({
   "monthlyRecurringMinor": zod.number().nullable(),
   "countedSubscriptions": zod.number(),
   "unpricedSubscriptions": zod.number()
-}).optional().describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.')
+}).optional().describe('Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.')
 })
 
 

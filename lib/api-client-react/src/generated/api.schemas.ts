@@ -3898,7 +3898,7 @@ export interface ProviderEventList {
 }
 
 /**
- * Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.
+ * Recurring revenue computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never a simulated or guessed figure. It states what those subscriptions are worth per month at their prices — it is not money received.
  */
 export interface RevenueSnapshot {
   available: boolean;
@@ -5856,21 +5856,23 @@ export interface PlatformAnalyticsStatusCount {
 }
 
 /**
- * All-time counts as of now (the platform dashboard's definitions)
+ * Counts as of now
  */
 export type PlatformAnalyticsOverviewTotals = {
   companies: number;
+  /** Company users that exist today (deleted accounts and platform operators are not counted) */
   users: number;
 };
 
 export type PlatformAnalyticsOverviewPeriod = {
   newCompanies: PlatformAnalyticsCount;
+  /** Company users created in the window that exist today (deleted accounts and platform operators are not counted) */
   newUsers: PlatformAnalyticsCount;
   /** Companies with at least one card scan or new contact in the window */
   activeCompanies: PlatformAnalyticsCount;
-  /** Distinct users with at least one successful sign-in in the window */
+  /** Distinct company users with at least one successful sign-in in the window (platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
-  /** Card scans (manual-entry interaction rows and deleted rows excluded) */
+  /** Card scans — captures read by OCR. Captures saved without OCR (QR, vCard, NFC, typed in, …) and deleted rows are excluded. */
   scans: PlatformAnalyticsCount;
   contacts: PlatformAnalyticsCount;
   leads: PlatformAnalyticsCount;
@@ -5883,7 +5885,7 @@ export type PlatformAnalyticsOverviewPeriod = {
  */
 export type PlatformAnalyticsOverviewSubscriptions = {
   total: number;
-  /** Subscriptions that grant full access today (active or trialing) */
+  /** Subscriptions whose status is active or trialing. A trial that has just run out is counted until the lifecycle sweep moves it. */
   fullAccess: number;
   byStatus: PlatformAnalyticsStatusCount[];
   trialsExpiringWithin7Days: number;
@@ -5894,16 +5896,32 @@ export type PlatformAnalyticsOverviewAi = {
   costUsd: PlatformAnalyticsAmount;
 };
 
+export interface PlatformAnalyticsSeriesPoint {
+  /** First UTC day of the bucket (YYYY-MM-DD) */
+  bucket: string;
+  value: number;
+}
+
+/**
+ * The two series the overview charts, one point per bucket of the window
+ */
+export type PlatformAnalyticsOverviewTrends = {
+  scans: PlatformAnalyticsSeriesPoint[];
+  newCompanies: PlatformAnalyticsSeriesPoint[];
+};
+
 export interface PlatformAnalyticsOverview {
   range: PlatformAnalyticsRange;
   generatedAt: string;
-  /** All-time counts as of now (the platform dashboard's definitions) */
+  /** Counts as of now */
   totals: PlatformAnalyticsOverviewTotals;
   period: PlatformAnalyticsOverviewPeriod;
   /** Canonical subscription state as of now */
   subscriptions: PlatformAnalyticsOverviewSubscriptions;
   revenue: RevenueSnapshot;
   ai: PlatformAnalyticsOverviewAi;
+  /** The two series the overview charts, one point per bucket of the window */
+  trends: PlatformAnalyticsOverviewTrends;
 }
 
 export type PlatformAnalyticsGrowthSeriesSeriesItem = {
@@ -5923,7 +5941,7 @@ export interface PlatformAnalyticsGrowthSeries {
 }
 
 /**
- * Growth by creation date of the rows that exist today (hard-deleted companies are not tracked)
+ * Growth by creation date of the companies and company users that exist today. Permanently deleted companies, deleted user accounts and platform operators are not counted.
  */
 export interface PlatformAnalyticsGrowth {
   range: PlatformAnalyticsRange;
@@ -6124,6 +6142,9 @@ export interface PlatformAnalyticsRevenue {
 }
 
 export type PlatformAnalyticsActivityTotals = {
+  /** Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are excluded. */
+  captures: PlatformAnalyticsCount;
+  /** Card scans — the captures that were read by OCR */
   scans: PlatformAnalyticsCount;
   contacts: PlatformAnalyticsCount;
   leads: PlatformAnalyticsCount;
@@ -6137,8 +6158,8 @@ export type PlatformAnalyticsActivitySeriesItem = {
   leads: number;
 };
 
-export type PlatformAnalyticsActivityScansByMethodItem = {
-  method: string;
+export type PlatformAnalyticsActivityCapturesBySourceItem = {
+  source: string;
   count: number;
 };
 
@@ -6154,11 +6175,10 @@ export interface PlatformAnalyticsActivity {
   range: PlatformAnalyticsRange;
   totals: PlatformAnalyticsActivityTotals;
   series: PlatformAnalyticsActivitySeriesItem[];
-  /** Card scans by extraction method (manual-entry rows are reported separately) */
-  scansByMethod: PlatformAnalyticsActivityScansByMethodItem[];
+  /** Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual, import; "unknown" when not recorded). The counts add up to totals.captures. */
+  capturesBySource: PlatformAnalyticsActivityCapturesBySourceItem[];
+  /** Card scans (OCR) by processing status. The counts add up to totals.scans. */
   scansByStatus: PlatformAnalyticsStatusCount[];
-  /** Manual-entry interaction rows in the window (not counted as scans) */
-  manualEntries: number;
   /** The most active companies in the window — volumes only, never tenant records */
   topCompanies: PlatformAnalyticsActivityTopCompaniesItem[];
 }
@@ -6234,8 +6254,11 @@ export type PlatformAnalyticsOperationsSignInsSeriesItem = {
 };
 
 export type PlatformAnalyticsOperationsSignIns = {
+  /** Successful sign-in attempts on the platform */
   successful: PlatformAnalyticsCount;
+  /** Failed sign-in attempts on the platform */
   failed: PlatformAnalyticsCount;
+  /** Distinct company users with at least one successful sign-in (platform operators are not counted) */
   activeUsers: PlatformAnalyticsCount;
   series: PlatformAnalyticsOperationsSignInsSeriesItem[];
 };

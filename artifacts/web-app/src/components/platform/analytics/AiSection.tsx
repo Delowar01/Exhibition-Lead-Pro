@@ -41,17 +41,28 @@ export function AiSection({ params }: SectionProps) {
             <KpiGrid>
               <Kpi label="AI requests" count={pair("requests")} icon={Sparkles} intent="neutral" testId="ai-kpi-requests" />
               <Kpi label="Estimated cost" count={pair("costUsd")} icon={Coins} format={formatUsd} intent="neutral" testId="ai-kpi-cost" />
+              {/* A rate or an average over zero requests does not exist: show a dash, never "0%" or "0 ms". */}
               <Stat
                 label="Failure rate"
-                value={formatPercent(totals.failureRate)}
-                note={`${formatCount(totals.errors)} failed · ${formatPercent(previous.failureRate)} in the previous period`}
+                value={totals.requests > 0 ? formatPercent(totals.failureRate) : "—"}
+                note={
+                  totals.requests > 0
+                    ? `${formatCount(totals.errors)} failed · ${previous.requests > 0 ? `${formatPercent(previous.failureRate)} in the previous period` : "no requests in the previous period"}`
+                    : "No requests in this period"
+                }
                 icon={TriangleAlert}
                 testId="ai-kpi-failure-rate"
               />
               <Stat
                 label="Average response time"
-                value={`${formatCount(totals.avgLatencyMs)} ms`}
-                note={`${formatCount(previous.avgLatencyMs)} ms in the previous period`}
+                value={totals.requests > 0 ? `${formatCount(totals.avgLatencyMs)} ms` : "—"}
+                note={
+                  totals.requests > 0
+                    ? previous.requests > 0
+                      ? `${formatCount(previous.avgLatencyMs)} ms in the previous period`
+                      : "No requests in the previous period"
+                    : "No requests in this period"
+                }
                 icon={Timer}
                 testId="ai-kpi-latency"
               />
@@ -117,7 +128,7 @@ export function AiSection({ params }: SectionProps) {
                   data={data.series}
                   series={[{ key: "costUsd", label: "Estimated cost", color: SERIES.primary }]}
                   valueFormat={formatUsd}
-                  tickFormat={(n) => `$${formatCompact(n)}`}
+                  tickFormat={formatUsd}
                   allowDecimals
                   empty={<EmptyNote>No AI cost was recorded in this period.</EmptyNote>}
                   {...f}
