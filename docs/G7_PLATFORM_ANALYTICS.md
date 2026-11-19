@@ -71,11 +71,14 @@ the Analytics module and the per-company user count.
 ## 3. Definitions
 
 - **Capture** — any `scans` row that is not deleted. The table holds one row per capture:
-  card images read by OCR, and every contact saved without OCR (QR, vCard, digital card,
-  e-mail signature, NFC, typed in, imported). The origin is `capture_source`.
-- **Card scan** — a capture that went through OCR (`extraction_method` is not `manual`).
-  This is the filter of the platform dashboard's scan trend. `extraction_method` says only
-  whether OCR ran — it is never used as the capture source.
+  card images sent for OCR, and every contact saved without OCR (QR, vCard, digital card,
+  e-mail signature, NFC, typed in). The origin is `capture_source`. (A file import creates
+  contacts and no capture.)
+- **Card scan** — a capture sent for OCR (`extraction_method` is not `manual`), whatever
+  the outcome: a scan that is still processing or that failed is a card scan too, and the
+  Activity tab breaks card scans down by processing status. This is the filter of the
+  platform dashboard's scan trend. `extraction_method` says only whether OCR was involved —
+  it is never used as the capture source.
 - **User** — a company user that exists today: not a deleted account and not a platform
   operator. The platform dashboard's "Total Users" and the "Users" figure of a company use
   the same rule (§9).
@@ -92,7 +95,9 @@ the Analytics module and the per-company user count.
   selected period, and is "Unavailable" with the reason whenever it cannot be computed
   (no verified prices, mixed currencies, …). Manually managed subscriptions carry no price
   and are never part of it. The annual run rate is that monthly figure × 12 and is labelled
-  so. Amounts are shown in the currency's own minor unit (no cents assumed for yen or dinar).
+  so. Amounts are shown in the currency's own minor unit (no cents assumed for yen or
+  dinar), by an explicit table of the billing provider's convention — not the browser's
+  currency table, which differs for some currencies and between browsers (§9).
 - **Collected revenue** — always reported as not available: this system stores no invoice
   or payment amount. Nothing is estimated in its place.
 - **Paid invoices / failed payments** — `invoice.paid` / `invoice.payment_failed`
@@ -126,12 +131,15 @@ tables (`audit_logs`, `login_attempts`, `security_events`) have no index on thei
 - The window is capped at 731 days on every endpoint.
 
 Not done here, because it is a schema change that needs its own approval and a controlled
-rollout on the hosted database: timestamp indexes on `audit_logs`, `login_attempts`,
+rollout on the hosted database: indexes on `audit_logs`, `login_attempts`,
 `security_events` and `billing_provider_events`. Without them the Operations and
-Subscriptions tabs scan those tables in full; the gate bounds the concurrency, not the
-duration. The analysis, the exact DDL, the measured plans and the rollout order are in
-`docs/G7_INDEX_PROPOSAL.md` (seven indexes on those four tables; a time index on `leads`
-was measured and rejected because it slows the tenant leads list).
+Subscriptions tabs, the sign-in figures of the Overview and the billing counts of the
+Revenue tab scan those tables in full; the gate bounds the concurrency, not the duration.
+The analysis, the exact DDL, the measured plans and the rollout order are in
+`docs/G7_INDEX_PROPOSAL.md`: five lookup indexes (which also speed up the tenant audit
+log, the Security Center and the sign-in lockout check) and three BRIN time indexes for
+the Analytics ranges. An ordinary index on the timestamp was measured and is not
+recommended: it slows the audit list of users with access to several small companies.
 
 ## 6. Web
 
@@ -154,17 +162,20 @@ pnpm --filter @workspace/web-app run test                                   # un
 pnpm --filter @workspace/web-app exec playwright test e2e/zg-platform-analytics.spec.ts --trace off
 ```
 
-- API integration (41): exact aggregates over synthetic rows dated in an isolated window
-  (January 2001) and written the way the API writes them, window validation, 401/403 for
-  every role, firewall/no-leak checks, SQL written in the test as the oracle for users.
+- API integration (43 + 12): `g7-platform-analytics` — exact aggregates over synthetic rows
+  dated in an isolated window (January 2001) and written the way the API writes them,
+  window validation, 401/403 for every role, firewall/no-leak checks, SQL written in the
+  test as the oracle for users and active users; `g7-platform-dashboard` — the dashboard
+  definitions (§9).
 - API unit (25): window parsing, limits and bucket boundaries (20); the read gate (5).
 - Web unit + component (55): helpers and design-system components (static render). This
   adds a `test` script and a `vitest.config.ts` to the web app, using the `vitest` version
   the workspace already has; the web typecheck now covers the test files too.
-- Playwright (26): live figures against the page's own API responses, filters and URL
-  state, loading/error/stale/empty states, revenue wording, truncated-list shares, role
-  routing, keyboard use, desktop 1440 / tablet 820 / mobile 390 layouts, dark theme. Set
-  `G7_SHOTS_DIR` to save screenshots.
+- Playwright (26 + 11): `zg-platform-analytics` — live figures against the page's own API
+  responses, filters and URL state, loading/error/stale/empty states, revenue wording,
+  truncated-list shares, role routing, keyboard use, desktop 1440 / tablet 820 / mobile 390
+  layouts, dark theme; `zh-platform-dashboard` — the dashboard (§9). Set `G7_SHOTS_DIR` to
+  save screenshots.
 
 Full local regression on the code of this branch (commit `1369447…`, fresh disposable
 database, filesystem object storage, durable job queue, stub AI provider, fake billing
@@ -188,6 +199,9 @@ The skipped API tests are the pre-existing, classified skips; none belongs to th
   can appear in several rows (trial started, then activated).
 - Growth counts rows that exist today by creation date; a permanently deleted company or a
   deleted user account is not counted in any period.
+- Active users are evaluated against the users that exist today, so the figure of a past
+  period drops when one of its users is deleted later (and "vs previous period" moves
+  with it).
 - "Active or trialing" counts a trial that has just run out until the lifecycle sweep
   moves it.
 - The job queue keeps completed jobs for a few days only, so jobs are a current snapshot.
@@ -208,43 +222,67 @@ cards, three charts and company table).
 | Figure | Before | Now |
 | --- | --- | --- |
 | Total Users | every row of `users`, including deleted accounts and platform operators | company users that exist today — the same figure as the Analytics overview |
-| "Users" of a company (dashboard table, Companies pages) | every row of that company, including deleted accounts | company users that exist today |
-| Total Scans card | every capture row, including deleted ones, labelled "Cards captured system-wide" | the card is **Total Captures** (every capture that is not deleted) and names the OCR figure beneath it: "N card scans read by OCR" |
-| Scan trend chart | card scans read by OCR, titled "Scan Volume" | unchanged figures, titled **Card Scan Volume** with a description that says captures saved without OCR are not included |
-| MRR / ARR cards | amount ÷ 100 for every currency | `formatMinor()` — the currency's own minor unit (¥5,000 is no longer shown as ¥50; 10,000 fils are 10.000 dinars) |
+| "Users" of a company (dashboard table, Companies pages) | every row of that company, including deleted accounts | company users that exist today; the companies add up to Total Users |
+| Total Scans card | every capture row, including deleted ones, labelled "Cards captured system-wide"; the figure was dark on a dark card and could not be read | the card is **Total Captures** (every capture that is not deleted), readable, and names the OCR figure beneath it: "N card scans sent for OCR" |
+| Scan trend chart | card scans, titled "Scan Volume" | unchanged figures, titled **Card Scan Volume**, with a description that says captures saved without OCR are not included |
+| "Scans" of a company (Companies list and company page) | every capture row of the company, including deleted ones | labelled **Captures**: the company's captures that exist today; the companies add up to Total Captures |
+| MRR / ARR cards, and the MRR card and price list of `/platform/subscriptions` | amount ÷ 100 for every currency | `formatMinor()` — the currency's own minor unit (¥5,000 is no longer shown as ¥50; 10,000 fils are 10.000 dinars) |
 
-API contract (`GET /platform/stats`): every existing field is kept. `totalUsers` and
+API contract: every existing field is kept. `GET /platform/stats`: `totalUsers` and
 `totalScans` keep their names and now carry the definitions above; `totalCaptures` is
-added. The OpenAPI descriptions of `totalUsers`, `totalScans`, `totalLeads` and of a
-company's `userCount` / `contactCount` / `scanCount` now state what each counts.
+added; captures and card scans are counted in one statement, so scans never exceed
+captures. A company's `scanCount` keeps its name and is its captures that exist today. The
+OpenAPI descriptions of these fields, of `contactCount`, `totalLeads` and of the Analytics
+`activeUsers` now state what each counts.
 
 Active users (`signInCounts()` in `platform-analytics.repository.ts`): the count excluded
 platform operators but not deleted accounts, against the definition in §3. It now applies
-the shared company-user rule, and reads the sign-ins of the period once instead of once
-per user (1.6 s → 0.28 s over a year of three million synthetic sign-ins, same result).
+the shared company-user rule with one set-based query instead of a lookup per sign-in
+(1.6 s → 0.28 s for a one-year period on a three-million-row synthetic table, same
+result).
+
+Currency decimals: `minorUnitDigits()` took the number of decimals from the browser's
+currency table. That table is not the billing provider's (the browser prints forints
+without decimals, the provider reports them in hundredths) and it differs between
+browsers. It is now an explicit list: 15 currencies without decimals, 5 with three, every
+other currency two. **The list follows the provider's published convention as known when
+it was written; the provider's documentation could not be opened from the development
+environment, so it should be checked against it before a currency other than the common
+two-decimal ones goes live.**
 
 Also corrected on the dashboard: the page no longer scrolls sideways at phone width (the
 company table now scrolls inside its card).
 
-Tests: `g7-platform-dashboard.test.ts` (API, 9) proves each rule as a before/after delta
-with synthetic rows and independent SQL as the oracle — a new user counts, a deleted
-account does not, deleting and restoring an account moves the total, an account that
-becomes a platform owner leaves it, six live captures of which three were read by OCR add
-6 and 3, and the dashboard and Analytics report the same users. `g7-platform-analytics`
-gained sign-ins by a deleted account and by the platform owner (counted as sign-ins,
-never as active users). `zh-platform-dashboard.spec.ts` (Playwright, 9) checks the cards
-against the API, the labels, the company table, US dollar / yen / Kuwaiti dinar /
-unavailable revenue, and the layout at 1440 / 820 / 390.
+Tests: `g7-platform-dashboard.test.ts` (API, 12) proves each rule as a before/after delta
+with synthetic rows and independent SQL as the oracle; every test creates its own rows. A
+new user counts, a deleted account does not, deleting and restoring an account moves the
+total, an account that becomes a platform owner leaves it; a company's Users and Captures
+figures follow the same rules and the companies add up to the totals; seven live captures
+of which four were sent for OCR (one pending, one failed) add 7 and 4; the scan trend and
+Analytics report the same card scans for the same days. `g7-platform-analytics` gained
+sign-ins by a deleted account and by the platform owner (counted as sign-ins, never as
+active users). `zh-platform-dashboard.spec.ts` (Playwright, 11) checks the cards against
+the API, the labels, the readable figure on the dark card, the company table and company
+pages, US dollar / yen / Kuwaiti dinar / unavailable revenue on the dashboard and yen on
+the Subscriptions page, and the layout at 1440 / 820 / 390. The web unit tests cover the
+currency list (forint, Icelandic króna and Ugandan shilling stay two-decimal).
 
 Left unchanged, for a separate decision:
 
-- The plan and subscription screens (`pages/platform/Plans.tsx`,
-  `pages/platform/Subscriptions.tsx`, `pages/admin/Subscription.tsx`,
+- The plan price screens (`pages/platform/Plans.tsx`, `pages/admin/Subscription.tsx`,
   `components/platform/PlanVersions.tsx`) still format prices as amount ÷ 100, and the
   manual-price form of `PlanVersions.tsx` converts typed amounts with × 100. Correct for
-  two-decimal currencies only; changing the form is a write-path change.
-- A company's `scanCount` (the "Scans" figure on the company pages) counts every capture
-  row of the company, including deleted ones. Its API description now says so.
+  two-decimal currencies only; the form is a write path, so display and form should change
+  together.
+- Money is formatted in US-English notation while the plain counts follow the browser's
+  language (as on the Analytics page).
+- Existing visual defects of the dashboard, not caused by these changes and not touched:
+  at 1440 px the "Total Companies" label is cut off and a long ARR amount runs past its
+  card; the legend of the Subscription Status chart overlaps the first row of the list
+  beneath it; "Recent Companies — Latest tenants" lists the five oldest companies.
+- Outside the platform dashboard: the tenant dashboard's team count includes deleted users,
+  and the total of `/platform/users` includes platform owner accounts (a user-management
+  list, not a metric).
 
 ## 10. After integration: documents to update
 
@@ -261,5 +299,5 @@ by the release documentation in its own pull request); update them when G-7 is m
 | `docs/PROJECT_TECHNICAL_BRIEF.md` | Platform Owner portal: Analytics is a seven-tab module, not a placeholder; seven read-only endpoints under `/platform/analytics`; the process-wide read gate; `GET /platform/stats` gained `totalCaptures` |
 | `docs/PROJECT_FILE_MAP.md` | new files: `routes/platform-analytics.ts`, `services/platform-analytics.service.ts`, `repositories/platform-analytics.repository.ts`, `repositories/platform-definitions.ts`, `lib/analytics-window.ts`, `lib/read-gate.ts`; web `pages/platform/Analytics.tsx`, `components/platform/analytics/*`, `components/ds/{ChartCard,TrendChart,Breakdown}.tsx`, `lib/platform-analytics.ts`, `vitest.config.ts`; the two docs |
 | `replit.md` | operational summary: the Analytics module and the new web test command |
-| Master roadmap / release notes | G-7 delivered; follow-ups awaiting decisions: the index proposal (`docs/G7_INDEX_PROPOSAL.md`), currency-aware prices on the plan and subscription screens, the company "Scans" figure |
+| Master roadmap / release notes | G-7 delivered; follow-ups awaiting decisions: the index proposal (`docs/G7_INDEX_PROPOSAL.md`), currency-aware plan prices and the manual-price form, confirmation of the currency list against the provider's documentation, the dashboard's existing visual defects (§9) |
 | `lib/db/migrations/README.md` | only if the index proposal is approved: add the `0041` row |

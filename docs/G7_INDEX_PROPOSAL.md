@@ -1,332 +1,371 @@
-# G-7 — Timestamp index proposal (audit, sign-in, security and billing-event tables)
+# G-7 — Index proposal for the audit, sign-in, security-event and billing-event tables
 
 Status: **PROPOSAL — not approved, not applied.** This document is the only artifact. No
 index is declared in the Drizzle schema, no SQL file was added under `lib/db/migrations/`,
 and nothing here is part of the release candidate (`d1e884b…`) or of the G-7 code. The
-G-7 Analytics module works without these indexes; they only make it, and several older
-screens, faster.
+G-7 Analytics module works without these indexes.
 
 All measurements were taken on a disposable local PostgreSQL database filled with
 synthetic rows. No hosted database was contacted, so **the row counts of the hosted
-tables are not known** (see §10, decision 5).
+tables are not known** (§11, decision 6).
 
 ## 1. Summary
 
-- Four append-only tables are read by time range or "newest first" and have no index that
-  supports it: `audit_logs`, `login_attempts`, `security_events` (primary key only) and
+- Four tables are read by time, by company or by user and have no index for it:
+  `audit_logs`, `login_attempts`, `security_events` (primary key only) and
   `billing_provider_events` (no index on `received_at`).
-- Recommendation: **seven indexes on those four tables** (§3). At the tested volume they
-  cut the 30-day Analytics queries by 4–9×, the sign-in lockout check (run on every
-  sign-in) from 81 ms to 0.05 ms, and the audit-log and security-event screens from
-  50–340 ms to under 1 ms.
-- **A timestamp index must never be added alone to `audit_logs`, `login_attempts` or
-  `security_events`.** Alone, it makes tenant-facing "one company / one user, newest
-  first" lists *slower* than today (up to 7× in the tests). Each needs its companion
-  index; the pairs are part of the recommendation.
-- **No time index is recommended on `leads`** (an earlier idea, withdrawn): it would slow
-  the tenant leads list from 0.02 ms to 232 ms for a small tenant.
-- Rollout is a separate, owner-approved change **after** the `0040` release has been
-  applied and verified: built with `CREATE INDEX CONCURRENTLY`, one statement at a time,
-  then declared in the schema. It cannot be folded into `0040` (§9).
+- **Recommended core — five lookup indexes.** They make every tenant-facing list on these
+  tables fast (audit log viewer, Security Center, sign-in history, plan history: 75–135 ms
+  → under 8 ms at the tested volume) and take the sign-in lockout check, which runs on
+  every sign-in, from 86 ms to 0.01 ms — also during a burst of failed sign-ins. No query
+  was slower with them than today.
+- **Recommended addition — three BRIN time indexes** (88 kB in total). They are what
+  speeds up the Analytics time-range queries (nine 30-day queries: 871 ms → 228 ms). Their
+  benefit depends on rows staying in insertion order and can fade (§7); they cannot make a
+  query slower.
+- **Not recommended: an ordinary (b-tree) index on the timestamp.** It gives the same
+  Analytics gain and instant platform-wide "newest first" lists, but it made the audit log
+  list of a user with access to two small companies take 531–841 ms instead of 125 ms
+  today, and that cost grows with the table. Without the lookup indexes it is worse still.
+- **No time index on `leads`**: it slowed the tenant leads list from 0.02 ms to 232 ms.
+- Rollout is a separate, owner-approved change **after** the `0040` release is applied and
+  verified: `CREATE INDEX CONCURRENTLY`, one statement at a time, then declared in the
+  schema. It cannot be folded into `0040` (§10).
 
 ## 2. What exists today
 
-| Table | Existing indexes | How it is read by time |
+| Table | Existing indexes | How it is read |
 | --- | --- | --- |
-| `audit_logs` | primary key only | Analytics (events by area, subscription changes, daily series); audit-log viewer (tenant and platform, newest first); plan history of a company; opt-in retention purge |
-| `login_attempts` | primary key only | sign-in lockout check on **every sign-in** (`email`, failures, last minutes); Analytics (sign-ins, active users); security alerts (last 24 h); a user's sign-in history |
+| `audit_logs` | primary key only | audit log viewer (tenant: own companies, newest first; platform: all); plan history of a company; Analytics (events by area, subscription changes, daily series); opt-in retention purge |
+| `login_attempts` | primary key only | sign-in lockout check on **every sign-in** (`email`, failures, last minutes); a user's sign-in history; security alerts (last 24 h); Analytics (sign-ins, active users) |
 | `security_events` | primary key only | Security Center list (tenant and platform, newest first); security alerts; Analytics (by type) |
-| `billing_provider_events` | primary key, unique `event_id`, `status`, `company_id` | Analytics (notification counts in the period). Lists are ordered by `id`, not by time |
-| `leads` | primary key and eight indexes (`company_id`, `(company_id, stage)`, …) — none on `created_at` | Analytics (lead counts); tenant leads list ordered by `created_at` |
-| `users` | — none on `created_at` | Analytics growth (60,000 rows scan in 7–10 ms) |
+| `billing_provider_events` | primary key, unique `event_id`, `status`, `company_id` | Analytics (notification counts in the period). Its lists are ordered by `id`, not by time |
+| `leads` | primary key and eight indexes (`company_id`, `(company_id, stage)`, …), none on `created_at` | tenant leads list ordered by `created_at`; Analytics (lead counts) |
+| `users` | none on `created_at` | Analytics growth (60,000 rows scan in 7–10 ms) |
 
-`scans`, `contacts` and `ai_invocations` already have an index on their creation time and
-are not part of this proposal.
-
-Redundancy check: none of the seven proposed indexes duplicates an existing one, and none
-is a prefix of another proposed one (`(created_at)` and `(company_id, created_at)` serve
-different queries — a platform-wide time range needs the timestamp first; a
-single-company list needs the company first).
+Redundancy check: none of the proposed indexes duplicates an existing index or is a prefix
+of another proposed one.
 
 ## 3. Recommended indexes and exact DDL
 
 ```sql
--- Send every statement on its own: never inside BEGIN/COMMIT and never as one
--- multi-statement string (CREATE INDEX CONCURRENTLY refuses to run in a transaction).
+-- Feed this to psql as a file (autocommit). Never wrap it in BEGIN/COMMIT and never send
+-- it as one multi-statement string: CREATE INDEX CONCURRENTLY refuses to run in a
+-- transaction.
+\set ON_ERROR_STOP on
 SET statement_timeout = 0;  -- a time-out that interrupts a build leaves an invalid index
-SET lock_timeout = 0;       -- a waiting concurrent build blocks no read or write (§8)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "audit_logs_created_at_idx" ON "audit_logs" USING btree ("created_at");
+SET lock_timeout = 0;       -- a waiting concurrent build blocks no read or write (§9)
+
+-- Core: five lookup indexes.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "audit_logs_company_created_idx" ON "audit_logs" USING btree ("company_id", "created_at");
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "login_attempts_created_at_idx" ON "login_attempts" USING btree ("created_at");
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "login_attempts_user_created_idx" ON "login_attempts" USING btree ("user_id", "created_at");
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "security_events_created_at_idx" ON "security_events" USING btree ("created_at");
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "login_attempts_failed_email_idx" ON "login_attempts" USING btree ("email", "created_at") WHERE success = false;
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "security_events_company_created_idx" ON "security_events" USING btree ("company_id", "created_at");
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "billing_provider_events_received_at_idx" ON "billing_provider_events" USING btree ("received_at");
+
+-- Addition: three BRIN time indexes for the Analytics time ranges.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "audit_logs_created_at_brin" ON "audit_logs" USING brin ("created_at");
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "login_attempts_created_at_brin" ON "login_attempts" USING brin ("created_at");
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "security_events_created_at_brin" ON "security_events" USING brin ("created_at");
 ```
 
-The matching schema declarations (to be added in the same future change, not now):
+The matching schema declarations (for the same future change, not now):
 
 ```ts
 // audit_logs
-index("audit_logs_created_at_idx").on(t.createdAt),
 index("audit_logs_company_created_idx").on(t.companyId, t.createdAt),
+index("audit_logs_created_at_brin").using("brin", t.createdAt),
 // login_attempts
-index("login_attempts_created_at_idx").on(t.createdAt),
 index("login_attempts_user_created_idx").on(t.userId, t.createdAt),
+index("login_attempts_failed_email_idx").on(t.email, t.createdAt).where(sql`success = false`),
+index("login_attempts_created_at_brin").using("brin", t.createdAt),
 // security_events
-index("security_events_created_at_idx").on(t.createdAt),
 index("security_events_company_created_idx").on(t.companyId, t.createdAt),
+index("security_events_created_at_brin").using("brin", t.createdAt),
 // billing_provider_events
 index("billing_provider_events_received_at_idx").on(t.receivedAt),
 ```
 
-Verified locally: a database built from the current schema plus the DDL above, and a
-database pushed from a schema carrying these declarations, have the **same schema
-fingerprint** (`82e81e7c4e6d8046d1ff86f0bf4a7447`), and `push` then reports
-"No changes detected". Running the DDL a second time changes nothing, and dropping the
-seven indexes returns the fingerprint to `c36a8a2d9c7e502a2ce31ff5f3f412d9`.
-
-| Index | Why |
+| Index | Serves |
 | --- | --- |
-| `audit_logs (created_at)` | Analytics time ranges; platform audit viewer newest-first; retention purge |
-| `audit_logs (company_id, created_at)` | **Required companion.** Tenant audit viewer, its row count, plan history |
-| `login_attempts (created_at)` | Lockout check, Analytics sign-ins / active users, security alerts |
-| `login_attempts (user_id, created_at)` | **Required companion.** A user's sign-in history; active users over long periods |
-| `security_events (created_at)` | Platform Security Center list, Analytics by type |
-| `security_events (company_id, created_at)` | **Required companion.** Tenant Security Center list, policy-block alerts |
-| `billing_provider_events (received_at)` | Analytics notification counts |
+| `audit_logs (company_id, created_at)` | tenant audit log viewer and its row count, plan history |
+| `login_attempts (user_id, created_at)` | a user's sign-in history; active users over long periods |
+| `login_attempts (email, created_at) WHERE success = false` | the sign-in lockout check; holds failed sign-ins only |
+| `security_events (company_id, created_at)` | tenant Security Center list, policy-block alerts |
+| `billing_provider_events (received_at)` | Analytics notification counts (no query orders by this column) |
+| BRIN `(created_at)` on the three event tables | Analytics time ranges |
 
-### Considered and not recommended
+Schema fingerprints, verified locally (the release tooling's own fingerprint query):
+
+| Schema | Fingerprint |
+| --- | --- |
+| post-`0040` — also exactly what the G-7 branch pushes | `c36a8a2d9c7e502a2ce31ff5f3f412d9` |
+| plus the five core indexes | `e3dfa7ef9202164c69f17540ca4dd7f5` |
+| plus all eight | `a3cbdc31dc56157def3323e0d6bc479e` |
+
+For both sets the fingerprint is identical whether the indexes are built by the DDL above
+or by pushing a schema with the declarations; a push of the declaring schema onto a
+DDL-built database reports "No changes detected" and leaves the index objects untouched;
+running the DDL a second time skips every statement; dropping the indexes returns the
+fingerprint to `c36a8a2d…`.
+
+**Do not give the BRIN indexes a storage option** (such as `autosummarize`). The schema
+tool does not recognise it: declared or set by hand, it made every push drop and re-create
+the three indexes (reproduced locally).
+
+## 4. Considered and not recommended
 
 | Candidate | Result | Decision |
 | --- | --- | --- |
-| `leads (created_at)` | Analytics lead counts 55 → 10 ms, but the tenant leads list (first 20, ordered by creation time) went 0.02 → 232 ms for a small tenant and 1.2 → 5.2 ms for a typical one | **Rejected** — slows a tenant-facing screen to speed up a platform report |
-| `login_attempts (email, created_at)` | 169 MB; the lockout check is already 0.05 ms with `(created_at)` because its window is minutes long | Rejected — no gain |
-| partial `audit_logs (created_at) WHERE entity_type = 'subscription'` | 30-day subscription changes 14.7 → 5.4 ms; no gain on a year | Rejected — marginal |
-| `users (created_at)` | 7 → 0.5 ms | Rejected — negligible at this table's size |
+| b-tree `(created_at)` on the three event tables, with the lookup indexes | Analytics as fast as with BRIN; platform-wide newest-first lists 326 → 0.04 ms. But a user with access to two small companies: audit list 125 → **531 ms** (841 ms in an earlier run); five companies' Security Center 0.75 → 7.3 ms; 163 MB; more write cost | **Not recommended** as it stands. Would first need a change to how multi-company lists are queried |
+| b-tree `(created_at)` alone, without lookup indexes | small tenant's audit list 106 → **619 ms**; a user's sign-in history 77 → **303 ms**; Security Center 21 → 31–47 ms | **Rejected** |
+| `leads (created_at)` | Analytics lead counts 55 → 10 ms, but tenant leads list (first 20) 0.02 → **232 ms** for a small tenant, 1.2 → 5.2 ms for a typical one | **Rejected** |
+| `leads (company_id, created_at)` | helps the tenant list, not the platform-wide counts this proposal is about | Out of scope |
+| `login_attempts (email, created_at)` over all rows | 169 MB against 17 MB for the failures-only index, for the same lockout query | Rejected |
+| partial `audit_logs (created_at) WHERE entity_type = 'subscription'` | 30-day subscription changes 14.7 → 5.4 ms; nothing on a year | Rejected — marginal |
+| `users (created_at)` | 7 → 0.5 ms | Rejected — negligible |
+| `audit_logs (entity_type, entity_id)` | would serve the platform's "one company's administrative trail" (§6.3) | Not a time index; not analysed |
 
-## 4. Test set-up
+Why the ordinary timestamp index misbehaves: for "rows of these companies, newest first,
+first N" the planner prefers to walk the timestamp index from the newest row and filter,
+expecting to find N matches quickly. For tenants with few rows that walk covers the whole
+index. A BRIN index cannot be walked in order, so it cannot be chosen for such a query.
 
-PostgreSQL 16.15, local, default settings (`shared_buffers` 128 MB, `work_mem` 4 MB,
-two parallel workers), warm cache, schema pushed from this branch. Synthetic rows spread
-over three years and inserted in time order, as append-only tables are filled in practice:
+A timestamp index of either kind does not protect the lockout check during a burst of
+failed sign-ins (today 98 ms; b-tree 119 ms; BRIN 14 ms): it still reads every attempt of
+the last minutes. The failures-only index on `(email, created_at)` does (0.01–0.03 ms).
+
+```
+-- two small tenants, b-tree timestamp index present               Execution Time: 530.9 ms
+Limit
+  ->  Index Scan Backward using audit_logs_created_at_idx on audit_logs
+        Filter: (company_id = ANY (…))                 -- 78,313 buffers, whole index walked
+
+-- same query, lookup indexes (with or without BRIN)                Execution Time: 0.04 ms
+Limit
+  ->  Sort
+        ->  Bitmap Heap Scan on audit_logs
+              ->  Bitmap Index Scan on audit_logs_company_created_idx     -- 14 buffers
+```
+
+## 5. Test set-up
+
+PostgreSQL 16.15, local, default settings (`shared_buffers` 128 MB, `work_mem` 4 MB, two
+parallel workers), warm cache, schema pushed from this branch. Synthetic rows spread over
+three years and stored in time order:
 
 | Table | Rows | Heap |
 | --- | ---: | ---: |
 | `audit_logs` | 4,000,000 | 441 MB |
-| `login_attempts` | 3,000,000 | 296 MB |
+| `login_attempts` | 3,000,000 | 295 MB |
 | `security_events` | 600,000 | 54 MB |
 | `billing_provider_events` | 300,000 | 39 MB |
-| `leads` | 1,500,000 | 132 MB |
+| `leads` (for the rejected candidate) | 1,500,000 | 132 MB |
 | `users` / `companies` | 60,000 / 2,000 | — |
 
-Each query was run with `EXPLAIN (ANALYZE, BUFFERS)`; the figure is the median execution
-time, first run discarded. Queries are the ones the application sends, with literal
-values. "Small tenant" is a company with two or three rows in the table; "typical tenant"
-is one of the 2,000 evenly filled companies.
+Every query is the one the application sends, run with `EXPLAIN (ANALYZE, BUFFERS)`; the
+figure is the median of three runs in milliseconds. Each index configuration was built
+inside a transaction and rolled back. The lockout check was sent with bound parameters,
+as the application sends it. "Small tenant" is a company with a handful of rows in the
+table; "typical tenant" is one of the 2,000 evenly filled companies.
 
-## 5. Query-plan evidence
+## 6. Query-plan evidence
 
-### 5.1 Analytics queries and other existing screens — before and after the recommended set
+Columns: today's indexes · the five core indexes · core + BRIN (the recommendation) ·
+core + b-tree timestamp (not recommended).
 
-Before, every query below is a full sequential scan.
+### 6.1 Analytics, the lockout check and the platform-wide screens
 
-| Query | Before (ms) | After (ms) | Change | Buffers before → after | Plan after |
-| --- | ---: | ---: | ---: | ---: | --- |
-| audit: count of events (30 d) | 115.2 | 15.07 | 7.6× | 56,432 → 303 | index-only scan, `audit_logs_created_at_idx` |
-| audit: events by area (30 d) | 134.4 | 20.43 | 6.6× | 56,451 → 40,429 | index scan, `audit_logs_created_at_idx` |
-| audit: subscription changes (30 d) | 132.6 | 15.12 | 8.8× | 56,432 → 40,397 | index scan, `audit_logs_created_at_idx` |
-| audit: daily series (30 d) | 154.8 | 48.67 | 3.2× | 56,508 → 303 | index-only scan, `audit_logs_created_at_idx` |
-| sign-ins: attempt counts (30 d) | 81.0 | 18.67 | 4.3× | 37,931 → 20,332 | index scan, `login_attempts_created_at_idx` |
-| sign-ins: active users (30 d) | 169.6 | 45.30 | 3.7× | 39,207 → 21,793 | index scan, `login_attempts_created_at_idx` |
-| sign-ins: daily series (30 d) | 102.4 | 46.77 | 2.2× | 38,007 → 20,332 | index scan, `login_attempts_created_at_idx` |
-| security events: by type (30 d) | 26.2 | 4.35 | 6.0× | 6,916 → 849 | index scan, `security_events_created_at_idx` |
-| billing notifications: counts (30 d) | 16.4 | 2.18 | 7.5× | 5,000 → 360 | index scan, `billing_provider_events_received_at_idx` |
-| audit: count of events (365 d) | 170.2 | 71.63 | 2.4× | 56,432 → 3,648 | index-only scan, `audit_logs_created_at_idx` |
-| audit: events by area (365 d) | 243.4 | 222.82 | 1.1× | 56,451 → 490,074 | index scan, `audit_logs_created_at_idx` |
-| audit: subscription changes (365 d) | 136.8 | 130.16 | 1.1× | 56,432 → 490,045 | index scan, `audit_logs_created_at_idx` |
-| sign-ins: attempt counts (365 d) | 114.8 | 93.61 | 1.2× | 37,931 → 251,304 | index scan, `login_attempts_created_at_idx` |
-| sign-ins: active users (365 d) | 270.4 | 156.17 | 1.7× | 39,267 → 323,816 | index scan, `login_attempts_user_created_idx` |
-| security events: by type (365 d) | 41.9 | 34.97 | 1.2× | 6,916 → 10,811 | index scan, `security_events_created_at_idx` |
-| billing notifications: counts (365 d) | 22.7 | 18.83 | 1.2× | 5,000 → 4,523 | index scan, `billing_provider_events_received_at_idx` |
-| **sign-in lockout check (every sign-in)** | 80.8 | 0.05 | 1,616× | 37,934 → 20 | index scan, `login_attempts_created_at_idx` |
-| **audit viewer, platform, newest 50** | 339.6 | 0.06 | 5,660× | 56,506 → 21 | index scan, `audit_logs_created_at_idx` |
-| audit viewer, one company, newest 50 | 100.2 | 0.15 | 668× | 56,506 → 53 | index scan, `audit_logs_company_created_idx` |
-| security events list, newest 50 | 48.4 | 0.06 | 807× | 6,971 → 6 | index scan, `security_events_created_at_idx` |
-| a user's sign-in history, newest 20 | 78.5 | 0.13 | 604× | 38,008 → 26 | index scan, `login_attempts_user_created_idx` |
-| leads: count (30 d / 365 d) | 54.6 / 73.5 | 51.27 / 73.08 | unchanged | 16,951 → 16,951 | sequential scan (no index proposed) |
-| users: created in the period (30 d / 365 d) | 7.4 / 9.3 | 8.13 / 10.56 | unchanged | 1,276 → 1,276 | sequential scan (no index proposed) |
+| Query | Today | Core | Core + BRIN | Core + b-tree |
+| --- | ---: | ---: | ---: | ---: |
+| audit events, count (30 days) | 126 | 113 | 20.0 | 18.9 |
+| audit events by area (30 days) | 121 | 120 | 20.8 | 18.5 |
+| subscription changes (30 days) | 121 | 129 | 13.8 | 12.0 |
+| audit daily series (30 days) | 140 | 154 | 54.8 | 69.6 |
+| sign-in counts (30 days) | 81.6 | 78.7 | 13.5 | 17.6 |
+| active users (30 days) | 141 | 154 | 58.5 | 73.9 |
+| sign-in daily series (30 days) | 108 | 117 | 40.8 | 63.3 |
+| security events by type (30 days) | 19.6 | 22.5 | 4.06 | 3.97 |
+| billing notifications (30 days) | 13.5 | 1.58 | 1.69 | 1.60 |
+| audit events, count (365 days) | 153 | 148 | 112 | 73.7 |
+| audit events by area (365 days) | 218 | 211 | 165 | 199 |
+| subscription changes (365 days) | 126 | 134 | 89.7 | 107 |
+| sign-in counts (365 days) | 115 | 115 | 68.6 | 82.2 |
+| active users (365 days) | 256 | 156 | 146 | 147 |
+| security events by type (365 days) | 33.1 | 31.4 | 27.0 | 23.4 |
+| billing notifications (365 days) | 17.1 | 18.8 | 20.1 | 22.6 |
+| **sign-in lockout check (every sign-in)** | 85.6 | 0.01 | 0.02 | 0.01 |
+| **the same during a burst of 200,000 failed sign-ins in 10 minutes** | 84.1 | 0.03 | 0.02 | 0.03 |
+| platform security alerts: failed sign-ins, 24 h | 95.6 | 6.99 | 6.41 | 0.60 |
+| platform audit viewer, newest 50 | 326 | 326 | 345 | 0.04 |
+| platform audit viewer, subscription rows, newest 50 | 121 | 115 | 115 | 0.53 |
+| platform Security Center, newest 100 | 60.5 | 61.0 | 67.0 | 0.06 |
 
-The nine 30-day queries on the four indexed tables add up to about 930 ms before and
-about 215 ms after.
+The nine 30-day queries add up to 871 ms today, 890 ms with the core alone, 228 ms with
+BRIN and 279 ms with the b-tree. Plans with BRIN: a bitmap scan of the BRIN index followed
+by a heap scan of the matching block ranges (audit count, 30 days: 56,446 buffers → 1,665).
+Differences of a few milliseconds between columns with the same plan are run-to-run noise.
 
-### 5.2 Why the companion indexes are required
+### 6.2 Tenant-facing lists
 
-The same queries under three configurations: today's indexes; a timestamp index alone on
-each table ("bare"); the recommended set.
+| Query | Today | Core | Core + BRIN | Core + b-tree |
+| --- | ---: | ---: | ---: | ---: |
+| audit log viewer, newest 50 — one small tenant | 104 | 0.03 | 0.01 | 0.01 |
+| audit log viewer, newest 50 — one typical tenant | 94.6 | 0.07 | 0.03 | 0.07 |
+| audit log viewer, newest 50 — two small tenants | 125 | 0.04 | 0.02 | **531** |
+| audit log viewer, newest 50 — small + typical tenant | 113 | 2.84 | 2.88 | 8.84 |
+| audit log viewer, newest 50 — five typical tenants | 129 | 7.19 | 9.55 | 3.60 |
+| audit log viewer, row count — one / two / five tenants | 96–128 | 0.03–1.28 | 0.01–1.95 | 0.01–2.19 |
+| Security Center, newest 100 — one small / one typical tenant | 23.2 / 26.8 | 0.02 / 0.16 | 0.01 / 0.07 | 0.01 / 0.10 |
+| Security Center, newest 100 — two small tenants | 25.2 | 0.03 | 0.01 | 0.05 |
+| Security Center, newest 100 — five typical tenants | 27.9 | 0.75 | 0.84 | **7.29** |
+| security alerts: policy blocks, 24 h — any tenant set | 26–30 | 0.02–0.03 | 0.01–0.03 | 0.01–0.05 |
+| security alerts: failed sign-ins of the tenants' users, 24 h | 88–93 | 0.05–0.33 | 0.04–0.30 | 0.33–0.57 |
+| plan history, first row — typical / small tenant | 122 / 135 | 1.42 / 0.02 | 1.41 / 0.02 | 2.44 / 0.02 |
+| plan history, row count — typical / small tenant | 121 / 122 | 1.46 / 0.02 | 1.43 / 0.02 | 1.58 / 0.02 |
+| a user's sign-in history, newest 20 — typical / two sign-ins | 78.0 / 77.0 | 0.02 / 0.01 | 0.02 / 0.01 | 0.02 / 0.01 |
 
-| Query | Today (ms) | Bare timestamp index only (ms) | Recommended set (ms) |
-| --- | ---: | ---: | ---: |
-| audit log viewer, newest 50 — typical tenant | 85.75 | 20.55 | 0.05 |
-| audit log viewer, newest 50 — **small tenant** | 106.03 | **619.43** | 0.01 |
-| audit log viewer, row count — typical / small tenant | 86.73 / 94.58 | 102.33 / 96.27 | 0.33 / 0.01 |
-| a user's sign-in history, newest 20 — typical user | 77.06 | **302.81** | 0.02 |
-| a user's sign-in history, newest 20 — user with two sign-ins | 79.08 | **241.47** | 0.01 |
-| security events, newest 100 — typical tenant | 21.02 | **31.36** | 0.12 |
-| security events, newest 100 — small tenant | 23.61 | **47.28** | 0.03 |
-| plan history, first row — typical / small tenant | 123.97 / 126.97 | 116.56 / 119.84 | 2.45 / 0.02 |
-| plan history, row count — typical / small tenant | 116.27 / 141.93 | 116.05 / 123.56 | 1.65 / 0.03 |
-| security alerts, tenant's failed sign-ins, 24 h | 90.58 | 0.59 | 0.48 |
-| security alerts, tenant's policy blocks, 24 h | 28.68 | 0.09 | 0.01 |
-| leads list, first 20 — typical tenant (with a bare `leads (created_at)`) | 1.15 | **5.17** | 0.98 (no leads index) |
-| leads list, first 20 — **small tenant** (with a bare `leads (created_at)`) | 0.02 | **231.88** | 0.03 (no leads index) |
+A user with access to more than one company is scoped with `company_id IN (…)`; those are
+the "two" and "five" tenant rows.
 
-The cause is the same every time. For "rows of one company, newest first, first N", the
-planner prefers to walk a timestamp index from the newest row and filter, expecting to
-find N matching rows quickly. For a tenant with few rows that walk covers the whole index:
+### 6.3 Measured and left unchanged (no gain, no loss)
 
-```
--- small tenant, timestamp index only                              Execution Time: 621.677 ms
-Limit (actual rows=3)
-  ->  Index Scan Backward using audit_logs_created_at_idx on audit_logs (actual rows=3)
-        Filter: (company_id = $0)
-        Rows Removed by Filter: 4000000
-        Buffers: shared hit=1406408 read=67108
-
--- same query with the companion index                               Execution Time: 0.125 ms
-Limit (actual rows=3)
-  ->  Index Scan Backward using audit_logs_company_created_idx on audit_logs (actual rows=3)
-        Index Cond: (company_id = $0)
-        Buffers: shared hit=32
-```
-
-### 5.3 Measured and left unchanged (no gain, no loss)
-
-| Query | Today (ms) | Recommended set (ms) | Note |
+| Query | Today | Recommended set | Note |
 | --- | ---: | ---: | --- |
-| platform: one company's administrative trail, newest 50 | 119.7 – 127.9 | 121.9 – 132.4 | its `OR … entity_id = …` branch has no usable index; still a full scan |
-| platform audit viewer, total row count | 201.3 | 178.4 | counts the whole table |
-| platform audit viewer, filter that matches nothing | 117.2 | 105.4 | full scan either way |
-| platform audit viewer, text search that matches nothing | 1,252 | 1,197 | `ILIKE` over three columns of every row; not an index question |
-| leads pipeline / leads list (no leads index) | 0.01 – 1.15 | 0.02 – 0.98 | unchanged plans |
+| platform audit viewer, newest 50 | 326 | 345 | needs an ordered index on the timestamp, which is not recommended (§4) |
+| platform Security Center, newest 100 | 60.5 | 67.0 | same |
+| platform: one company's administrative trail, newest 50 | 135 | 140 | its `OR … entity_id = …` branch has no usable index |
+| platform audit viewer, filter that matches nothing | 107 | 114 | full scan either way |
+| platform audit viewer, text search that matches nothing | 1,252 | — | `ILIKE` over three columns of every row; not an index question (measured in an earlier run, where no index set changed it) |
+| leads and users figures in Analytics | 55–75 / 7–10 | unchanged | no index proposed |
 
-These are existing behaviours, not regressions; they are listed so they are not mistaken
-for something this proposal fixes.
+These are existing behaviours. They are listed so they are not mistaken for something this
+proposal fixes.
 
-Not measured, noted for a separate look: `contacts` and `scans` already carry a timestamp
-index on its own (`contacts_created_at_idx`, `scans_created_at_idx`). The effect shown in
-§5.2 for `leads` could apply to the tenant contact and capture lists of small tenants in
-the same way. Those tables were not filled in this test, so this is a question, not a
+Not measured, noted for a separate look: `contacts` and `scans` already carry an ordinary
+index on their timestamp alone (`contacts_created_at_idx`, `scans_created_at_idx`). The
+effect shown for `leads` in §4 could apply to the tenant contact and capture lists of
+small tenants. Those tables were not filled in this test, so this is a question, not a
 finding.
 
-## 6. Expected improvements and trade-offs
+## 7. Expected improvements and trade-offs
 
-**Improvements** (at the tested volume)
+**Core (five indexes)**
 
-- Default 30-day Analytics view: 4–9× faster per query on the four tables.
-- Every sign-in: the lockout check stops scanning the whole `login_attempts` table.
-- Audit-log viewer, Security Center list, sign-in history, plan history: from 50–340 ms
-  to under 3 ms, for tenants and for the platform.
-- The process-wide read gate keeps bounding how many Analytics queries run at once; the
-  indexes shorten how long each one runs.
-
-**Trade-offs**
-
-| Cost | Measured |
+| | Measured |
 | --- | --- |
-| Disk | ≈ 398 MB of new indexes for ≈ 830 MB of table data (`audit_logs` 86 + 120 MB, `login_attempts` 64 + 90 MB, `security_events` 13 + 18 MB, `billing_provider_events` 6.6 MB). Backups grow accordingly |
-| Writes | Inserting 100,000 rows: `audit_logs` ≈ 175–225 ms → ≈ 445–690 ms; `login_attempts` ≈ 160–195 ms → ≈ 445–720 ms; `security_events` ≈ 165–205 ms → ≈ 420–820 ms. That is about 2 µs → 5–6 µs per row; these tables receive one row per audited action or sign-in |
-| Year-long periods | Little gain (1.1–2.4×): a year is a third of the test data, so most of the table is read either way. Counts and daily series still improve because they are answered from the index alone |
-| Leads and users figures | Unchanged (about 50–75 ms and 7–10 ms at the tested volume), by decision (§3) |
-| Physical order | The gains assume rows are stored roughly in time order, which holds for append-only tables. In a first test with timestamps scattered at random the two wide audit queries became *slower* (127 → 152 ms, 123 → 220 ms). A large back-dated import into these tables would reduce the benefit |
-| Small tables | With a few thousand rows every query above is already fast; the indexes then cost little and gain little. They are an investment in growth |
+| Gain | lockout check 86 → 0.01 ms, flat during a burst; tenant lists, sign-in history and plan history 75–135 ms → under 8 ms; tenant security alerts 26–93 → under 0.4 ms; platform failed-sign-in alert 96 → 7 ms; active users over a year 256 → 156 ms; billing counts 13.5 → 1.6 ms |
+| Disk | ≈ 252 MB for ≈ 830 MB of table data: 120 MB, 90 MB, 17 MB, 18 MB, 6.6 MB. Backups grow accordingly |
+| Writes | inserting 100,000 rows (median of five): `audit_logs` 174 → 427 ms, `login_attempts` 197 → 587 ms, `security_events` 180 → 438 ms — about 2 µs → 4–6 µs per row. These tables receive one row per audited action or sign-in |
+| Analytics time ranges | unchanged |
 
-## 7. Safe rollout
+**BRIN addition (three indexes)**
 
-Build first, declare second, and never the other way round.
+| | Measured |
+| --- | --- |
+| Gain | 30-day Analytics queries 2.4–9× faster; a year 1.1–1.7×. No effect on any tenant list |
+| Disk and writes | 88 kB in total; no measurable write cost (432 / 512 / 411 ms against 427 / 587 / 438 ms without) |
+| Depends on physical order | A BRIN index stores the lowest and highest timestamp of every 128 table pages. It works while new rows are stored after old ones. With rows of varying size, as in an audit trail, a continuously filled 2,000,000-row test table still read only 1,920–2,466 pages for a 30-day period (ideal ≈ 1,760) |
+| Can lose its benefit | When many old pages have free space, new rows are placed there and those page ranges then span years. Reproduced: after a full table rewrite, about 0.5 % of 600,000 new rows landed in old pages; all 441 page ranges widened, and a 30-day period matched 92 % of the table. The summaries never narrow again; only rewriting the table in time order restores them. Likely triggers: enabling the opt-in audit retention purge, a table rewrite, a lasting shift to much smaller rows |
+| Failure mode | "no gain", not "slower": the planner costs a BRIN scan from its statistics, and the index cannot be used for ordering |
+| Rows added since the last vacuum | Always read, because their page ranges are not summarized yet (autovacuum does it; the storage option that would do it sooner cannot be used, §3). With 600,000 such rows a last-24-hours count took 62 ms, 25 ms once summarized |
 
-1. **After** the `0040` release is applied and verified (§9). Own approval, own
+**Both**
+
+- Year-long periods gain little: a year is a third of the test data.
+- With a few thousand rows every query above is already fast; the indexes then cost little
+  and gain little. They are an investment in growth.
+- The process-wide read gate keeps bounding how many Analytics queries run at once.
+
+## 8. Safe rollout
+
+Build first, declare second, never the other way round.
+
+1. **After** the `0040` release is applied and verified (§10). Own approval, own
    maintenance note, own rehearsal on a disposable restored copy.
-2. Read-only pre-check: table sizes, no invalid index left behind, schema fingerprint
-   equals the post-`0040` value `c36a8a2d9c7e502a2ce31ff5f3f412d9`.
-3. Run the DDL of §3 **one statement at a time** in a plain `psql` session (autocommit).
-   `CREATE INDEX CONCURRENTLY` does not block reads or writes while it builds.
-4. After each statement check that no index is invalid:
-   `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;` must return no row.
-5. Deploy the commit whose schema **declares** the seven indexes. A later schema push then
-   reports "No changes detected" (verified: the index objects are untouched). Between
-   steps 3 and 5 the migrate one-shot must not be run (see below).
-6. Post-check: fingerprint equals `82e81e7c4e6d8046d1ff86f0bf4a7447`; run `ANALYZE` on the
-   four tables; compare one Analytics request and one sign-in before and after.
+2. Read-only pre-check: table sizes; no invalid index
+   (`SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;` returns no row);
+   schema fingerprint equals `c36a8a2d9c7e502a2ce31ff5f3f412d9`; no long-running or
+   idle-in-transaction session in `pg_stat_activity`; not during the nightly backup.
+3. Run the DDL of §3 from a file in `psql`, one statement at a time. No schema push and no
+   other DDL on these tables while it runs.
+4. After each statement repeat the invalid-index check. It must return no row.
+5. `VACUUM (ANALYZE)` the four tables.
+6. Deploy the commit whose schema **declares** the indexes. A later schema push then
+   reports "No changes detected". Between steps 3 and 6 the migrate one-shot must not run.
+7. Post-check: fingerprint `e3dfa7ef…` (core) or `a3cbdc31…` (all eight); compare one
+   Analytics request and one sign-in before and after.
+8. **Re-pin the fingerprint-pinned tooling.** The deploy verifier and the recovery runner
+   pin the schema fingerprint and fail closed on any other value
+   (`docs/PLAN_BUILDER_RELEASE_REHEARSAL.md`). They need a reviewed re-pin to the new
+   value as part of this change — and back again if the indexes are removed.
 
-A reviewed SQL file (for example `lib/db/migrations/0041_analytics_timestamp_indexes.sql`)
-should accompany that change. Unlike `0040` it must **not** be wrapped in
-`BEGIN … COMMIT`, and it must be fed to `psql` as a file or statement by statement.
+A reviewed SQL file (for example `lib/db/migrations/0041_event_table_indexes.sql`) should
+accompany that change. Unlike `0040` it must **not** be wrapped in `BEGIN … COMMIT`.
 
-Two orders that must be avoided — both were reproduced locally:
+Two orders that must be avoided — both reproduced locally:
 
 - **Declaring first and letting the schema push create the indexes.** `push` issues a
   plain `CREATE INDEX`, which blocks every write to the table for the whole build. On the
   test data inserts into `audit_logs` waited up to 1.6 s through `push`, and 5.4 s behind a
   single plain build. Every audited action and every sign-in writes to these tables.
 - **Running the migrate one-shot or any schema push from a checkout that does not declare
-  the indexes.** `push` then **drops all seven** without a prompt and exits 0
-  ("Changes applied"). This is the rule the `0040` release already states for its own
-  objects; here the loss is performance, not data, but it is silent.
+  the indexes.** `push` then **drops all of them** without a prompt and exits 0
+  ("Changes applied"). The `0040` release states the same rule for its own objects; here
+  the loss is performance, not data, but it is silent.
 
-## 8. Locking, failure and rollback
+## 9. Locking, failure and rollback
 
 | Situation | Observed locally | Handling |
 | --- | --- | --- |
-| Concurrent build | 38 inserts completed during one build, slowest 284 ms. Build times at the test volume: 0.2–3.0 s per index, 9 s for all seven | Use `CONCURRENTLY` only |
+| Concurrent build | 38 inserts completed during one build, slowest 284 ms. Build times at the test volume: 0.2–3.1 s per index, about 11 s for all eight | Use `CONCURRENTLY` only |
 | Plain build | A concurrent insert waited 5.4 s, the whole build | Never use a plain `CREATE INDEX` on these tables |
-| Another transaction is open | A concurrent build waits for transactions that were already writing to the table. While it waited, another session's insert went through in 58 ms, and the index was valid once the build finished | Check `pg_stat_activity` for long-running or idle-in-transaction sessions before starting |
-| Short `lock_timeout` on the build | With `lock_timeout = '2s'` the same wait ended in `ERROR: canceling statement due to lock timeout` and **left an invalid index** | Do not set a short lock time-out for these builds (the DDL sets it to 0): waiting is harmless, failing is not. The same applies to `statement_timeout` |
-| Inside a transaction or a multi-statement string | `ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block` | One statement per call |
-| Interrupted or cancelled build | The index remains with `indisvalid = false`; the planner ignores it but every write still maintains it. `CREATE INDEX CONCURRENTLY IF NOT EXISTS` then prints "already exists, skipping" and reports success **without** repairing it | After any failure: `DROP INDEX CONCURRENTLY IF EXISTS "<name>";` then build again (verified: valid afterwards). The validity check of step 4 is mandatory |
-| Rollback | `DROP INDEX CONCURRENTLY IF EXISTS "<name>";` took 49–125 ms per index and does not block writes; after all seven the fingerprint is the post-`0040` value again | Drop the index, then deploy a schema that no longer declares it. (If the declaring schema is still deployed and the migrate one-shot is run, `push` re-creates the index with a blocking plain build) |
+| Another transaction is open | The build waits for it. Meanwhile another session's insert went through in 58 ms, and the index was valid once the build finished. The wait covers every older transaction in the database, a running backup included | Check `pg_stat_activity` first; avoid the backup window |
+| While a build waits or runs | It blocks autovacuum and other DDL on that table, not reads or writes. A DDL statement queued behind it (a schema push, an `ALTER TABLE`) would in turn block all access to the table | No other DDL on these tables during the builds |
+| Short `lock_timeout` on the build | With `lock_timeout = '2s'` the same wait ended in `ERROR: canceling statement due to lock timeout` and **left an invalid index** | No short time-out for these builds (the DDL sets both to 0) |
+| Inside a transaction or a multi-statement string | `ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`. `DROP INDEX CONCURRENTLY` has the same rule | One statement per call |
+| Interrupted or cancelled build | The index remains with `indisvalid = false`; the planner ignores it but every write still maintains it. `CREATE INDEX CONCURRENTLY IF NOT EXISTS` then prints "already exists, skipping" and reports success **without** repairing it | `DROP INDEX CONCURRENTLY IF EXISTS "<name>";` then build again (verified: valid afterwards). The check of step 4 is mandatory |
+| Rollback | `DROP INDEX CONCURRENTLY IF EXISTS "<name>";` took 49–125 ms per index and does not block writes; after all of them the fingerprint is `c36a8a2d…` again | Drop the index, deploy a schema that no longer declares it, re-pin the tooling. If the declaring schema is still deployed and the migrate one-shot runs, `push` re-creates the index with a blocking plain build |
 
-Rolling back is safe at any point: the indexes hold no data of their own, no code depends
-on them, and removing them only returns the queries to today's speed. Each of the four
-tables can be rolled out or rolled back independently, **but the two indexes of a pair
-always go together** (§5.2).
+Rolling back is safe at any point: the indexes hold no data of their own and no code
+depends on them. Each of the eight can be added or removed on its own.
 
-## 9. Compatibility with the approved `0040` release migration
+## 10. Compatibility with the approved `0040` release migration
 
 - **No object overlap.** `0040` changes `plans`, `plan_versions`, `subscriptions` and
   `plan_prices`. This proposal touches `audit_logs`, `login_attempts`, `security_events`
   and `billing_provider_events` only.
 - **Cannot be merged into `0040`.** `0040` is one transaction with `SET LOCAL` time-outs;
-  `CREATE INDEX CONCURRENTLY` cannot run in a transaction. Converting to plain
-  `CREATE INDEX` to fit would take write-blocking locks on the busiest tables inside the
-  release transaction.
+  `CREATE INDEX CONCURRENTLY` cannot run in a transaction, and a plain `CREATE INDEX`
+  there would take write-blocking locks on the busiest tables inside the release
+  transaction.
 - **Must not be applied before `0040`.** The release procedure pins the schema fingerprint
   before (`30c4ecbd867cd2cd59abcb58581ecb04`) and after
-  (`c36a8a2d9c7e502a2ce31ff5f3f412d9`). The fingerprint covers index definitions, so any
+  (`c36a8a2d9c7e502a2ce31ff5f3f412d9`). The fingerprint covers index definitions, so an
   index added earlier makes the release's own pre-check fail.
 - **G-7 itself changes no schema.** A database pushed from the G-7 branch has the
-  post-`0040` fingerprint `c36a8a2d…` exactly, so G-7 can follow the release without a
-  schema step, with or without these indexes.
-- **New fingerprint pair for this change:** `c36a8a2d9c7e502a2ce31ff5f3f412d9` →
-  `82e81e7c4e6d8046d1ff86f0bf4a7447` (current schema plus the seven indexes; identical
-  whether built by the DDL or declared in the schema).
+  post-`0040` fingerprint exactly, so G-7 can follow the release without a schema step,
+  with or without these indexes.
+- **New pinned values for this change:** `c36a8a2d…` → `e3dfa7ef9202164c69f17540ca4dd7f5`
+  (core) or `a3cbdc31dc56157def3323e0d6bc479e` (all eight).
 
-## 10. Owner decisions
+## 11. Owner decisions
 
 1. **Approve the index change as its own batch, after the `0040` release?**
    Recommended: yes.
-2. **Scope.** Recommended: all seven. A smaller scope is possible per table
-   (`billing_provider_events` alone; or any of the three pairs), never half a pair.
-3. **Leads.** Recommended: no time index on `leads`; its Analytics figures stay at today's
-   speed. To be revisited only with new evidence.
-4. **Form of the change.** Recommended: schema declarations plus a reviewed,
-   non-transactional `0041_…sql`, a rehearsal on a disposable restored copy, and the
-   build-then-declare order of §7.
-5. **Timing.** The hosted table sizes were not read. A read-only size check should be the
-   first step of the approved change: with small tables the change is quick and low-risk
-   but brings little today; it becomes worth more as the audit and sign-in tables grow.
-6. **Who runs it and when.** A supervised operator session with its own authorization,
-   as for the release.
+2. **Core.** Recommended: all five lookup indexes. Each stands alone; a subset is possible.
+3. **Analytics time ranges.** Recommended: add the three BRIN indexes — almost free, no
+   measured downside, benefit not guaranteed for ever (§7). Alternatives: none (Analytics
+   stays at today's speed, bounded by the read gate); or the b-tree timestamp index, only
+   after multi-company lists are changed so it cannot slow them (§4).
+4. **Leads.** Recommended: no time index.
+5. **Form of the change.** Recommended: schema declarations plus a reviewed,
+   non-transactional `0041_…sql`; a rehearsal on a disposable restored copy; the
+   build-then-declare order and the tooling re-pin of §8.
+6. **Timing.** The hosted table sizes were not read. A read-only size check should be the
+   first step: with small tables the change is quick and low-risk but brings little today.
+7. **Who runs it and when.** A supervised operator session with its own authorization, as
+   for the release.
 
 Not part of this proposal and not started: the schema declarations, the `0041` file, any
 rehearsal on restored data, and any contact with a hosted database.
