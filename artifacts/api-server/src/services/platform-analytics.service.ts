@@ -83,7 +83,7 @@ export async function getOverview(query: WindowQuery, now: Date = new Date()) {
     companyTrend,
   ] = await Promise.all([
     g(() => platformRepo.countCompanies()),
-    g(() => repo.countUsers()),
+    g(() => platformRepo.countUsers()),
     g(() => repo.countCompaniesCreated(current)),
     g(() => repo.countCompaniesCreated(previous)),
     g(() => repo.countUsersCreated(current)),

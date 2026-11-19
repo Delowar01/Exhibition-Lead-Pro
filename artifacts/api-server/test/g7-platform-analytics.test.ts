@@ -138,7 +138,9 @@ beforeAll(async () => {
     ])
     .returning({ id: usersTable.id });
   userIds.push(...users.map((u) => u.id));
-  const [uP, uA1, uA2] = userIds;
+  const [uP, uA1, uA2, , uDeleted] = userIds;
+  const [owner] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, PLATFORM.email));
+  expect(owner?.id, "the platform owner account").toBeTruthy();
 
   // ── captures, written the way the API writes them ──
   // OCR card scans carry extraction_method "ai_vision" (or NULL while pending / after a
@@ -181,6 +183,11 @@ beforeAll(async () => {
     { email: `${SECRET.toLowerCase()}@login.test`, userId: uA2, success: true, createdAt: at("2001-01-08T08:00:00") },
     { email: `${SECRET.toLowerCase()}@login.test`, userId: uA1, success: false, reason: "invalid_credentials", createdAt: at("2001-01-06T07:59:00") },
     { email: `${SECRET.toLowerCase()}@login.test`, userId: null, success: false, reason: "unknown_user", createdAt: at("2001-01-09T08:00:00") },
+    // Successful sign-ins that are attempts but NOT active users: an account that has since
+    // been deleted, and the platform owner's own account.
+    { email: `${SECRET.toLowerCase()}@login.test`, userId: uDeleted, success: true, createdAt: at("2001-01-08T09:00:00") },
+    { email: `${SECRET.toLowerCase()}@login.test`, userId: owner.id, success: true, createdAt: at("2001-01-08T10:00:00") },
+    { email: `${SECRET.toLowerCase()}@login.test`, userId: owner.id, success: true, createdAt: at("2000-12-13T08:00:00") },
     { email: `${SECRET.toLowerCase()}@login.test`, userId: uP, success: true, createdAt: at("2000-12-12T08:00:00") },
   ]);
 
@@ -465,18 +472,19 @@ describe("overview", () => {
     // The deleted synthetic account and the platform owner exist as rows but are not users.
     expect(Number(all)).toBeGreaterThanOrEqual(Number(live) + 2);
 
-    // The platform owner has signed in during the current period (this suite did), yet is not an "active user".
+    // The platform owner has signed in during the current period (this suite did), yet is not an "active user";
+    // neither is anyone whose account has since been deleted.
     const now = await analytics("overview", "");
     const from = at(`${now.range.from}T00:00:00`);
     const to = new Date(at(`${now.range.to}T00:00:00`).getTime() + 86_400_000);
     const inWindow = and(gte(loginAttemptsTable.createdAt, from), lt(loginAttemptsTable.createdAt, to), eq(loginAttemptsTable.success, true));
     const signedIn = await db
-      .selectDistinct({ userId: loginAttemptsTable.userId, role: usersTable.role })
+      .selectDistinct({ userId: loginAttemptsTable.userId, role: usersTable.role, deletedAt: usersTable.deletedAt })
       .from(loginAttemptsTable)
       .innerJoin(usersTable, eq(usersTable.id, loginAttemptsTable.userId))
       .where(inWindow);
     expect(signedIn.some((u) => u.role === "platform_owner")).toBe(true);
-    expect(now.period.activeUsers.current).toBe(signedIn.filter((u) => u.role !== "platform_owner").length);
+    expect(now.period.activeUsers.current).toBe(signedIn.filter((u) => u.role !== "platform_owner" && u.deletedAt == null).length);
   });
 
   it("company totals and the subscription state are the platform dashboard's own figures", async () => {
@@ -827,16 +835,69 @@ describe("AI usage", () => {
   });
 });
 
+describe("active users", () => {
+  it("are company users that still exist: no deleted account, no platform owner", async () => {
+    // 8 Jan 2001 holds three successful sign-ins: a live company user, an account deleted
+    // on 9 Jan, and the platform owner. Only the first is an active user.
+    const day = await analytics("overview", "from=2001-01-08&to=2001-01-08");
+    expect(day.period.activeUsers.current).toBe(1);
+    const ops = await analytics("operations", "from=2001-01-08&to=2001-01-08");
+    expect(ops.signIns.successful.current).toBe(3);
+    expect(ops.signIns.activeUsers.current).toBe(1);
+
+    // The whole window: two live company users signed in (A1 twice, A2 once).
+    const overview = await analytics("overview");
+    expect(overview.period.activeUsers).toEqual({ current: 2, previous: 1 });
+    const operations = await analytics("operations");
+    expect(operations.signIns.activeUsers).toEqual(overview.period.activeUsers);
+
+    // Independent oracle: the same definition written as SQL here.
+    const [row] = await db
+      .select({ c: sql<number>`count(distinct ${loginAttemptsTable.userId})` })
+      .from(loginAttemptsTable)
+      .innerJoin(usersTable, eq(usersTable.id, loginAttemptsTable.userId))
+      .where(
+        and(
+          gte(loginAttemptsTable.createdAt, at("2001-01-01T00:00:00")),
+          lt(loginAttemptsTable.createdAt, at("2001-02-01T00:00:00")),
+          eq(loginAttemptsTable.success, true),
+          isNull(usersTable.deletedAt),
+          sql`${usersTable.role} is distinct from 'platform_owner'`,
+        ),
+      );
+    expect(Number(row.c)).toBe(2);
+  });
+
+  it("an account stops being an active user once it is deleted, and counts again if restored", async () => {
+    const [, , uA2] = userIds;
+    const window = "from=2001-01-08&to=2001-01-08"; // A2's only sign-in
+    expect((await analytics("operations", window)).signIns.activeUsers.current).toBe(1);
+    await db.update(usersTable).set({ deletedAt: new Date() }).where(eq(usersTable.id, uA2));
+    try {
+      const gone = await analytics("operations", window);
+      expect(gone.signIns.activeUsers.current).toBe(0);
+      expect(gone.signIns.successful.current).toBe(3); // the attempts themselves remain
+      expect((await analytics("overview")).period.activeUsers.current).toBe(1);
+    } finally {
+      await db.update(usersTable).set({ deletedAt: null }).where(eq(usersTable.id, uA2));
+    }
+    expect((await analytics("operations", window)).signIns.activeUsers.current).toBe(1);
+  });
+});
+
 describe("operations", () => {
   it("reports sign-ins, the audit trail, security events and billing notifications", async () => {
     const body = await analytics("operations");
-    expect(body.signIns.successful).toEqual({ current: 3, previous: 1 });
+    // Attempts count every sign-in on the platform, including the deleted account's and the
+    // platform owner's; active users are the two company users who still exist.
+    expect(body.signIns.successful).toEqual({ current: 5, previous: 2 });
     expect(body.signIns.failed).toEqual({ current: 2, previous: 0 });
     expect(body.signIns.activeUsers).toEqual({ current: 2, previous: 1 });
     const signIns = body.signIns.series as Array<{ bucket: string; successful: number; failed: number }>;
     expect(signIns.find((p) => p.bucket === "2001-01-06")).toEqual({ bucket: "2001-01-06", successful: 1, failed: 1 });
+    expect(signIns.find((p) => p.bucket === "2001-01-08")).toEqual({ bucket: "2001-01-08", successful: 3, failed: 0 });
     expect(signIns.find((p) => p.bucket === "2001-01-09")).toEqual({ bucket: "2001-01-09", successful: 0, failed: 1 });
-    expect(sum(signIns, (p) => p.successful)).toBe(3);
+    expect(sum(signIns, (p) => p.successful)).toBe(5);
     expect(sum(signIns, (p) => p.failed)).toBe(2);
 
     expect(body.auditEvents.total).toEqual({ current: 9, previous: 1 });

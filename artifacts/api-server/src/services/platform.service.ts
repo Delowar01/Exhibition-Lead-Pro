@@ -8,9 +8,10 @@ import { subscriptionMetrics, revenueSnapshot } from "./platform-billing.service
 // response says so explicitly ("available: false" + reason).
 
 export async function getStats() {
-  const [totalCompanies, totalUsers, totalScans, totalLeads, metrics, revenue] = await Promise.all([
+  const [totalCompanies, totalUsers, totalCaptures, totalScans, totalLeads, metrics, revenue] = await Promise.all([
     platformRepo.countCompanies(),
     platformRepo.countUsers(),
+    platformRepo.countCaptures(),
     platformRepo.countScans(),
     platformRepo.countLeads(),
     subscriptionMetrics(),
@@ -22,7 +23,10 @@ export async function getStats() {
     totalCompanies,
     // Companies with FULL access today (active or trialing).
     activeCompanies,
+    // Company users that exist today (no deleted account, no platform operator).
     totalUsers,
+    // Every capture, and the subset of them that was read by OCR.
+    totalCaptures,
     totalScans,
     totalLeads,
     revenue,

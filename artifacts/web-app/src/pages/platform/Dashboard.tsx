@@ -13,11 +13,16 @@ import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, MetricCard, StatusBadge, CardGridSkeleton, TableSkeleton, EmptyState } from "@/components/ds";
+import { formatMinor } from "@/lib/platform-analytics";
 
 // Batch 20 — truthful platform dashboard. Revenue is shown only when the API
 // can compute it from verified provider prices; otherwise the cards say
 // "Unavailable" with the reason. Subscription status comes from canonical
 // subscription rows (no percentage-derived states, no synthetic trends).
+//
+// G-7 — the figures use the same definitions as Platform Owner Analytics: users are
+// company users that exist today, a capture is any saved capture, a card scan is a
+// capture read by OCR, and money is formatted in the currency's own minor unit.
 
 const STATUS_LABEL: Record<string, string> = {
   trialing: "Trialing",
@@ -45,14 +50,6 @@ const STATUS_COLORS: Record<string, string> = {
   expired: "hsl(var(--muted-foreground))",
   suspended: "hsl(var(--destructive))",
 };
-
-function money(minor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(minor / 100);
-  } catch {
-    return `${(minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
-  }
-}
 
 function statusTone(status: string | undefined): "success" | "warning" | "destructive" | "neutral" {
   if (status === "active" || status === "trialing") return "success";
@@ -83,8 +80,10 @@ export default function PlatformDashboard() {
   const revenue = stats?.revenue;
   const revenueAvailable = !!revenue?.available && revenue.monthlyRecurringMinor != null && !!revenue.currency;
   const unavailable = <span className="text-xl font-semibold text-muted-foreground">Unavailable</span>;
-  const mrrValue = revenueAvailable ? money(revenue!.monthlyRecurringMinor!, revenue!.currency!) : unavailable;
-  const arrValue = revenueAvailable ? money(revenue!.monthlyRecurringMinor! * 12, revenue!.currency!) : unavailable;
+  const mrrValue = revenueAvailable ? formatMinor(revenue!.monthlyRecurringMinor!, revenue!.currency!) : unavailable;
+  const arrValue = revenueAvailable ? formatMinor(revenue!.monthlyRecurringMinor! * 12, revenue!.currency!) : unavailable;
+  const totalCaptures = stats?.totalCaptures || 0;
+  const cardScans = stats?.totalScans || 0;
   const revenueReason = revenueAvailable
     ? `${revenue!.countedSubscriptions} priced subscription${revenue!.countedSubscriptions === 1 ? "" : "s"}`
     : REVENUE_REASON[revenue?.reason ?? ""] ?? "Not configured";
@@ -111,12 +110,15 @@ export default function PlatformDashboard() {
           icon={Building2}
           footer={`${activeCompanies.toLocaleString()} with full access`}
         />
-        <MetricCard
-          label="Total Users"
-          value={(stats?.totalUsers || 0).toLocaleString()}
-          icon={Users}
-          footer="Across all tenants"
-        />
+        <div data-testid="dashboard-total-users">
+          <MetricCard
+            label="Total Users"
+            value={(stats?.totalUsers || 0).toLocaleString()}
+            icon={Users}
+            footer="Company users across all tenants"
+            className="h-full"
+          />
+        </div>
         <div data-testid="dashboard-mrr">
           <MetricCard label="MRR" value={mrrValue} icon={DollarSign} footer={revenueReason} />
         </div>
@@ -129,13 +131,21 @@ export default function PlatformDashboard() {
           icon={Camera}
           footer="Captured system-wide"
         />
-        <MetricCard
-          label="Total Scans"
-          value={(stats?.totalScans || 0).toLocaleString()}
-          icon={Zap}
-          className="bg-sidebar text-sidebar-foreground border-sidebar-border"
-          footer={<span className="text-sidebar-foreground/70">Cards captured system-wide</span>}
-        />
+        {/* Every capture, with the OCR card scans among them named separately: a QR code, an
+            NFC tap or a contact typed in is a capture, but not a card scan. */}
+        <div data-testid="dashboard-total-captures">
+          <MetricCard
+            label="Total Captures"
+            value={totalCaptures.toLocaleString()}
+            icon={Zap}
+            className="h-full bg-sidebar text-sidebar-foreground border-sidebar-border"
+            footer={
+              <span className="text-sidebar-foreground/70" data-testid="dashboard-card-scans">
+                {cardScans.toLocaleString()} card {cardScans === 1 ? "scan" : "scans"} read by OCR
+              </span>
+            }
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-7">
@@ -217,12 +227,12 @@ export default function PlatformDashboard() {
 
       <Card className="shadow-sm" data-testid="dashboard-scan-trend">
         <CardHeader>
-          <CardTitle>Scan Volume</CardTitle>
-          <CardDescription>OCR scans per day across all tenants (last 30 days)</CardDescription>
+          <CardTitle>Card Scan Volume</CardTitle>
+          <CardDescription>Cards read by OCR per day across all tenants (last 30 days). Captures saved without OCR are not included.</CardDescription>
         </CardHeader>
         <CardContent>
           {scanPoints.length === 0 ? (
-            <EmptyState icon={Zap} title="No scans yet" description="Daily scan counts appear once tenants start capturing cards." />
+            <EmptyState icon={Zap} title="No card scans yet" description="Daily counts appear once tenants start scanning cards." />
           ) : (
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -243,7 +253,8 @@ export default function PlatformDashboard() {
       </Card>
 
       <div className="grid gap-6">
-        <Card className="shadow-sm">
+        {/* min-w-0: the wide table scrolls inside the card instead of widening the page on phones. */}
+        <Card className="shadow-sm min-w-0">
           <CardHeader>
             <div className="flex justify-between items-center">
               <div>

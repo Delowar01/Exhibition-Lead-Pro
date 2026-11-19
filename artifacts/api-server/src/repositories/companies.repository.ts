@@ -1,13 +1,16 @@
 import { db, companiesTable, usersTable, contactsTable, scansTable, activityLogsTable, subscriptionsTable } from "@workspace/db";
 import { eq, ilike, and, count, inArray, sql } from "drizzle-orm";
 import { notDeleted, exec, type Executor } from "./base.js";
+import { TENANT_USER } from "./platform-definitions.js";
 
 export type CompanyRow = typeof companiesTable.$inferSelect;
 
 // Per-company aggregate counts surfaced alongside each company record. Excludes
-// soft-deleted contacts so the count matches the rest of the API.
+// soft-deleted contacts so the count matches the rest of the API, and counts users by the
+// platform's definition (no deleted account), so the per-company figures add up to the
+// dashboard's "Total Users".
 export async function counts(id: number): Promise<{ userCount: number; contactCount: number; scanCount: number }> {
-  const [userCount] = await db.select({ count: count() }).from(usersTable).where(eq(usersTable.companyId, id));
+  const [userCount] = await db.select({ count: count() }).from(usersTable).where(and(eq(usersTable.companyId, id), TENANT_USER));
   const [contactCount] = await db.select({ count: count() }).from(contactsTable).where(and(eq(contactsTable.companyId, id), notDeleted(contactsTable.deletedAt)));
   const [scanCount] = await db.select({ count: count() }).from(scansTable).where(eq(scansTable.companyId, id));
   return { userCount: userCount.count, contactCount: contactCount.count, scanCount: scanCount.count };

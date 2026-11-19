@@ -10953,10 +10953,13 @@ components:
           format: date-time
         userCount:
           type: integer
+          description: Users of the company that exist today (deleted accounts are not counted)
         contactCount:
           type: integer
+          description: Contacts of the company that exist today (deleted contacts are not counted)
         scanCount:
           type: integer
+          description: Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard.
         subscription:
           oneOf:
             - $ref: "#/components/schemas/SubscriptionSummary"
@@ -15746,7 +15749,7 @@ components:
 
     PlatformStats:
       type: object
-      required: [totalCompanies, activeCompanies, totalUsers, totalScans, totalLeads, revenue, subscriptions]
+      required: [totalCompanies, activeCompanies, totalUsers, totalCaptures, totalScans, totalLeads, revenue, subscriptions]
       properties:
         totalCompanies:
           type: integer
@@ -15755,10 +15758,16 @@ components:
           description: Companies whose subscription grants full access today (active or trialing)
         totalUsers:
           type: integer
+          description: Company users that exist today. Deleted accounts and platform operators are not counted.
+        totalCaptures:
+          type: integer
+          description: Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are not counted.
         totalScans:
           type: integer
+          description: Card scans — the captures that were read by OCR (the definition of the scan trend). Always less than or equal to totalCaptures.
         totalLeads:
           type: integer
+          description: Leads that exist today (deleted leads are not counted)
         revenue:
           $ref: "#/components/schemas/RevenueSnapshot"
         subscriptions:

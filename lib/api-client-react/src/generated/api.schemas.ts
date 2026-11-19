@@ -1584,8 +1584,11 @@ export interface Company {
   suspendedReason?: string | null;
   /** @nullable */
   trialEndsAt?: string | null;
+  /** Users of the company that exist today (deleted accounts are not counted) */
   userCount?: number;
+  /** Contacts of the company that exist today (deleted contacts are not counted) */
   contactCount?: number;
+  /** Every capture row of the company — card scans read by OCR and contacts saved without OCR, including deleted rows. Not the OCR card-scan figure of the platform dashboard. */
   scanCount?: number;
   subscription?: SubscriptionSummary | null;
   createdAt: string;
@@ -5795,8 +5798,13 @@ export interface PlatformStats {
   totalCompanies: number;
   /** Companies whose subscription grants full access today (active or trialing) */
   activeCompanies: number;
+  /** Company users that exist today. Deleted accounts and platform operators are not counted. */
   totalUsers: number;
+  /** Every capture — card scans read by OCR plus contacts saved without OCR (QR, vCard, digital card, e-mail signature, NFC, typed in, imported). Deleted rows are not counted. */
+  totalCaptures: number;
+  /** Card scans — the captures that were read by OCR (the definition of the scan trend). Always less than or equal to totalCaptures. */
   totalScans: number;
+  /** Leads that exist today (deleted leads are not counted) */
   totalLeads: number;
   revenue: RevenueSnapshot;
   subscriptions: PlatformSubscriptionMetrics;
