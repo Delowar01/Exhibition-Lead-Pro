@@ -67,14 +67,17 @@ async function purge() {
   await db.delete(companiesTable).where(inArray(companiesTable.id, ids));
 }
 
-/** Every company the platform lists, read page by page. */
+/**
+ * The platform's figures for every company. Each company is read on its own by id (the
+ * list is paged in an order that does not break ties, so paging could repeat or skip one).
+ */
 async function allCompanies(): Promise<Array<{ id: number; userCount: number; scanCount: number }>> {
+  const ids = (await db.select({ id: companiesTable.id }).from(companiesTable)).map((c) => c.id);
   const out: Array<{ id: number; userCount: number; scanCount: number }> = [];
-  for (let page = 1; page < 200; page++) {
-    const body = await get(`/companies?limit=100&page=${page}`);
-    out.push(...body.companies);
-    if (out.length >= body.total || body.companies.length === 0) break;
+  for (let i = 0; i < ids.length; i += 10) {
+    out.push(...(await Promise.all(ids.slice(i, i + 10).map((id) => get(`/companies/${id}`)))));
   }
+  expect(new Set(out.map((c) => c.id)).size).toBe(ids.length);
   return out;
 }
 

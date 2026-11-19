@@ -58,7 +58,7 @@ export function ActivitySection({ params }: SectionProps) {
             </KpiGrid>
             <Note testId="activity-definitions">
               A capture is any contact saved from a card, a QR code, a vCard, an NFC tap, an e-mail signature or by hand. Card
-              scans are the captures read from a card image by OCR.
+              scans are the captures of a card image sent for OCR, whatever the outcome.
             </Note>
 
             <div className="grid gap-6 lg:grid-cols-3" data-testid="activity-trends">

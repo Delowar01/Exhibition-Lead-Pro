@@ -109,8 +109,8 @@ export async function leadsSeries(s: Span, g: Granularity): Promise<Array<{ buck
   return rows.map((r) => ({ bucket: r.bucket, value: n(r.c) }));
 }
 // Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc,
-// manual, import). The values are a closed set written by the API; a row without one is
-// reported as "unknown".
+// manual). The values are a closed set written by the API; a row without one is reported
+// as "unknown". (A file import creates contacts and writes no capture row.)
 export async function capturesBySource(s: Span): Promise<Array<{ source: string; count: number }>> {
   const source = sql<string>`coalesce(${scansTable.captureSource}, 'unknown')`;
   const rows = await db.select({ source, c: count() }).from(scansTable).where(and(LIVE_CAPTURE, within(scansTable.createdAt, s))).groupBy(source).orderBy(desc(count()), source);
@@ -164,7 +164,8 @@ export async function companyNames(ids: number[]): Promise<Map<number, string>> 
 //
 // Active users are counted from the users side with a semi-join on the window's successful
 // sign-ins: one pass over each table. (Asking "is this a company user?" once per sign-in row
-// costs one index probe per row — measured at 1.6 s against 0.28 s over a year of 3M rows.)
+// costs one index probe per row — measured at 1.6 s against 0.28 s for a one-year window of
+// a three-million-row table.)
 // The two statements run one after the other so the unit never holds two connections.
 export async function signInCounts(s: Span): Promise<{ successful: number; failed: number; activeUsers: number }> {
   const [r] = await db

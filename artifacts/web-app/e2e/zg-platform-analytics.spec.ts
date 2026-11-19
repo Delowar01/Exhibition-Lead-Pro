@@ -252,7 +252,7 @@ test.describe("live data", () => {
       await expect(page.getByTestId(`activity-source-list-row-${c.source}`)).toContainText(fmt(c.count));
     }
     await expect(page.getByTestId("activity-by-source")).not.toContainText(/typed by hand|manual entr/i);
-    await expect(page.getByTestId("activity-definitions")).toContainText("read from a card image by OCR");
+    await expect(page.getByTestId("activity-definitions")).toContainText("captures of a card image sent for OCR");
     await expect(page.getByTestId("activity-top-companies")).toContainText(`${fmt(activity.totals.activeCompanies.current)} compan`);
     if (activity.topCompanies.length > 0) {
       const first = activity.topCompanies[0];

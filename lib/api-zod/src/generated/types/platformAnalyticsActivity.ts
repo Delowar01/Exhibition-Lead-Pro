@@ -16,7 +16,7 @@ export interface PlatformAnalyticsActivity {
   range: PlatformAnalyticsRange;
   totals: PlatformAnalyticsActivityTotals;
   series: PlatformAnalyticsActivitySeriesItem[];
-  /** Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual, import; "unknown" when not recorded). The counts add up to totals.captures. */
+  /** Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual; "unknown" when not recorded). A file import creates contacts, not captures. The counts add up to totals.captures. */
   capturesBySource: PlatformAnalyticsActivityCapturesBySourceItem[];
   /** Card scans (OCR) by processing status. The counts add up to totals.scans. */
   scansByStatus: PlatformAnalyticsStatusCount[];

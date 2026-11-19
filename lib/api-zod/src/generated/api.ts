@@ -1233,7 +1233,7 @@ export const GetPlatformAnalyticsActivityResponse = zod.object({
   "capturesBySource": zod.array(zod.object({
   "source": zod.string(),
   "count": zod.number()
-})).describe('Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual, import; \"unknown\" when not recorded). The counts add up to totals.captures.'),
+})).describe('Every capture by where it came from (camera, qr, vcard, digital_card, email_signature, nfc, manual; \"unknown\" when not recorded). A file import creates contacts, not captures. The counts add up to totals.captures.'),
   "scansByStatus": zod.array(zod.object({
   "status": zod.string(),
   "count": zod.number()

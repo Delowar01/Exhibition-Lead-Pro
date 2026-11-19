@@ -214,7 +214,8 @@ test("the Subscriptions page formats the same recurring revenue the same way", a
   await page.goto("/platform/subscriptions");
   await expect(page.getByTestId("platform-subscriptions")).toBeVisible();
   await expect(page.getByTestId("mrr-card")).toContainText("¥5,000");
-  await expect(page.getByTestId("mrr-card")).not.toContainText("¥50.00");
+  // Dividing by 100 would print ¥50: no "¥50" that is not the start of a longer figure.
+  expect(await page.getByTestId("mrr-card").innerText()).not.toMatch(/¥50(?![\d,])/);
 });
 
 test("the company pages call the per-company figure Captures, not Scans", async ({ page }) => {
