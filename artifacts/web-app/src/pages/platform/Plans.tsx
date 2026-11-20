@@ -35,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Layers, CreditCard, SlidersHorizontal, Building2, Search, Lock, Plus, Copy, Archive } from "lucide-react";
 import { STATUS_LABEL, LIMIT_RESOURCES, statusTone, fmt, errMessage } from "@/components/platform/SubscriptionManager";
 import { PlanVersions, invalidatePlanQueries, versionLabel, stateLabel, ENFORCEMENT_LABEL, enforcementTone, microToUsdText, tokensText } from "@/components/platform/PlanVersions";
+import { formatMinor } from "@/lib/money";
 
 const BUDGET_SOURCE_LABEL: Record<string, string> = { tenant: "tenant override", plan: "plan allowance", none: "none (unlimited)" };
 
@@ -67,13 +68,6 @@ function planStatusTone(s: string): "success" | "warning" | "neutral" {
 }
 function limitText(n: number | null | undefined): string {
   return n == null ? "Unlimited" : n.toLocaleString();
-}
-function money(minor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(minor / 100);
-  } catch {
-    return `${(minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
-  }
 }
 function fromSearch(search: string, key: string): string | null {
   const v = new URLSearchParams(search).get(key);
@@ -435,7 +429,7 @@ export default function PlatformPlans() {
                           {detail.data.prices.map((p) => (
                             <TableRow key={p.id} data-testid={`price-row-${p.id}`}>
                               <TableCell data-testid={`plan-price-scope-${p.id}`}>{p.planVersionId == null ? "Plan-wide" : `v${p.planVersion ?? "?"}${p.planVersionState ? ` · ${p.planVersionState}` : ""}`}</TableCell>
-                              <TableCell className="tabular-nums">{money(p.unitAmountMinor, p.currency)}</TableCell>
+                              <TableCell className="tabular-nums">{formatMinor(p.unitAmountMinor, p.currency)}</TableCell>
                               <TableCell>{p.intervalCount > 1 ? `${p.intervalCount} ${p.interval}s` : p.interval}</TableCell>
                               <TableCell className="font-mono text-xs">{p.providerPriceRef ?? "—"}</TableCell>
                               <TableCell><Badge variant={p.providerMode === "live" ? "default" : "secondary"}>{p.providerMode}</Badge></TableCell>

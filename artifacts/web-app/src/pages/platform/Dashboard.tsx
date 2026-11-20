@@ -8,12 +8,12 @@ import {
   useListCompanies,
 } from "@workspace/api-client-react";
 import { Building2, Users, Camera, DollarSign, Activity, Zap, Info } from "lucide-react";
-import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
+import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, MetricCard, StatusBadge, CardGridSkeleton, TableSkeleton, EmptyState } from "@/components/ds";
-import { formatMinor } from "@/lib/platform-analytics";
+import { formatMinor } from "@/lib/money";
 
 // Batch 20 — truthful platform dashboard. Revenue is shown only when the API
 // can compute it from verified provider prices; otherwise the cards say
@@ -42,10 +42,13 @@ const REVENUE_REASON: Record<string, string> = {
   NO_REVENUE_HISTORY: "Revenue history is not recorded by this system.",
 };
 
+// Six statuses, six colours of the chart palette. (Past due used to share the exact red of
+// Suspended, so the two could not be told apart in the ring or its legend; it now takes the
+// palette's fifth colour, the one no other status uses.)
 const STATUS_COLORS: Record<string, string> = {
   active: "hsl(var(--primary))",
   trialing: "hsl(var(--chart-2))",
-  past_due: "hsl(var(--chart-4))",
+  past_due: "hsl(var(--chart-5))",
   cancelled: "hsl(var(--chart-3))",
   expired: "hsl(var(--muted-foreground))",
   suspended: "hsl(var(--destructive))",
@@ -103,7 +106,9 @@ export default function PlatformDashboard() {
         actions={<StatusBadge tone="success">System Operational</StatusBadge>}
       />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {/* One, two, then (from 1280 px) three cards to a row. Six to a row left each card too
+          narrow for its label and for a currency amount. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="dashboard-metrics">
         <MetricCard
           label="Total Companies"
           value={totalCompanies.toLocaleString()}
@@ -120,10 +125,11 @@ export default function PlatformDashboard() {
           />
         </div>
         <div data-testid="dashboard-mrr">
-          <MetricCard label="MRR" value={mrrValue} icon={DollarSign} footer={revenueReason} />
+          {/* `fit`: a long amount is sized to the card so it stays on one line. */}
+          <MetricCard label="MRR" value={mrrValue} icon={DollarSign} footer={revenueReason} fit className="h-full" />
         </div>
         <div data-testid="dashboard-arr">
-          <MetricCard label="ARR" value={arrValue} icon={Activity} footer={revenueAvailable ? "MRR × 12" : revenueReason} />
+          <MetricCard label="ARR" value={arrValue} icon={Activity} footer={revenueAvailable ? "MRR × 12" : revenueReason} fit className="h-full" />
         </div>
         <MetricCard
           label="Total Leads"
@@ -136,12 +142,12 @@ export default function PlatformDashboard() {
         <div data-testid="dashboard-total-captures">
           <MetricCard
             label="Total Captures"
-            // The card is dark: the figure takes the card's own text colour so it can be read.
-            value={<span className="text-sidebar-foreground">{totalCaptures.toLocaleString()}</span>}
+            value={totalCaptures.toLocaleString()}
             icon={Zap}
-            className="h-full bg-sidebar text-sidebar-foreground border-sidebar-border"
+            tone="inverse"
+            className="h-full bg-sidebar border-sidebar-border"
             footer={
-              <span className="text-sidebar-foreground/70" data-testid="dashboard-card-scans">
+              <span data-testid="dashboard-card-scans">
                 {cardScans.toLocaleString()} card {cardScans === 1 ? "scan" : "scans"} sent for OCR
               </span>
             }
@@ -149,8 +155,10 @@ export default function PlatformDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-7">
-        <Card className="md:col-span-5 shadow-sm" data-testid="dashboard-revenue-trend">
+      {/* Side by side only where the status card is wide enough for its ring (1280 px and up);
+          below that the two cards stack, each at full width. */}
+      <div className="grid gap-6 xl:grid-cols-7" data-testid="dashboard-charts">
+        <Card className="xl:col-span-5 shadow-sm" data-testid="dashboard-revenue-trend">
           <CardHeader>
             <CardTitle>Recurring Revenue</CardTitle>
             <CardDescription>Monthly recurring revenue over time</CardDescription>
@@ -189,7 +197,7 @@ export default function PlatformDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-2 shadow-sm flex flex-col" data-testid="dashboard-subscription-status">
+        <Card className="xl:col-span-2 shadow-sm flex flex-col" data-testid="dashboard-subscription-status">
           <CardHeader>
             <CardTitle>Subscription Status</CardTitle>
             <CardDescription>Canonical subscription state per company</CardDescription>
@@ -207,15 +215,19 @@ export default function PlatformDashboard() {
                           <Cell key={entry.status} fill={STATUS_COLORS[entry.status] ?? "hsl(var(--muted-foreground))"} />
                         ))}
                       </Pie>
-                      <RechartsTooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))" }} />
-                      <Legend verticalAlign="bottom" height={36} />
+                      <RechartsTooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))" }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <ul className="mt-2 w-full space-y-1 text-sm">
+                {/* The list is the legend: each status carries the colour of its ring segment, its
+                    name and its count. (A separate chart legend used to wrap over these rows.) */}
+                <ul className="mt-2 w-full space-y-1 text-sm" data-testid="dashboard-status-legend">
                   {subStatusData.map((s) => (
-                    <li key={s.status} className="flex justify-between" data-testid={`status-count-${s.status}`}>
-                      <span className="text-muted-foreground">{s.name}</span>
+                    <li key={s.status} className="flex items-center justify-between gap-3" data-testid={`status-count-${s.status}`}>
+                      <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: STATUS_COLORS[s.status] ?? "hsl(var(--muted-foreground))" }} aria-hidden="true" />
+                        <span className="truncate">{s.name}</span>
+                      </span>
                       <span className="font-medium tabular-nums">{s.value}</span>
                     </li>
                   ))}
@@ -257,12 +269,12 @@ export default function PlatformDashboard() {
         {/* min-w-0: the wide table scrolls inside the card instead of widening the page on phones. */}
         <Card className="shadow-sm min-w-0">
           <CardHeader>
-            <div className="flex justify-between items-center">
-              <div>
+            <div className="flex justify-between items-center gap-3">
+              <div className="min-w-0">
                 <CardTitle>Recent Companies</CardTitle>
-                <CardDescription>Latest tenants onboarded to the platform</CardDescription>
+                <CardDescription>The five tenants onboarded most recently</CardDescription>
               </div>
-              <Link href="/platform/companies" className="text-sm text-primary hover:underline">View all</Link>
+              <Link href="/platform/companies" className="shrink-0 whitespace-nowrap text-sm text-primary hover:underline">View all</Link>
             </div>
           </CardHeader>
           <CardContent>

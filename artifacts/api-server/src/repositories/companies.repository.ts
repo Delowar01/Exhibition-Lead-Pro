@@ -1,5 +1,5 @@
 import { db, companiesTable, usersTable, contactsTable, scansTable, activityLogsTable, subscriptionsTable } from "@workspace/db";
-import { eq, ilike, and, count, inArray, sql } from "drizzle-orm";
+import { eq, ilike, and, count, desc, inArray, sql } from "drizzle-orm";
 import { notDeleted, exec, type Executor } from "./base.js";
 import { TENANT_USER, LIVE_CAPTURE } from "./platform-definitions.js";
 
@@ -35,7 +35,10 @@ export async function list(opts: { search?: string; status?: string; plan?: stri
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [{ total }] = await db.select({ total: count() }).from(companiesTable).where(whereClause);
-  const rows = await db.select().from(companiesTable).where(whereClause).limit(opts.limit).offset(opts.offset).orderBy(companiesTable.createdAt);
+  // Newest first: the platform's company lists (the Companies page and the dashboard's "Recent
+  // Companies") lead with the latest tenants. The id breaks ties, so paging never repeats or
+  // skips a company created in the same instant as another.
+  const rows = await db.select().from(companiesTable).where(whereClause).limit(opts.limit).offset(opts.offset).orderBy(desc(companiesTable.createdAt), desc(companiesTable.id));
   return { rows, total };
 }
 

@@ -24,6 +24,7 @@ import { subscriptionAccess } from "@/components/billing/permissions";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { CreditCard, ExternalLink, ShieldCheck, Info } from "lucide-react";
+import { formatMinor } from "@/lib/money";
 
 // Batch 20 — truthful tenant subscription page. Every value comes from the
 // canonical subscription projection (GET /subscriptions/current). No invented
@@ -88,14 +89,6 @@ function statusTone(status: string): "default" | "secondary" | "destructive" | "
 
 function fmt(d: string | null | undefined): string {
   return d ? format(new Date(d), "MMM d, yyyy") : "—";
-}
-
-function money(minor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(minor / 100);
-  } catch {
-    return `${(minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
-  }
 }
 
 function UsageRow({ r }: { r: ResourceUsage }) {
@@ -284,7 +277,7 @@ export default function AdminSubscription() {
                     <div>
                       <div className="font-medium">{plan.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {money(price.unitAmountMinor, price.currency)} / {price.intervalCount > 1 ? `${price.intervalCount} ${price.interval}s` : price.interval}
+                        {formatMinor(price.unitAmountMinor, price.currency)} / {price.intervalCount > 1 ? `${price.intervalCount} ${price.interval}s` : price.interval}
                       </div>
                     </div>
                     <Button size="sm" onClick={() => void startCheckout(price.id)} disabled={busy !== null} data-testid={`checkout-button-${price.id}`}>
