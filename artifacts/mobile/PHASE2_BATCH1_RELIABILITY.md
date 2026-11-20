@@ -264,8 +264,8 @@ their pure rules and by source checks, not by running the providers.
 
 Each point was first reproduced on the previous head of this branch (or ruled
 out), then corrected, then covered by `lib/hardening.test.ts` (50 tests),
-`lib/hardening-review.test.ts` (25 tests, the findings of the second review,
-§5c) and, for the shared API client,
+`lib/hardening-review.test.ts` (32 tests, the findings of the second review,
+§5c), `lib/auth-storage.test.ts` (7 tests on the real token storage) and, for the shared API client,
 `artifacts/web-app/src/lib/api-client-session.test.ts` (17 tests).
 
 ### A. A damaged queue index
@@ -415,10 +415,35 @@ major and several minor findings, all corrected; regression tests in
 | — | Wording that promised more than the code does (among them "nothing was sent by itself") | Rewritten in both languages; the session notice of the sync no longer tells a signed-in user to sign in again |
 | — | Tests that did not test what their name said; a test-file header that understated the differences to the earlier API client | Tied to the real recovery paths; the three differences are named |
 
+The reviewer then checked these corrections. All five findings were confirmed
+closed; the check found five further defects that the corrections themselves
+had introduced, corrected in turn:
+
+| Found in the corrections | Correction |
+| --- | --- |
+| A replaced card edit was recorded as finished before the new edit was stored: stopped between the two writes, both edits were gone | It is recorded only after the new edit is stored. Stopped after each single write in turn, one of the two edits always survives |
+| The mark of an already taken-over old queue also blocked reading it again when the index was later damaged or gone — entries still intact in the old queue did not come back | The mark counts only next to an index that was read in full; otherwise the old queue is read again |
+| A new damage whose record never got written inherited the time of an older incident | The earlier time is kept only when the record already names the place where this original was found |
+| "The list was lost" came back at every start, and "seen" did not stay seen, when nobody adopted the photos | An (empty) list is stored when the loss is recorded |
+| An old queue whose take-over was interrupted after its photos were written was reported as "a lost list" | Not while an old queue is waiting: its entries come back from it |
+
+A last check of these five confirmed them closed and asked for one tightening,
+which is in: an old-queue value that merely stays on the device (taken over
+before, or not readable as a queue) no longer hides a lost list.
+
+Known and accepted: when the index is damaged or gone AND an old queue is still
+on the device AND an item of it was uploaded more than 400 finished captures
+ago, that item is read from the old queue again and sent once more. It needs
+those three things together, it is visible in the Sync Center, and for a
+contact it goes through the server's duplicate check; the alternative was to
+abandon intact pending entries when two of them coincide.
+
 Left as is: a write to the device's storage that never returns cannot be given
-a deadline safely (a late write could land after a newer one); the two React
-providers are still covered by their extracted rules and by source checks, not
-by being run.
+a deadline safely (a late write could land after a newer one); a remembered
+biometric sign-in whose renewal answer arrives while signed out keeps the
+replaced tokens and is then forgotten at its next use (as before this batch);
+the two React providers are still covered by their extracted rules and by
+source checks, not by being run.
 
 ## 6. Open — backend dependencies
 

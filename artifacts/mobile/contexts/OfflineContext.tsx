@@ -622,12 +622,17 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       const before = queueRef.current;
       const next = enqueueItem(before, draft, itemOwner, Date.now(), id);
       if (!next) return false;
-      // What this entry replaces (an earlier card edit of the same account) will
-      // never be sent: it is recorded as finished in the same save, so nothing
-      // — an older queue still on the device, for instance — can bring it back.
       const superseded = replacedBy(before, next).map((it) => it.id);
-      for (const old of superseded) doneRef.current = rememberDone(doneRef.current, old);
       if (await commit(next)) {
+        // What this entry replaced (an earlier card edit of the same account)
+        // will never be sent. It is recorded as finished only NOW, after the
+        // entry that replaces it is stored — recorded earlier, a save that is
+        // cut off between its two writes would leave the old edit marked
+        // finished and the new one not stored: both gone.
+        if (superseded.length > 0) {
+          for (const old of superseded) doneRef.current = rememberDone(doneRef.current, old);
+          void commit(queueRef.current); // best effort: stored with the next save at the latest
+        }
         // Kept while online (sending it failed a moment ago): it is tried again
         // by itself, after a pause — not at once, and not only when the user
         // next opens the Sync Center. A run already planned is left as it is.
@@ -640,8 +645,6 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       // put back what it had replaced (an earlier card edit of the same account),
       // so a failed save never costs the user the edit that WAS kept.
       const replaced = replacedBy(before, next);
-      // …and it is not finished after all.
-      if (superseded.length > 0) doneRef.current = doneRef.current.filter((done) => !superseded.includes(done));
       const now = queueRef.current;
       const present = new Set(now.map((it) => it.id));
       await commit([...replaced.filter((it) => !present.has(it.id)), ...now.filter((it) => it.id !== id)]);

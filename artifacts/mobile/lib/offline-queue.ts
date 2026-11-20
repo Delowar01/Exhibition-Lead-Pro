@@ -123,10 +123,10 @@ async function storeVerified(key: string, value: string): Promise<boolean> {
  * already kept (an interrupted recovery repeats: the same original is never
  * stored twice). null = it could not be kept.
  */
-async function keepDamagedOriginal(raw: string): Promise<{ copies: string[]; alreadyKept: boolean } | null> {
+async function keepDamagedOriginal(raw: string): Promise<{ copies: string[]; foundAt: string | null } | null> {
   const occupied: string[] = [];
   let free: string | null = null;
-  let alreadyKept = false;
+  let foundAt: string | null = null;
   // Every place is looked at, whatever the record says: a kept original is
   // never left unlisted (it could then never be removed by the user).
   for (const key of DAMAGED_KEYS) {
@@ -136,15 +136,15 @@ async function keepDamagedOriginal(raw: string): Promise<{ copies: string[]; alr
       continue;
     }
     if (existing.value === raw) {
-      alreadyKept = true;
+      if (foundAt === null) foundAt = key;
       occupied.push(key);
     } else if (existing.value !== null && existing.value !== "") occupied.push(key);
     else if (free === null) free = key;
   }
-  if (alreadyKept) return { copies: occupied, alreadyKept: true };
+  if (foundAt !== null) return { copies: occupied, foundAt };
   if (free === null || occupied.length >= MAX_DAMAGED_COPIES) return null;
   if (!(await storeVerified(free, raw))) return null;
-  return { copies: [...occupied, free].sort((x, y) => DAMAGED_KEYS.indexOf(x as (typeof DAMAGED_KEYS)[number]) - DAMAGED_KEYS.indexOf(y as (typeof DAMAGED_KEYS)[number])), alreadyKept: false };
+  return { copies: [...occupied, free].sort((x, y) => DAMAGED_KEYS.indexOf(x as (typeof DAMAGED_KEYS)[number]) - DAMAGED_KEYS.indexOf(y as (typeof DAMAGED_KEYS)[number])), foundAt: null };
 }
 
 /** Of the kept originals a record names: those that are really still there. */
@@ -194,7 +194,14 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
     }
   }
 
+  // Ids already dealt with (used at several points below).
+  const done = await read(DONE_KEY);
+  out.doneIds = done.ok ? parseDoneIds(done.value) : [];
+  const finishedIds = new Set(out.doneIds);
+
   // 1. The index.
+  let indexHealthy = false; // read, and every entry of it understood
+  let indexAbsent = false; // nothing is stored under its key
   const index = await read(OFFLINE_QUEUE_KEY);
   if (!index.ok) {
     // Unreadable: do not guess, and above all do not write over it.
@@ -209,10 +216,13 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
       const record: QueueIncident | null = kept
         ? {
             kind: "damaged",
-            // The same original met again (its recovery was interrupted) is the
-            // same event; anything else is a new one, dated now.
-            at: kept.alreadyKept && out.incident ? out.incident.at : now,
-            salvaged: reading.items.length,
+            // The same original met again — one the RECORD already names (its
+            // recovery was interrupted after the record was written) — is the
+            // same event. Anything else is a new one, dated now: also an
+            // original that was kept but whose record never got written.
+            at: kept.foundAt !== null && out.incident?.copies.includes(kept.foundAt) ? out.incident.at : now,
+            // Entries already recorded as finished are not "read back": they are dropped below.
+            salvaged: reading.items.filter((it) => !finishedIds.has(it.id)).length,
             unreadable: reading.unreadable,
             copies: kept.copies,
             acknowledged: false,
@@ -229,37 +239,16 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
       }
     } else {
       out.items = reading.items;
-      // Nothing is stored — but are photos of captures on the device? Then the
-      // list did not start empty: it is GONE (the store was cleared or replaced
-      // underneath the app; Android replaces a database it cannot open). The
-      // photos are all that is left of those captures. That is recorded, so
-      // they are put back for the user to decide on instead of being sent
-      // unasked without their details. (One photo whose very first save was
-      // interrupted looks the same and is treated the same.)
-      if (reading.state === "empty" && files.available() && (await files.anyImages()) === true) {
-        const record: QueueIncident = { kind: "lost", at: now, salvaged: 0, unreadable: null, copies: out.incident?.copies ?? [], acknowledged: false };
-        if (await storeVerified(INCIDENT_KEY, JSON.stringify(record))) {
-          out.incident = record;
-          out.indexLost = true;
-        } else {
-          // It cannot be recorded, so it could not be honoured after a restart: nothing is written or sent.
-          out.writable = false;
-          out.indexLost = true;
-          out.damagedCopyFailed = true;
-        }
-      }
+      indexHealthy = reading.state === "ok";
+      indexAbsent = reading.state === "empty";
     }
   }
-  out.holdUnlistedBefore = storedIncident.ok ? out.incident?.at ?? 0 : now;
 
-  // 2. Ids already dealt with. An entry recorded as finished (uploaded, or
-  //    removed by the user) whose removal from the index could not be stored
-  //    is not brought back: it would be sent a second time.
-  const done = await read(DONE_KEY);
-  out.doneIds = done.ok ? parseDoneIds(done.value) : [];
-  if (out.doneIds.length > 0 && out.items.length > 0) {
-    const finished = new Set(out.doneIds);
-    const open = out.items.filter((it) => !finished.has(it.id));
+  // 2. An entry recorded as finished (uploaded, or removed by the user) whose
+  //    removal from the index could not be stored is not brought back: it
+  //    would be sent a second time.
+  if (finishedIds.size > 0 && out.items.length > 0) {
+    const open = out.items.filter((it) => !finishedIds.has(it.id));
     if (open.length !== out.items.length) publish = true;
     out.items = open;
   }
@@ -268,23 +257,59 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
   //    whether the old queue may go is decided by what the STORED index holds.
   const flag = await read(MIGRATED_FLAG_KEY);
   const legacy = await read(LEGACY_QUEUE_KEY);
+
+  // Nothing is stored under the index key — but are photos of captures on the
+  // device? Then the list did not start empty: it is GONE (the store was
+  // cleared or replaced underneath the app; Android replaces a database it
+  // cannot open). The photos are all that is left of those captures. That is
+  // recorded, so they are put back for the user to decide on instead of being
+  // sent unasked without their details. (One photo whose very first save was
+  // interrupted looks the same and is treated the same.)
+  // Not while an old queue is WAITING to be taken over — one with readable
+  // entries that has not been taken over yet: photos next to it are the files
+  // of a take-over that was interrupted, and they come back with their entries
+  // from that queue. An old value that merely stays on the device (taken over
+  // before, or not readable as a queue) explains no photos.
+  const legacyReading = legacy.ok && legacy.value !== null ? readStoredQueue(legacy.value) : null;
+  const legacyValueMark = legacy.ok && legacy.value !== null ? fingerprintOf(legacy.value) : null;
+  const takenOverBefore = legacyValueMark !== null && flag.ok && flag.value === legacyValueMark;
+  const oldQueueWaiting = legacyReading !== null && legacyReading.items.length > 0 && !takenOverBefore;
+  if (out.writable && indexAbsent && !oldQueueWaiting && files.available() && (await files.anyImages()) === true) {
+    const record: QueueIncident = { kind: "lost", at: now, salvaged: 0, unreadable: null, copies: out.incident?.copies ?? [], acknowledged: false };
+    out.indexLost = true;
+    if (await storeVerified(INCIDENT_KEY, JSON.stringify(record))) {
+      out.incident = record;
+      // An (empty) list is stored from now on, so this is found once, not at every start.
+      publish = true;
+    } else {
+      // It cannot be recorded, so it could not be honoured after a restart: nothing is written or sent.
+      out.writable = false;
+      out.damagedCopyFailed = true;
+    }
+  }
+  out.holdUnlistedBefore = storedIncident.ok ? out.incident?.at ?? 0 : now;
+
   let legacyItems: QueueItem[] | null = null;
   let legacyComplete = false;
   let legacyMark: string | null = null;
   let alreadyTakenOver = false;
   if (!legacy.ok) {
     out.legacyUnreadable = true;
-  } else if (legacy.value !== null && out.writable) {
-    const reading = readStoredQueue(legacy.value);
+  } else if (legacy.value !== null && legacyReading !== null && out.writable) {
+    const reading = legacyReading;
     if (reading.state === "damaged" && reading.items.length === 0) {
       out.legacyUnreadable = true; // nothing of it can be read: it stays exactly where it is
     } else {
-      legacyMark = fingerprintOf(legacy.value);
+      legacyMark = legacyValueMark;
       // This very value was taken over before (and verified then). It is not
       // taken over again: what was uploaded, removed or replaced since must
       // not come back from it. Whether it may be REMOVED is decided below, on
       // what the stored index holds — never on this mark.
-      alreadyTakenOver = flag.ok && flag.value === legacyMark;
+      // The mark counts only next to an index that was read in full just now.
+      // A damaged or missing index may have lost entries that still sit, intact,
+      // in this old queue: then it is read again (what is listed or recorded as
+      // finished is skipped as always).
+      alreadyTakenOver = indexHealthy && takenOverBefore;
       if (!alreadyTakenOver) {
         const merged = mergeLegacyItems(out.items, reading.items, out.doneIds);
         out.migrated = merged.added;
