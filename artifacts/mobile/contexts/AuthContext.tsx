@@ -33,7 +33,8 @@ import {
 } from "@/lib/auth-storage";
 import { followBiometricSession, forgetBiometricSession, reconcileBiometricLogin } from "@/lib/biometric";
 import { createEntitlementRefresher } from "@/lib/entitlement-refresh";
-import { SESSION_RENEWAL_TIMEOUT_MS, withTimeout } from "@/lib/request-timeout";
+import { SESSION_RENEWAL_ABANDON_MS, SESSION_RENEWAL_TIMEOUT_MS } from "@/lib/request-timeout";
+import { createSessionRenewer } from "@/lib/session-renewal";
 import { accountOwnerKey } from "@/lib/settings-model";
 
 interface AuthContextValue {
@@ -93,6 +94,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // only. (`generationRef` also moves on a profile edit, which must not make a
   // renewal answer look stale — the server has already rotated the token by then.)
   const sessionEpochRef = useRef(0);
+  // One renewal request per refresh token; its answer is taken into use exactly
+  // once, whenever it arrives (rules: lib/session-renewal.ts). The request is
+  // sent WITHOUT a cancellation signal on purpose.
+  const [renewer] = useState(() =>
+    createSessionRenewer({
+      request: (refreshToken) => requestTokenRefresh({ refreshToken }),
+      timeoutMs: SESSION_RENEWAL_TIMEOUT_MS,
+      abandonMs: SESSION_RENEWAL_ABANDON_MS,
+      now: () => Date.now(),
+    }),
+  );
   const [refresher] = useState(() =>
     createEntitlementRefresher<User>({
       getIdentity: () => {
@@ -206,13 +218,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await endSession(decision.reason, snapshot.generation, current);
         return null;
       }
-      // Take a renewal answer into use — but only for the session that asked
-      // for it, and only while its tokens are still the ones in use. A sign-out,
-      // another sign-in or a later renewal makes the answer void.
+      // Take a renewal answer into use — but only while the session that asked
+      // for it is still the one in use: its access token must still be the
+      // current one (saveRotatedTokens checks exactly that). After a sign-out,
+      // another sign-in or a later renewal the answer is void. The same
+      // session signed in again (a remembered sign-in) still gets it — the
+      // server has replaced that session's refresh token either way.
       const adopt = async (answer: unknown): Promise<string | null> => {
         const renewed = parseRefreshResponse(answer);
         if (!renewed) return null;
-        if (sessionEpochRef.current !== snapshot.generation) return null; // signed out or switched while renewing
+        if (getCachedToken() === renewed.token && getCachedRefreshToken() === renewed.refreshToken) return renewed.token; // already in use
         if (!(await saveRotatedTokens(current.token, renewed))) return null;
         issuedTokensRef.current = withIssuedToken(issuedTokensRef.current, renewed.token);
         setToken(renewed.token);
@@ -225,30 +240,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void refresher.refresh("restore");
         return renewed.token;
       };
-      let answer: unknown;
-      try {
-        // A renewal that does not answer must not hold every waiting request
-        // for ever: after the limit this request fails and the session stays.
-        // If the answer still arrives later, the server HAS replaced the refresh
-        // token — so it is taken into use then (under the same conditions as
-        // above) instead of leaving the app with a token the server no longer accepts.
-        answer = await withTimeout(SESSION_RENEWAL_TIMEOUT_MS, (o) => requestTokenRefresh({ refreshToken: decision.refreshToken }, o), {
-          onLate: (late) => {
-            void adopt(late).catch(() => {});
-          },
-        });
-      } catch (err) {
-        const failure = classifyRefreshFailure(err);
-        if (failure.kind === "ended") await endSession(failure.reason, snapshot.generation, current);
-        return null; // otherwise: no connection / no answer in time / server trouble — the session stays, only this request fails
-      }
-      try {
-        return await adopt(answer);
-      } catch {
-        return null;
-      }
+      // A renewal that does not answer must not hold every waiting request for
+      // ever: after the limit THIS request fails and the session stays. The
+      // renewal request itself goes on — if the server handled it, its answer
+      // is the only copy of the new refresh token — and a further 401 in the
+      // meantime waits on that same request instead of sending the single-use
+      // token a second time.
+      return renewer.renew(decision.refreshToken, {
+        adopt,
+        failed: async (err) => {
+          // Only the API's own refusal ends the session; no connection or server trouble leave it as it is.
+          const failure = classifyRefreshFailure(err);
+          if (failure.kind === "ended") await endSession(failure.reason, snapshot.generation, current);
+        },
+      });
     },
-    [endSession, refresher],
+    [endSession, refresher, renewer],
   );
 
   useEffect(() => {

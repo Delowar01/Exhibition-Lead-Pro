@@ -136,6 +136,12 @@ export const MAX_DAMAGED_COPIES = 3;
  * for the user, long after the notice itself was dismissed.
  */
 export interface QueueIncident {
+  /**
+   * `damaged` — the stored list could not be read as it was;
+   * `lost`    — no list was stored at all although photos of captures are on
+   *             the device (the store was cleared or replaced underneath the app).
+   */
+  kind: "damaged" | "lost";
   /** When the damage was (last) found. */
   at: number;
   /** Entries read from the damaged list and put back, exactly as they were stored. */
@@ -154,6 +160,7 @@ export function parseIncident(raw: string | null): QueueIncident | null {
     const v = JSON.parse(raw) as Record<string, unknown> | null;
     if (!v || typeof v !== "object" || typeof v.at !== "number" || !Number.isFinite(v.at) || v.at <= 0) return null;
     return {
+      kind: v.kind === "lost" ? "lost" : "damaged",
       at: v.at,
       salvaged: typeof v.salvaged === "number" && v.salvaged >= 0 ? v.salvaged : 0,
       unreadable: typeof v.unreadable === "number" && v.unreadable >= 0 ? v.unreadable : null,
@@ -168,6 +175,49 @@ export function parseIncident(raw: string | null): QueueIncident | null {
 /** Is there something about a damaged list the user has not dealt with yet? */
 export function incidentNeedsAttention(incident: QueueIncident | null): boolean {
   return !!incident && (!incident.acknowledged || incident.copies.length > 0);
+}
+
+/**
+ * What to do about the photos of `owner` that the list does not name
+ * (contexts/OfflineContext.tsx carries it out):
+ *   • `remove`  — photos of work recorded as finished (their file was left behind);
+ *   • `restore` — photos that come back as scans (see {@link recoveredItems} for
+ *                 which of them wait for the user).
+ * A photo that is listed, or being saved right now, is not touched.
+ */
+export function planAdoption(input: {
+  orphans: OrphanImage[];
+  owner: string;
+  doneIds: readonly string[];
+  /** Ids in the queue or being saved at this moment. */
+  presentIds: ReadonlySet<string>;
+  now: number;
+  /** Photos made up to this time lost their entry with a damaged or lost list (0 = no such event). */
+  heldBefore: number;
+}): { remove: OrphanImage[]; restore: QueueItem[] } {
+  const done = new Set(input.doneIds);
+  const remove = input.orphans.filter((o) => done.has(o.id));
+  const candidates = input.orphans.filter((o) => !done.has(o.id) && !input.presentIds.has(o.id));
+  return { remove, restore: recoveredItems(candidates, input.owner, input.now, input.heldBefore) };
+}
+
+/** Of restored photos: how many are ordinary waiting scans (the others wait for the user's decision). */
+export function restoredToProcess(restored: readonly QueueItem[]): number {
+  return restored.filter((it) => it.status === "pending").length;
+}
+
+/**
+ * A short, stable mark of a stored value (its length and a 32-bit FNV-1a hash).
+ * Used to recognise "this is the very same old queue that was already taken
+ * over" — never as a security measure.
+ */
+export function fingerprintOf(raw: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < raw.length; i += 1) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `v2:${raw.length}:${h.toString(16)}`;
 }
 
 /** Ids of `legacy` that are neither in the stored index nor recorded as finished. */

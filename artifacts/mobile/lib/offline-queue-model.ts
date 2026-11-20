@@ -265,7 +265,11 @@ export interface StoredQueueReading {
   state: "empty" | "ok" | "damaged";
   /** Every entry that could be read. For `damaged`: what could be salvaged, exactly as it was stored. */
   items: QueueItem[];
-  /** Entries that are there but could not be read. `null` = it cannot be told how many. */
+  /**
+   * Entries that are there but could not be read. A number only when it is
+   * exact (a well-formed list with entries that are not queue items); `null`
+   * for a damaged text, where it cannot be told how many were lost.
+   */
   unreadable: number | null;
 }
 
@@ -282,8 +286,8 @@ export interface StoredQueueReading {
 export function readStoredQueue(raw: string | null): StoredQueueReading {
   if (raw === null || raw === "") return { state: "empty", items: [], unreadable: 0 };
   let entries: unknown[];
-  let broken = 0;
   let wellFormed = false;
+  let countable = true;
   try {
     const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed)) {
@@ -295,14 +299,13 @@ export function readStoredQueue(raw: string | null): StoredQueueReading {
       return { state: "damaged", items: [], unreadable: null };
     }
   } catch {
-    const salvaged = salvageJsonObjects(raw);
-    entries = salvaged.objects;
-    broken = salvaged.broken;
-    if (entries.length === 0 && broken === 0) return { state: "damaged", items: [], unreadable: null };
+    // Damaged text: what is complete is read; how much is missing cannot be told.
+    entries = salvageJsonObjects(raw);
+    countable = false;
   }
   const items: QueueItem[] = [];
   const seen = new Set<string>();
-  let unreadable = broken;
+  let unreadable = 0;
   for (const entry of entries) {
     const item = normalizeStoredItem(entry);
     if (!item) unreadable += 1;
@@ -313,30 +316,32 @@ export function readStoredQueue(raw: string | null): StoredQueueReading {
     }
   }
   if (wellFormed && unreadable === 0) return { state: "ok", items, unreadable: 0 };
-  return { state: "damaged", items, unreadable };
+  return { state: "damaged", items, unreadable: countable ? unreadable : null };
 }
 
-/** How often the search may start again inside a broken entry (bounds the work on hopeless input). */
-const MAX_SALVAGE_RESTARTS = 200;
+/** Upper bound for the characters looked at while salvaging (bounds the work on hopeless input). */
+const MAX_SALVAGE_STEPS = 40_000_000;
 
 /**
- * The complete JSON objects found in a text that is not valid JSON as a whole,
- * and how many entries were started but are broken or cut off.
+ * The complete JSON objects found in a text that is not valid JSON as a whole.
  *
- * A broken entry does not end the search: it resumes right after that entry's
- * opening brace, so complete entries FOLLOWING a broken one are still found.
- * While resuming, the search is inside a broken entry and may come across that
- * entry's own inner objects (a payload, for example) — only objects that are
- * queue entries themselves (`looksLikeEntry`) are taken from there, and the
- * first one found means the search is back among the entries.
+ * A broken entry does not end the search. After one, every following opening
+ * brace is tried in turn as the start of an entry, each time reading with a
+ * clean slate — whatever the damage did to quotes or braces before that point
+ * no longer matters. Only objects that are queue entries themselves
+ * (`looksLikeEntry`) are taken on that path, so an inner object of a broken
+ * entry (its payload, say) is never mistaken for an entry. Once an entry is
+ * found, reading continues normally from there.
+ *
+ * How many entries were LOST cannot be told from a damaged text (a damaged
+ * stretch may have held one entry or ten), so no count is returned.
  */
-function salvageJsonObjects(raw: string): { objects: unknown[]; broken: number } {
+function salvageJsonObjects(raw: string): unknown[] {
   const objects: unknown[] = [];
-  let broken = 0;
-  let restarts = 0;
-  let insideBroken = false;
+  let steps = 0;
   let from = 0;
-  while (from < raw.length) {
+  let resuming = false; // true after a broken entry: only whole queue entries are accepted
+  while (from >= 0 && from < raw.length && steps < MAX_SALVAGE_STEPS) {
     let depth = 0;
     let start = -1;
     let inString = false;
@@ -344,6 +349,7 @@ function salvageJsonObjects(raw: string): { objects: unknown[]; broken: number }
     let failedAt = -1;
     let i = from;
     for (; i < raw.length; i += 1) {
+      steps += 1;
       const ch = raw.charCodeAt(i);
       if (inString) {
         if (escaped) escaped = false;
@@ -365,28 +371,23 @@ function salvageJsonObjects(raw: string): { objects: unknown[]; broken: number }
           } catch {
             ok = false;
           }
-          if (!ok) {
+          if (ok && (!resuming || looksLikeEntry(parsed))) {
+            objects.push(parsed);
+            resuming = false; // among the entries again
+            start = -1;
+          } else {
             failedAt = start;
             break;
           }
-          if (!insideBroken) objects.push(parsed);
-          else if (looksLikeEntry(parsed)) {
-            objects.push(parsed);
-            insideBroken = false; // back among the entries
-          }
-          start = -1;
         }
       }
     }
-    if (failedAt < 0 && i >= raw.length && depth > 0) failedAt = start; // an entry that never closes (cut off)
+    if (failedAt < 0 && start >= 0 && (depth > 0 || inString)) failedAt = start; // an entry that never closes (cut off)
     if (failedAt < 0) break;
-    if (!insideBroken) broken += 1;
-    insideBroken = true;
-    restarts += 1;
-    if (restarts > MAX_SALVAGE_RESTARTS) break;
-    from = failedAt + 1;
+    resuming = true;
+    from = raw.indexOf("{", failedAt + 1); // -1 ends the search
   }
-  return { objects, broken };
+  return objects;
 }
 
 function looksLikeEntry(value: unknown): boolean {
@@ -541,6 +542,16 @@ export function resolveOwnedConflict(
       ? { ...it, status: "pending" as const, resolution, conflict: undefined, lastError: undefined, errorKind: undefined, retryable: undefined, lastAttemptAt: undefined }
       : it,
   );
+}
+
+/**
+ * Items of `before` that `next` no longer holds — what an enqueue replaced (an
+ * earlier card edit of the same account). They will never be sent, so the
+ * caller records them as finished: nothing may bring them back later.
+ */
+export function replacedBy(before: readonly QueueItem[], next: readonly QueueItem[]): QueueItem[] {
+  const kept = new Set(next.map((it) => it.id));
+  return before.filter((it) => !kept.has(it.id));
 }
 
 /** Remove the owner's item; a foreign/quarantined id changes nothing. */

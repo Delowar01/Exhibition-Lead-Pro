@@ -6,6 +6,7 @@ import {
   MAX_DONE_IDS,
   MAX_INDEX_CHARS,
   externalizeImages,
+  fingerprintOf,
   mergeLegacyItems,
   parseDoneIds,
   parseIncident,
@@ -27,15 +28,20 @@ export { makeQueueId } from "./offline-queue-model";
 //                               STORED index was read back and found to hold
 //                               every one of them, and it is left untouched
 //                               when it cannot be read (in whole or in part).
-//   csp_offline_queue_migrated  "1" once that move was verified.
+//   csp_offline_queue_migrated  a mark of the old queue's value once that move
+//                               was verified. The same old queue is then never
+//                               taken over a second time — but the mark alone
+//                               never allows its removal.
 //   csp_offline_done            ids of items that were uploaded or removed, so an
 //                               image file left behind is never taken for a new
 //                               scan and a stale index cannot bring them back.
 //   csp_offline_queue_damaged,  the ORIGINAL of an index that could not be read
 //   …_damaged_2, …_damaged_3    as it was, each kept untouched under a key of
 //                               its own until the user removes it.
-//   csp_offline_queue_incident  the record of that damage (when, how much was
-//                               read back, where the originals are).
+//   csp_offline_queue_incident  the record of that damage, or of the index
+//                               being gone while photos of captures remain
+//                               (when, how much was read back, where the
+//                               originals are).
 //
 // Rules that hold throughout:
 //   • nothing here deletes queued work on its own;
@@ -65,8 +71,19 @@ export interface QueueLoad {
   writable: boolean;
   /** The index was found damaged in THIS load (see `incident` for the lasting record). */
   indexDamaged: boolean;
-  /** The index was damaged and its original could NOT be kept (no space, no free place): nothing was touched. */
+  /**
+   * No index was stored at all although photos of captures are on the device
+   * (found in THIS load): the list is gone, the photos are not.
+   */
+  indexLost: boolean;
+  /** The damage could not be set aside or recorded safely (no space, no free place): nothing was touched. */
   damagedCopyFailed: boolean;
+  /**
+   * Photos made up to this time whose entry is missing are NOT sent by
+   * themselves (0 = no such time). It is the recorded time of the damage — or
+   * "now" when that record itself could not be read in this start.
+   */
+  holdUnlistedBefore: number;
   /** The lasting record of a damaged index (null = it never happened on this device). */
   incident: QueueIncident | null;
   /** The queue of an earlier version exists but cannot be read (fully) on this device. It is kept as it is. */
@@ -102,25 +119,42 @@ async function storeVerified(key: string, value: string): Promise<boolean> {
 
 /**
  * Keep the original of a damaged index, untouched, under a key of its own.
- * Returns the keys now holding originals, or null when it could not be kept.
- * The same original is never stored twice (an interrupted recovery repeats).
+ * Resolves every key that now holds an original, and whether THIS original was
+ * already kept (an interrupted recovery repeats: the same original is never
+ * stored twice). null = it could not be kept.
  */
-async function keepDamagedOriginal(raw: string, known: readonly string[]): Promise<string[] | null> {
+async function keepDamagedOriginal(raw: string): Promise<{ copies: string[]; alreadyKept: boolean } | null> {
   const occupied: string[] = [];
   let free: string | null = null;
+  let alreadyKept = false;
+  // Every place is looked at, whatever the record says: a kept original is
+  // never left unlisted (it could then never be removed by the user).
   for (const key of DAMAGED_KEYS) {
     const existing = await read(key);
     if (!existing.ok) {
       occupied.push(key); // cannot be inspected: never written over
       continue;
     }
-    if (existing.value === raw) return [...new Set([...known, ...occupied, key])].filter((k) => (DAMAGED_KEYS as readonly string[]).includes(k));
-    if (existing.value !== null && existing.value !== "") occupied.push(key);
+    if (existing.value === raw) {
+      alreadyKept = true;
+      occupied.push(key);
+    } else if (existing.value !== null && existing.value !== "") occupied.push(key);
     else if (free === null) free = key;
   }
+  if (alreadyKept) return { copies: occupied, alreadyKept: true };
   if (free === null || occupied.length >= MAX_DAMAGED_COPIES) return null;
   if (!(await storeVerified(free, raw))) return null;
-  return [...occupied, free];
+  return { copies: [...occupied, free].sort((x, y) => DAMAGED_KEYS.indexOf(x as (typeof DAMAGED_KEYS)[number]) - DAMAGED_KEYS.indexOf(y as (typeof DAMAGED_KEYS)[number])), alreadyKept: false };
+}
+
+/** Of the kept originals a record names: those that are really still there. */
+async function existingCopies(keys: readonly string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const key of keys) {
+    const existing = await read(key);
+    if (!existing.ok || (existing.value !== null && existing.value !== "")) out.push(key);
+  }
+  return out;
 }
 
 /**
@@ -133,7 +167,9 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
     doneIds: [],
     writable: true,
     indexDamaged: false,
+    indexLost: false,
     damagedCopyFailed: false,
+    holdUnlistedBefore: 0,
     incident: null,
     legacyUnreadable: false,
     migrated: 0,
@@ -143,6 +179,20 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
 
   const storedIncident = await read(INCIDENT_KEY);
   out.incident = storedIncident.ok ? parseIncident(storedIncident.value) : null;
+  // A record that names kept originals which are gone (their removal was
+  // interrupted before the record could be rewritten) is put right.
+  if (out.incident && out.incident.copies.length > 0) {
+    const still = await existingCopies(out.incident.copies);
+    if (still.length !== out.incident.copies.length) {
+      const fixed: QueueIncident = { ...out.incident, copies: still, acknowledged: out.incident.acknowledged || still.length === 0 };
+      try {
+        await AsyncStorage.setItem(INCIDENT_KEY, JSON.stringify(fixed));
+      } catch {
+        /* the in-memory record is right for this session; the next start repeats this */
+      }
+      out.incident = fixed;
+    }
+  }
 
   // 1. The index.
   const index = await read(OFFLINE_QUEUE_KEY);
@@ -155,13 +205,16 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
     if (reading.state === "damaged") {
       out.indexDamaged = true;
       // The original first: nothing replaces a damaged index before it is kept.
-      const copies = await keepDamagedOriginal(index.value as string, out.incident?.copies ?? []);
-      const record: QueueIncident | null = copies
+      const kept = await keepDamagedOriginal(index.value as string);
+      const record: QueueIncident | null = kept
         ? {
-            at: out.incident && copies.length === out.incident.copies.length ? out.incident.at : now,
+            kind: "damaged",
+            // The same original met again (its recovery was interrupted) is the
+            // same event; anything else is a new one, dated now.
+            at: kept.alreadyKept && out.incident ? out.incident.at : now,
             salvaged: reading.items.length,
             unreadable: reading.unreadable,
-            copies,
+            copies: kept.copies,
             acknowledged: false,
           }
         : null;
@@ -176,8 +229,28 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
       }
     } else {
       out.items = reading.items;
+      // Nothing is stored — but are photos of captures on the device? Then the
+      // list did not start empty: it is GONE (the store was cleared or replaced
+      // underneath the app; Android replaces a database it cannot open). The
+      // photos are all that is left of those captures. That is recorded, so
+      // they are put back for the user to decide on instead of being sent
+      // unasked without their details. (One photo whose very first save was
+      // interrupted looks the same and is treated the same.)
+      if (reading.state === "empty" && files.available() && (await files.anyImages()) === true) {
+        const record: QueueIncident = { kind: "lost", at: now, salvaged: 0, unreadable: null, copies: out.incident?.copies ?? [], acknowledged: false };
+        if (await storeVerified(INCIDENT_KEY, JSON.stringify(record))) {
+          out.incident = record;
+          out.indexLost = true;
+        } else {
+          // It cannot be recorded, so it could not be honoured after a restart: nothing is written or sent.
+          out.writable = false;
+          out.indexLost = true;
+          out.damagedCopyFailed = true;
+        }
+      }
     }
   }
+  out.holdUnlistedBefore = storedIncident.ok ? out.incident?.at ?? 0 : now;
 
   // 2. Ids already dealt with. An entry recorded as finished (uploaded, or
   //    removed by the user) whose removal from the index could not be stored
@@ -194,10 +267,11 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
   // 3. The queue of an earlier version. The completion flag is only a note:
   //    whether the old queue may go is decided by what the STORED index holds.
   const flag = await read(MIGRATED_FLAG_KEY);
-  const migratedFlag = flag.ok && flag.value === "1";
   const legacy = await read(LEGACY_QUEUE_KEY);
   let legacyItems: QueueItem[] | null = null;
   let legacyComplete = false;
+  let legacyMark: string | null = null;
+  let alreadyTakenOver = false;
   if (!legacy.ok) {
     out.legacyUnreadable = true;
   } else if (legacy.value !== null && out.writable) {
@@ -205,14 +279,22 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
     if (reading.state === "damaged" && reading.items.length === 0) {
       out.legacyUnreadable = true; // nothing of it can be read: it stays exactly where it is
     } else {
-      const merged = mergeLegacyItems(out.items, reading.items, out.doneIds);
-      out.migrated = merged.added;
-      out.items = merged.items;
+      legacyMark = fingerprintOf(legacy.value);
+      // This very value was taken over before (and verified then). It is not
+      // taken over again: what was uploaded, removed or replaced since must
+      // not come back from it. Whether it may be REMOVED is decided below, on
+      // what the stored index holds — never on this mark.
+      alreadyTakenOver = flag.ok && flag.value === legacyMark;
+      if (!alreadyTakenOver) {
+        const merged = mergeLegacyItems(out.items, reading.items, out.doneIds);
+        out.migrated = merged.added;
+        out.items = merged.items;
+        if (merged.added > 0) publish = true;
+      }
       legacyItems = reading.items;
       legacyComplete = reading.state !== "damaged";
       // Part of it cannot be read: what can be is taken over, the original is never removed.
       if (!legacyComplete) out.legacyUnreadable = true;
-      if (merged.added > 0) publish = true;
     }
   }
 
@@ -243,11 +325,11 @@ export async function loadQueue(files: ScanFileStore, now: number = Date.now()):
 
   // 6. The earlier version's queue goes only when the STORED index (or the
   //    finished list) accounts for every item of it — never on the flag alone.
-  if (legacyItems && storedIds && uncoveredIds(legacyItems, storedIds, out.doneIds).length === 0) {
-    let flagged = migratedFlag;
+  if (legacyItems && legacyMark && storedIds && uncoveredIds(legacyItems, storedIds, out.doneIds).length === 0) {
+    let flagged = alreadyTakenOver;
     if (!flagged) {
       try {
-        await AsyncStorage.setItem(MIGRATED_FLAG_KEY, "1");
+        await AsyncStorage.setItem(MIGRATED_FLAG_KEY, legacyMark);
         flagged = true;
       } catch {
         /* repeated at the next start */

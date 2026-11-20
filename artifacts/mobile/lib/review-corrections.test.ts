@@ -657,7 +657,7 @@ describe("review 11 — a stalled request and leftovers of an interrupted write"
       }),
     );
     const outcome = hung.catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_001); // the limit, plus the one turn an arrived answer is given
     const err = await outcome;
     expect(aborted).toBe(true);
     const scan: QueueItem = { id: "s", kind: "scan", status: "syncing", createdAt: 1, attempts: 0, owner: A, label: "", source: "card" };

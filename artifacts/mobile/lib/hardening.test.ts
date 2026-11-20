@@ -35,9 +35,12 @@ import {
 import {
   MAX_DAMAGED_COPIES,
   RECOVERED_DETAILS_LOST,
+  fingerprintOf,
   incidentNeedsAttention,
   parseIncident,
+  planAdoption,
   recoveredItems,
+  restoredToProcess,
   uncoveredIds,
   type QueueIncident,
 } from "./offline-queue-store-model";
@@ -115,8 +118,8 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
     expect(load.items.map((it) => it.id)).toEqual([SCAN, CONTACT]);
     expect(load.items[0]).toEqual(queued()[0]);
     expect(load.items[1]).toEqual(queued()[1]); // braces, quotes and backslashes inside the text included
-    // The cut-off card edit cannot be read: counted, not guessed at.
-    expect(load.incident).toEqual({ at: T0, salvaged: 2, unreadable: 1, copies: [DAMAGED[0]], acknowledged: false });
+    // The cut-off card edit cannot be read. How much a damaged text has lost cannot be told: no number is claimed.
+    expect(load.incident).toEqual({ kind: "damaged", at: T0, salvaged: 2, unreadable: null, copies: [DAMAGED[0]], acknowledged: false });
     // The original, byte for byte, under a key of its own — and only then the readable index.
     expect(stored(DAMAGED[0])).toBe(raw);
     expect(storedIncident()).toEqual(load.incident);
@@ -133,7 +136,7 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
     const again = await (await freshModule()).loadQueue(noFiles(), T0 + 60_000);
     expect(again).toMatchObject({ writable: true, indexDamaged: false });
     expect(again.items.map((it) => it.id)).toEqual([SCAN, CONTACT]);
-    expect(again.incident).toEqual({ at: T0, salvaged: 2, unreadable: 1, copies: [DAMAGED[0]], acknowledged: false });
+    expect(again.incident).toEqual({ kind: "damaged", at: T0, salvaged: 2, unreadable: null, copies: [DAMAGED[0]], acknowledged: false });
     expect(incidentNeedsAttention(again.incident)).toBe(true);
     expect(stored(DAMAGED[0])).toBe(raw);
     expect(stored(DAMAGED[1])).toBeUndefined();
@@ -155,7 +158,7 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
     storage.current.data.set(INDEX, raw);
     const load = await (await freshModule()).loadQueue(noFiles(), T0);
     expect(load.items.map((it) => it.id)).toEqual([SCAN, CONTACT, CARD]);
-    expect(load.incident).toMatchObject({ salvaged: 3, unreadable: 4 });
+    expect(load.incident).toMatchObject({ kind: "damaged", salvaged: 3, unreadable: 4 }); // a well-formed list: here the count is exact
     expect(stored(DAMAGED[0])).toBe(raw);
   });
 
@@ -282,7 +285,7 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
     await mod.loadQueue(noFiles(), T0);
     const before = stored(INDEX);
     const after = await mod.discardDamagedCopies();
-    expect(after).toEqual({ at: T0, salvaged: 2, unreadable: 1, copies: [], acknowledged: true });
+    expect(after).toEqual({ kind: "damaged", at: T0, salvaged: 2, unreadable: null, copies: [], acknowledged: true });
     expect(incidentNeedsAttention(after)).toBe(false);
     expect(stored(DAMAGED[0])).toBeUndefined();
     expect(stored(INDEX)).toBe(before);
@@ -300,7 +303,12 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
     const A_DIR = "file:///data/app/files/offline-scans/11_1/";
 
     it("a recovered scan whose photo is gone stays visible as 'photo no longer on this device' — never dropped, never retried unasked", async () => {
-      const items: QueueItem[] = [{ ...(queued()[0] as QueueItem), scanId: undefined, extracted: undefined }];
+      // The entry as it comes back from a damaged list (the cut-off card edit behind it is lost).
+      const damagedList = JSON.stringify([{ ...(queued()[0] as QueueItem), scanId: undefined, extracted: undefined }, queued()[2]]).slice(0, -30);
+      const reading = readStoredQueue(damagedList);
+      expect(reading).toMatchObject({ state: "damaged", unreadable: null });
+      const items: QueueItem[] = reading.items;
+      expect(items.map((it) => it.id)).toEqual([SCAN]);
       const files = noFiles(); // the photo file does not exist
       let queue = items;
       const api: SyncApi = { createScan: vi.fn(), getScan: vi.fn(), createContact: vi.fn(), upsertOwnCard: vi.fn() };
@@ -319,11 +327,18 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
       expect(result).toMatchObject({ failed: 1, synced: 0 });
       expect(queue[0]).toMatchObject({ id: SCAN, status: "failed", errorKind: "image-missing", retryable: false });
       expect(api.createScan).not.toHaveBeenCalled();
+      // Not dropped, and neither an automatic run nor "Sync now" tries it again.
+      expect(queue).toHaveLength(1);
+      expect(syncTargets(queue, A, { now: T0 + 999_999_999 })).toEqual([]);
+      expect(syncTargets(queue, A, { now: T0 + 999_999_999, force: true })).toEqual([]);
       expect(syncProblemKey("image-missing")).toBe("sync.problem.imageMissing");
     });
 
     it("a recovered scan that the server had already read needs no photo: it resumes at the contact", async () => {
-      let queue: QueueItem[] = [queued()[0] as QueueItem]; // scanId 41, photo gone
+      // Read back from a damaged list: the entry still knows that the server has scan 41 of this card.
+      const reading = readStoredQueue(JSON.stringify(queued()).slice(0, -25));
+      let queue: QueueItem[] = reading.items.filter((it) => it.id === SCAN);
+      expect(queue[0]).toMatchObject({ scanId: 41, eventId: 7 });
       const calls: string[] = [];
       const api: SyncApi = {
         createScan: async () => {
@@ -391,9 +406,12 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
       const mod = await freshModule();
       const load = await mod.loadQueue(files, T0 + 5_000_000);
       expect(load.items).toEqual([]);
-      // What the provider does for the signed-in account (contexts/OfflineContext.tsx):
+      // The plan the provider carries out for the signed-in account (the same function it calls):
       const orphans = await files.findOrphans(A, new Set<string>());
-      const restored = recoveredItems(orphans, A, T0 + 5_000_000, load.incident?.at ?? 0);
+      const plan = planAdoption({ orphans, owner: A, doneIds: load.doneIds, presentIds: new Set(), now: T0 + 5_000_000, heldBefore: load.holdUnlistedBefore });
+      expect(plan.remove).toEqual([]); // nothing is deleted
+      const restored = plan.restore;
+      expect(restoredToProcess(restored)).toBe(0); // …and nothing of it is announced as "will be processed"
       expect(restored).toHaveLength(1);
       expect(restored[0]).toMatchObject({ id: SCAN, status: "failed", retryable: false, errorKind: RECOVERED_DETAILS_LOST });
       expect(await mod.saveQueue(restored)).toBe(true);
@@ -405,10 +423,14 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
       expect(driver.names(A_DIR)).toEqual([`${SCAN}.jpg`]);
     });
 
-    it("the provider holds photos by the recorded time of the damage, and syncs only when something is actually waiting (source wiring)", () => {
+    it("the provider carries out exactly that plan, with the recorded time of the damage (source wiring — the provider itself is not run by these tests)", () => {
       const provider = readFileSync(resolve(__dirname, "../contexts/OfflineContext.tsx"), "utf8");
-      expect(provider).toContain("incidentRef.current?.at ?? 0,");
-      expect(provider).toContain('if (isOnlineRef.current && restored.some((it) => it.status === "pending")) void syncNow();');
+      expect(provider).toContain("holdBeforeRef.current = stored.holdUnlistedBefore;");
+      expect(provider).toMatch(/const plan = planAdoption\(\{[\s\S]{0,400}heldBefore: holdBeforeRef\.current,\s*\}\);/);
+      expect(provider).toContain("for (const o of plan.remove) await scanFiles.deleteImage(owner, o.file);");
+      expect(provider).toContain("setRecoveredCount(restoredToProcess(restored));");
+      expect(provider).toContain("if (isOnlineRef.current && restoredToProcess(restored) > 0) void syncNow();");
+      expect(provider).not.toContain("recoveredItems("); // no second, private version of the rule
     });
   });
 
@@ -430,7 +452,7 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
       // The broken entry never closes — the entries AFTER it are found all the same, exactly as stored.
       expect(reading.items.map((it) => it.id)).toEqual([SCAN, CONTACT, CARD]);
       expect(reading.items).toEqual(queued());
-      expect(reading.unreadable).toBe(1); // the broken entry, counted once — its inner objects are not "entries"
+      expect(reading.unreadable).toBeNull(); // how many a damaged text lost is never claimed
     });
 
     it("a broken entry with inner objects: those are not mistaken for entries, and hopeless input ends quickly", () => {
@@ -439,7 +461,7 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
       const brokenContact = '{"id":"1800000000002-bbbbbbb","kind":"contact","payload":{"firstName":"Sara","email":"sara@example.test"},"conflict":{"contactId":9,"name":"S"},"status":';
       const reading = readStoredQueue(`[${brokenContact},${good}`);
       expect(reading.items.map((it) => it.id)).toEqual([CARD]);
-      expect(reading.unreadable).toBe(1);
+      expect(reading.unreadable).toBeNull();
       const hopeless = "{".repeat(50_000);
       const started = Date.now();
       expect(readStoredQueue(hopeless)).toMatchObject({ state: "damaged", items: [] });
@@ -457,7 +479,7 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
 
   it("the damage is reported at once and in the Sync Center, in both languages (source wiring)", () => {
     const provider = readFileSync(resolve(__dirname, "../contexts/OfflineContext.tsx"), "utf8");
-    expect(provider).toMatch(/if \(stored\.indexDamaged\) \{[\s\S]{0,400}Alert\.alert\(i18n\.t\("sync\.damagedTitle"\), i18n\.t\(body\)\);/);
+    expect(provider).toMatch(/if \(stored\.indexDamaged \|\| stored\.indexLost\) \{[\s\S]{0,500}Alert\.alert\(i18n\.t\(stored\.indexLost \? "sync\.lostTitle" : "sync\.damagedTitle"\), i18n\.t\(body\)\);/);
     expect(provider).toContain('stored.writable ? "none" : stored.damagedCopyFailed ? "index-damaged-unsaved" : "index-unreadable"');
     const screen = readFileSync(resolve(__dirname, "../app/sync.tsx"), "utf8");
     expect(screen).toContain('testID="notice-queue-damaged"');
@@ -467,7 +489,7 @@ describe("A — a damaged queue index: nothing recoverable is lost, and it is sa
     expect(screen).toMatch(/function confirmDiscardDamaged\(\) \{\s*Alert\.alert\(t\("sync\.damagedDiscardTitle"\), t\("sync\.damagedDiscardBody"\)/);
     for (const locale of [en, ar] as const) {
       const sync = locale.sync as Record<string, unknown>;
-      for (const key of ["damagedTitle", "damagedAlertBody", "damagedBody", "damagedRecovered", "damagedUnreadable", "damagedUnreadableUnknown", "damagedPhotos", "damagedCopyKept", "damagedDiscard", "damagedDiscardTitle", "damagedDiscardBody", "storageDamagedUnsavedBody"]) {
+      for (const key of ["damagedTitle", "damagedAlertBody", "damagedBody", "damagedRecovered", "damagedUnreadable", "damagedUnreadableUnknown", "damagedPhotos", "damagedCopyKept", "damagedDiscard", "damagedDiscardTitle", "damagedDiscardBody", "damagedDismiss", "lostTitle", "lostAlertBody", "lostBody", "storageDamagedUnsavedBody"]) {
         expect(typeof sync[key], key).toBe("string");
         expect((sync[key] as string).length, key).toBeGreaterThan(8);
       }
@@ -495,7 +517,7 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
     );
     await vi.advanceTimersByTimeAsync(999);
     expect(outcome).toBe("pending");
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(2); // the limit, plus the one turn an answer that has just arrived is given
     expect(outcome).toBeInstanceOf(RequestTimeoutError);
     expect((outcome as RequestTimeoutError).name).toBe("TimeoutError");
     expect(vi.getTimerCount()).toBe(0);
@@ -512,7 +534,7 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
       return hangs();
     }).catch((e: unknown) => e);
     expect(signal?.aborted).toBe(false);
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(501);
     expect(signal?.aborted).toBe(true);
     expect(await p).toBeInstanceOf(RequestTimeoutError);
   });
@@ -526,20 +548,32 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
       let finish: (v: string) => void = () => {};
       const late: string[] = [];
       const first = withTimeout(100, () => new Promise<string>((r) => (finish = r)), { onLate: (v) => late.push(v) }).catch((e: unknown) => e);
-      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(101);
       expect(await first).toBeInstanceOf(RequestTimeoutError);
       finish("too late");
       await vi.advanceTimersByTimeAsync(0);
       expect(late).toEqual(["too late"]);
 
-      let fail: (e: Error) => void = () => {};
-      const second = withTimeout(100, () => new Promise<string>((_, r) => (fail = r)), {
+      // An onLate that throws must never surface as a new error…
+      let finishLate: (v: string) => void = () => {};
+      let threw = 0;
+      const second = withTimeout(100, () => new Promise<string>((r) => (finishLate = r)), {
         onLate: () => {
+          threw += 1;
           throw new Error("must not surface");
         },
       }).catch((e: unknown) => e);
-      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(101);
       expect(await second).toBeInstanceOf(RequestTimeoutError);
+      finishLate("late");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(threw).toBe(1);
+
+      // …and a late FAILURE concerns nobody.
+      let fail: (e: Error) => void = () => {};
+      const third = withTimeout(100, () => new Promise<string>((_, r) => (fail = r))).catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(101);
+      expect(await third).toBeInstanceOf(RequestTimeoutError);
       fail(new Error("late failure"));
       await vi.advanceTimersByTimeAsync(10);
       vi.useRealTimers();
@@ -548,6 +582,16 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
     } finally {
       process.off("unhandledRejection", onUnhandled);
     }
+  });
+
+  it("an answer that becomes due together with the deadline wins (the app was suspended and both are overdue)", async () => {
+    vi.useFakeTimers();
+    let answer: (v: string) => void = () => {};
+    const p = withTimeout(1_000, () => new Promise<string>((r) => (answer = r)));
+    // The deadline's timer and the answer are delivered in the same turn, the timer first.
+    setTimeout(() => answer("arrived"), 1_000);
+    await vi.advanceTimersByTimeAsync(1_001);
+    await expect(p).resolves.toBe("arrived");
   });
 
   it("an answer in time passes through untouched; a failure in time keeps its own error; a call that throws at once is reported", async () => {
@@ -621,7 +665,7 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
     d.state.queue = enqueueItem([], { kind: "scan", label: "c", source: "card", imageFile: "x.jpg" }, A, T0, "s1") as QueueItem[];
 
     const running = d.run();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_001);
     const result = await running;
     expect(result).toMatchObject({ stopped: "offline", reasonKind: "network", synced: 0, failed: 0 });
     expect(d.state.queue[0]).toMatchObject({ id: "s1", status: "pending" });
@@ -658,7 +702,7 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
     const d = timedDevice(raw);
     d.state.queue = enqueueItem([], { kind: "scan", label: "c", source: "card", imageFile: "x.jpg" }, A, T0, "s1") as QueueItem[];
     const first = d.run();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_001);
     expect(await first).toMatchObject({ stopped: "offline" });
     expect(d.state.queue[0]).toMatchObject({ scanId: 41, status: "pending" });
 
@@ -715,7 +759,7 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
     const d = timedDevice(raw);
     d.state.queue = enqueueItem([], { kind: "scan", label: "c", source: "card", imageFile: "x.jpg" }, A, T0, "s1") as QueueItem[];
     const running = d.run(A);
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_001);
     await running;
     d.state.owner = B; // A signed out, B signed in
     answer({ id: 41, extractedData: {} });
@@ -733,11 +777,9 @@ describe("B — hard deadlines: a request that ignores cancellation still ends, 
       expect(provider).toContain(`${name}: (`);
       expect(provider).toMatch(new RegExp(`${name}: \\((input|id)\\) => withTimeout\\(SYNC_TIMEOUT_MS\\.${name}, \\(o\\) => ${name}\\((input|id), o\\)\\)`));
     }
-    const auth = readFileSync(resolve(__dirname, "../contexts/AuthContext.tsx"), "utf8");
-    expect(auth).toContain("withTimeout(SESSION_RENEWAL_TIMEOUT_MS, (o) => requestTokenRefresh({ refreshToken: decision.refreshToken }, o), {");
-    // a late renewal answer is applied only through the same guarded path as a timely one
-    expect(auth).toMatch(/onLate: \(late\) => \{\s*void adopt\(late\)\.catch\(\(\) => \{\}\);/);
-    expect(auth).toMatch(/const adopt = async[\s\S]{0,300}if \(sessionEpochRef\.current !== snapshot\.generation\) return null;[\s\S]{0,120}if \(!\(await saveRotatedTokens\(current\.token, renewed\)\)\) return null;/);
+    // Reading the photo back has a limit too, and running into it is reported as a storage matter, not as "no connection".
+    expect(provider).toMatch(/loadImage: \(item\) =>\s*withTimeout\(PHOTO_READ_TIMEOUT_MS, \(\) => scanFiles\.loadImage\(item\.owner, item\.imageFile \?\? ""\)\)\.catch\(/);
+    expect(provider).toContain('if (err instanceof RequestTimeoutError) throw new ScanFileError("storage-unavailable", "photo read timed out");');
   });
 });
 
@@ -776,7 +818,7 @@ describe("C — the take-over of the earlier queue, interrupted anywhere", () =>
     expect(storage.current.log.map(([k]) => k)).toEqual([INDEX, FLAG]);
     expect(storage.current.data.has(LEGACY)).toBe(false);
     expect(indexIds()).toEqual(LEGACY_IDS);
-    expect(stored(FLAG)).toBe("1");
+    expect(stored(FLAG)).toBe(fingerprintOf(JSON.stringify(legacy()))); // a mark of exactly the value that was taken over
   });
 
   it("stopped after EVERY single storage change in turn: the old queue is never gone before the new index holds it, and the next start finishes", async () => {
@@ -801,7 +843,7 @@ describe("C — the take-over of the earlier queue, interrupted anywhere", () =>
       expect(next.items.map((it) => it.id), `restart after ${died}`).toEqual(LEGACY_IDS); // each exactly once
       expect(indexIds(), `restart after ${died}`).toEqual(LEGACY_IDS);
       expect(storage.current.data.has(LEGACY), `restart after ${died}`).toBe(false);
-      expect(stored(FLAG), `restart after ${died}`).toBe("1");
+      expect(stored(FLAG), `restart after ${died}`).toBe(fingerprintOf(JSON.stringify(legacy())));
       expect(next.items[0]?.imageData, `restart after ${died}`).toBeUndefined(); // the photo is a file
       expect(next.items[0]?.imageFile, `restart after ${died}`).toBe("1763630000001-aaa.jpg");
       expect(next.items.map((it) => it.owner)).toEqual([A, B, A]); // owners unchanged
@@ -810,7 +852,7 @@ describe("C — the take-over of the earlier queue, interrupted anywhere", () =>
 
   it("the completion note exists but the new index does NOT hold the items (the earlier defect): the old queue is not deleted — it is taken over", async () => {
     storage.current.data.set(LEGACY, JSON.stringify(legacy()));
-    storage.current.data.set(FLAG, "1");
+    storage.current.data.set(FLAG, "1"); // as a multi-key write that is not atomic could leave it
     const load = await (await freshModule()).loadQueue(createScanFileStore(createMemoryScanDriver()), T0);
     expect(load.items.map((it) => it.id)).toEqual(LEGACY_IDS);
     expect(load.migrated).toBe(3);

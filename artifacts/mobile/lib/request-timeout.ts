@@ -49,23 +49,34 @@ export function withTimeout<T>(ms: number, call: (options: { signal?: AbortSigna
   return new Promise<T>((resolve, reject) => {
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     let settled = false;
+    let lastTurn: ReturnType<typeof setTimeout> | null = null;
     const timer = setTimeout(() => {
       if (settled) return;
-      settled = true;
-      try {
-        controller?.abort();
-      } catch {
-        // Asking it to stop is best effort; the deadline holds regardless.
-      }
-      reject(new RequestTimeoutError(ms));
+      // One more turn of the event loop before giving up: after the app was
+      // suspended, an answer that already arrived and this timer become due at
+      // the same moment — the answer wins.
+      lastTurn = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try {
+          controller?.abort();
+        } catch {
+          // Asking it to stop is best effort; the deadline holds regardless.
+        }
+        reject(new RequestTimeoutError(ms));
+      }, 0);
     }, ms);
+    const stopTimers = (): void => {
+      clearTimeout(timer);
+      if (lastTurn !== null) clearTimeout(lastTurn);
+    };
 
     let work: Promise<T>;
     try {
       work = Promise.resolve(call(controller ? { signal: controller.signal } : {}));
     } catch (err) {
       settled = true;
-      clearTimeout(timer);
+      stopTimers();
       reject(err);
       return;
     }
@@ -81,13 +92,13 @@ export function withTimeout<T>(ms: number, call: (options: { signal?: AbortSigna
           return;
         }
         settled = true;
-        clearTimeout(timer);
+        stopTimers();
         resolve(value);
       },
       (err) => {
         if (settled) return; // a late failure concerns nobody any more
         settled = true;
-        clearTimeout(timer);
+        stopTimers();
         reject(err);
       },
     );
@@ -102,5 +113,14 @@ export const SYNC_TIMEOUT_MS = {
   upsertOwnCard: 60_000,
 } as const;
 
-/** Limit for renewing the session (POST /auth/refresh). */
+/** Limit for reading a queued photo back from the device before it is sent. */
+export const PHOTO_READ_TIMEOUT_MS = 30_000;
+
+/**
+ * How long ONE request waits for a session renewal (POST /auth/refresh) before
+ * it fails by itself. The renewal request is not cancelled by this — see
+ * lib/session-renewal.ts.
+ */
 export const SESSION_RENEWAL_TIMEOUT_MS = 30_000;
+/** A renewal request silent for this long counts as lost; only then may its refresh token be sent again. */
+export const SESSION_RENEWAL_ABANDON_MS = 120_000;

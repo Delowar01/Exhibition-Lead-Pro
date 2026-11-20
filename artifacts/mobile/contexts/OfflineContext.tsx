@@ -37,6 +37,7 @@ import {
   queueOwnerKey,
   removeOwnedItem,
   resolveOwnedConflict,
+  replacedBy,
   retryOwnedItem,
   syncOwnedQueue,
   visibleQueue,
@@ -50,10 +51,18 @@ import {
   type QueueResolution,
   type SyncResult,
 } from "@/lib/offline-queue-model";
-import { enqueueFailureOf, recoveredItems, rememberDone, type EnqueueResult, type QueueIncident } from "@/lib/offline-queue-store-model";
+import {
+  enqueueFailureOf,
+  planAdoption,
+  rememberDone,
+  restoredToProcess,
+  type EnqueueResult,
+  type QueueIncident,
+} from "@/lib/offline-queue-store-model";
 import { classifySyncFailure, createPerformer } from "@/lib/offline-sync";
-import { SYNC_TIMEOUT_MS, withTimeout } from "@/lib/request-timeout";
+import { PHOTO_READ_TIMEOUT_MS, RequestTimeoutError, SYNC_TIMEOUT_MS, withTimeout } from "@/lib/request-timeout";
 import { scanFiles } from "@/lib/scan-file-driver";
+import { ScanFileError } from "@/lib/scan-files";
 
 const MANUAL_OFFLINE_KEY = "csp_offline_manual";
 
@@ -220,6 +229,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   const [recoveredCount, setRecoveredCount] = useState(0);
   const [incident, setIncident] = useState<QueueIncident | null>(null);
   const incidentRef = useRef<QueueIncident | null>(null);
+  // Photos made up to this time whose entry is missing wait for the user (0 = none).
+  const holdBeforeRef = useRef(0);
 
   // Refs mirror the latest state so the (long-lived) sync loop never works off
   // a stale closure while items are being mutated mid-flight.
@@ -271,14 +282,21 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       setQueue(stored.items);
       setStorageProblem(stored.writable ? "none" : stored.damagedCopyFailed ? "index-damaged-unsaved" : "index-unreadable");
       incidentRef.current = stored.incident;
+      holdBeforeRef.current = stored.holdUnlistedBefore;
       setIncident(stored.incident);
       setLegacyUnreadable(stored.legacyUnreadable);
       // Found damaged just now: say so at once, wherever the user is. The Sync
       // Center keeps the full report (what was read back, what was not, that
       // the original is kept) until the user has dealt with it.
-      if (stored.indexDamaged) {
-        const body = stored.writable ? "sync.damagedAlertBody" : stored.damagedCopyFailed ? "sync.storageDamagedUnsavedBody" : "sync.storageUnreadableBody";
-        Alert.alert(i18n.t("sync.damagedTitle"), i18n.t(body));
+      if (stored.indexDamaged || stored.indexLost) {
+        const body = !stored.writable
+          ? stored.damagedCopyFailed
+            ? "sync.storageDamagedUnsavedBody"
+            : "sync.storageUnreadableBody"
+          : stored.indexLost
+            ? "sync.lostAlertBody"
+            : "sync.damagedAlertBody";
+        Alert.alert(i18n.t(stored.indexLost ? "sync.lostTitle" : "sync.damagedTitle"), i18n.t(body));
       }
       setManualOfflineState(manual === "1");
       setHydrated(true);
@@ -351,7 +369,13 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
           createContact: (input) => withTimeout(SYNC_TIMEOUT_MS.createContact, (o) => createContact(input, o)),
           upsertOwnCard: (input) => withTimeout(SYNC_TIMEOUT_MS.upsertOwnCard, (o) => upsertOwnCard(input, o)),
         },
-        loadImage: (item) => scanFiles.loadImage(item.owner, item.imageFile ?? ""),
+        // Reading the photo has a limit too: a read that hangs must not leave the item "being sent" for ever.
+        loadImage: (item) =>
+          withTimeout(PHOTO_READ_TIMEOUT_MS, () => scanFiles.loadImage(item.owner, item.imageFile ?? "")).catch((err: unknown) => {
+            // Not a network matter: the device did not hand the photo over in time. Tried again later.
+            if (err instanceof RequestTimeoutError) throw new ScanFileError("storage-unavailable", "photo read timed out");
+            throw err;
+          }),
         language: () => (i18n.language === "ar" ? "ar" : "en"),
       }),
     [],
@@ -537,24 +561,28 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       const listed = new Set<string>([...queueRef.current.map((it) => it.id), ...inFlightRef.current]);
       const orphans = await scanFiles.findOrphans(owner, listed);
       if (orphans.length === 0) return;
-      const done = new Set(doneRef.current);
-      for (const o of orphans) {
-        if (done.has(o.id)) await scanFiles.deleteImage(owner, o.file);
-      }
-      if (ownerRef.current !== owner) return;
-      const present = new Set<string>([...queueRef.current.map((it) => it.id), ...inFlightRef.current]);
-      // A photo from BEFORE the list was last found damaged lost its entry with
-      // the list: it is put back but NOT sent by itself (see recoveredItems).
-      const restored = recoveredItems(
-        orphans.filter((o) => !done.has(o.id) && !present.has(o.id)),
+      // What to do with them is decided by planAdoption (lib/offline-queue-store-model.ts):
+      // leftovers of finished work are removed; the rest comes back as scans —
+      // those from BEFORE the list was damaged or lost wait for the user and
+      // are not sent by themselves.
+      const plan = planAdoption({
+        orphans,
         owner,
-        Date.now(),
-        incidentRef.current?.at ?? 0,
-      );
+        doneIds: doneRef.current,
+        presentIds: new Set<string>([...queueRef.current.map((it) => it.id), ...inFlightRef.current]),
+        now: Date.now(),
+        heldBefore: holdBeforeRef.current,
+      });
+      for (const o of plan.remove) await scanFiles.deleteImage(owner, o.file);
+      if (ownerRef.current !== owner) return;
+      // The queue may have changed while files were removed: never restore what is listed by now.
+      const presentNow = new Set<string>([...queueRef.current.map((it) => it.id), ...inFlightRef.current]);
+      const restored = plan.restore.filter((it) => !presentNow.has(it.id));
       if (restored.length === 0) return;
       await commit([...restored, ...queueRef.current]);
-      setRecoveredCount(restored.length);
-      if (isOnlineRef.current && restored.some((it) => it.status === "pending")) void syncNow();
+      // "Restored and will be processed" counts only what really is processed by itself.
+      setRecoveredCount(restoredToProcess(restored));
+      if (isOnlineRef.current && restoredToProcess(restored) > 0) void syncNow();
     })();
   }, [hydrated, owner, commit, syncNow]);
 
@@ -594,6 +622,11 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       const before = queueRef.current;
       const next = enqueueItem(before, draft, itemOwner, Date.now(), id);
       if (!next) return false;
+      // What this entry replaces (an earlier card edit of the same account) will
+      // never be sent: it is recorded as finished in the same save, so nothing
+      // — an older queue still on the device, for instance — can bring it back.
+      const superseded = replacedBy(before, next).map((it) => it.id);
+      for (const old of superseded) doneRef.current = rememberDone(doneRef.current, old);
       if (await commit(next)) {
         // Kept while online (sending it failed a moment ago): it is tried again
         // by itself, after a pause — not at once, and not only when the user
@@ -606,8 +639,9 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       // Not stored: it must not look kept. Take it back out of the list — and
       // put back what it had replaced (an earlier card edit of the same account),
       // so a failed save never costs the user the edit that WAS kept.
-      const kept = new Set(next.map((it) => it.id));
-      const replaced = before.filter((it) => !kept.has(it.id));
+      const replaced = replacedBy(before, next);
+      // …and it is not finished after all.
+      if (superseded.length > 0) doneRef.current = doneRef.current.filter((done) => !superseded.includes(done));
       const now = queueRef.current;
       const present = new Set(now.map((it) => it.id));
       await commit([...replaced.filter((it) => !present.has(it.id)), ...now.filter((it) => it.id !== id)]);

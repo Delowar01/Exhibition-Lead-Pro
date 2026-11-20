@@ -170,6 +170,8 @@ synthetic test cards and test accounts only.
 | O22 | After O20: restart the app — the report and the recovered entries are still there; "Delete the kept copy" asks first, and afterwards the report is gone and the queue unchanged | | |
 | O23 | Upgrade from the previous APK and force-stop the app repeatedly during its first start: every queued capture is present exactly once afterwards | | |
 | O24 | Sync on a network that accepts the connection but never answers (proxy that stalls): each request gives up at its limit (3 min for a photo, 1 min otherwise), the items keep waiting, and nothing is created twice when the network returns | | |
+| O25 | Clear the app's stored settings but not its files (debug build), with photos of queued scans on the device: an alert and the home banner report the lost list; the photos are listed under "needs attention" and are not sent until Retry | | |
+| O26 | Queue a card edit, upgrade from the previous APK, edit the card again, restart several times: only the newest edit is ever sent | | |
 
 ## C. Session
 
@@ -184,6 +186,8 @@ synthetic test cards and test accounts only.
 | S7 | Wrong password several times: "too many attempts" message | | |
 | S8 | Settings → change password with a WRONG current password: "incorrect password" is shown, the user stays signed in, biometric sign-in still works afterwards | | |
 | S9 | Change the profile photo, then keep using the app past the access-token lifetime: still signed in | | |
+| S10 | Session renewal on a connection that stalls for about a minute and then resumes (network throttling at the moment the access token has expired): requests fail meanwhile, nobody is signed out, and the app works again by itself once the answer arrives | | |
+| S11 | Put the app in the background during a sync and a renewal for several minutes, then return: no spurious "no connection", nobody signed out | | |
 
 ## D. AI messages (needs a test tenant an operator can configure)
 

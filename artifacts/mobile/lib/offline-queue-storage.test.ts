@@ -97,7 +97,7 @@ describe("upgrade: the queue of the previous version is taken over, nothing is l
     const index = storage.current.data.get(INDEX)!;
     expect(index).not.toContain("base64");
     expect(index.length).toBeLessThan(3000);
-    expect(storage.current.data.get(FLAG)).toBe("1");
+    expect(storage.current.data.get(FLAG)).toMatch(/^v2:\d+:[0-9a-f]+$/); // a mark of the old queue's value, set once the take-over was verified
     expect(storage.current.data.has(LEGACY)).toBe(false);
 
     // account isolation is exactly as before

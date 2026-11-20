@@ -20,7 +20,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import type { Locale } from "@/hooks/useLocale";
 import type { QueueItem } from "@/lib/offline-queue";
-import { incidentNeedsAttention } from "@/lib/offline-queue-store-model";
+import { RECOVERED_DETAILS_LOST, incidentNeedsAttention } from "@/lib/offline-queue-store-model";
 import { syncProblemKey } from "@/lib/offline-sync";
 
 function sourceLabel(t: Locale["t"], source: string): string {
@@ -89,6 +89,8 @@ export default function SyncScreen() {
   const pending = queue.filter((it) => it.status !== "failed" && it.status !== "conflict");
   const canSync = isOnline && queue.length > 0 && !isSyncing;
   const photos = queue.filter((it) => it.kind === "scan" && typeof it.imageBytes === "number");
+  // This account's photos that were put back without their details and wait for a decision.
+  const heldPhotos = queue.filter((it) => it.errorKind === RECOVERED_DETAILS_LOST).length;
   const photoMb = photos.reduce((sum, it) => sum + (it.imageBytes ?? 0), 0) / (1024 * 1024);
 
   // Removing a queued capture cannot be undone: ask first.
@@ -316,15 +318,21 @@ export default function SyncScreen() {
               <Feather name="alert-triangle" size={18} color={colors.destructive} />
               <View style={{ flex: 1, gap: 6 }} testID="notice-queue-damaged">
                 <Text style={[styles.noticeText, { color: colors.foreground, textAlign, fontFamily: "Inter_600SemiBold", flex: 0 }]}>
-                  {t("sync.damagedTitle")}
+                  {t(incident.kind === "lost" ? "sync.lostTitle" : "sync.damagedTitle")}
                 </Text>
-                <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>{t("sync.damagedBody")}</Text>
                 <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>
-                  {t("sync.damagedRecovered", { count: incident.salvaged })}
-                  {"\n"}
-                  {incident.unreadable === null ? t("sync.damagedUnreadableUnknown") : t("sync.damagedUnreadable", { count: incident.unreadable })}
+                  {t(incident.kind === "lost" ? "sync.lostBody" : "sync.damagedBody")}
                 </Text>
-                <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>{t("sync.damagedPhotos")}</Text>
+                {incident.kind === "damaged" ? (
+                  <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>
+                    {t("sync.damagedRecovered", { count: incident.salvaged })}
+                    {"\n"}
+                    {incident.unreadable === null ? t("sync.damagedUnreadableUnknown") : t("sync.damagedUnreadable", { count: incident.unreadable })}
+                  </Text>
+                ) : null}
+                {heldPhotos > 0 ? (
+                  <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>{t("sync.damagedPhotos")}</Text>
+                ) : null}
                 {incident.copies.length > 0 ? (
                   <>
                     <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>{t("sync.damagedCopyKept")}</Text>
@@ -334,7 +342,14 @@ export default function SyncScreen() {
                       </Text>
                     </Pressable>
                   </>
-                ) : null}
+                ) : (
+                  // Nothing is kept that could be deleted: the report simply stays until it was read.
+                  <Pressable onPress={() => void discardDamagedCopies()} hitSlop={8} accessibilityRole="button" testID="dismiss-damaged-notice">
+                    <Text style={[styles.noticeText, { color: colors.primary, textAlign, fontFamily: "Inter_600SemiBold", flex: 0 }]}>
+                      {t("sync.damagedDismiss")}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             </View>
           </Card>

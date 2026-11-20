@@ -80,7 +80,15 @@ export function createMemoryScanDriver(root: string | null = "file:///data/app/f
       return v === undefined ? null : base64ByteLength(v);
     },
     async list(uri) {
-      return driver.names(uri);
+      // Like the device: the files AND the folders directly inside `uri`.
+      const entries = new Set<string>(driver.names(uri));
+      for (const known of [...files.keys(), ...dirs]) {
+        if (!known.startsWith(uri) || known === uri) continue;
+        const rest = known.slice(uri.length);
+        const slash = rest.indexOf("/");
+        if (slash > 0) entries.add(rest.slice(0, slash));
+      }
+      return [...entries];
     },
     async freeBytes() {
       return driver.free;

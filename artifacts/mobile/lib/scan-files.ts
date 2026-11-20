@@ -215,6 +215,11 @@ export interface ScanFileStore {
   cleanPartials(owner: string, now: number, olderThanMs?: number): Promise<number>;
   /** Number of image files and their total size for one owner. */
   usage(owner: string): Promise<{ files: number; bytes: number }>;
+  /**
+   * Is a capture photo of ANY account stored on this device? Only a yes/no:
+   * nothing is read, attributed or changed. `null` = it could not be found out.
+   */
+  anyImages(): Promise<boolean | null>;
 }
 
 const TMP_SUFFIX = ".part";
@@ -374,6 +379,28 @@ export function createScanFileStore(driver: ScanFileDriver): ScanFileStore {
         }
       }
       return removed;
+    },
+
+    async anyImages() {
+      const root = driver.root();
+      if (!root) return false;
+      let dirs: string[];
+      try {
+        dirs = await driver.list(root);
+      } catch {
+        return null;
+      }
+      let unknown = false;
+      for (const name of dirs) {
+        if (ownerOfDirName(name) === null) continue; // not an account's folder (quarantine, foreign)
+        try {
+          const files = await driver.list(`${root}${name}/`);
+          if (files.some((f) => isSafeScanFileName(f))) return true;
+        } catch {
+          unknown = true;
+        }
+      }
+      return unknown ? null : false;
     },
 
     async usage(owner) {

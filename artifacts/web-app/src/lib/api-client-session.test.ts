@@ -11,11 +11,18 @@
 //   • sign-in endpoints never trigger a refresh;
 //   • 403 FEATURE_NOT_ENTITLED notifies the entitlement observer and nothing else.
 //
-// The handler below is a line-for-line replica of the one in src/App.tsx, with
-// localStorage and the refresh endpoint replaced by in-memory stand-ins. Every
-// scenario here was also run against the client as it was BEFORE the change
-// (commit cd08c73): the outcomes are identical; the one difference is noted at
-// the scenario concerned.
+// The handler below is a hand-made replica of the one in src/App.tsx (that one
+// is defined inside a component and cannot be imported), with localStorage and
+// the refresh endpoint replaced by in-memory stand-ins.
+//
+// This file was also run against the client as it was BEFORE the change
+// (commit cd08c73). 14 of the 17 scenarios behave identically there. Three
+// differ, none of them reachable by the portal as it is today — each is marked
+// "DIFFERS FROM BEFORE" at its test:
+//   • a handler that throws (the portal's handler catches everything itself);
+//   • two requests rejected at once with DIFFERENT tokens (the portal sends no
+//     request with a token of its own);
+//   • a request that was cancelled before its 401 arrived.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type Client = typeof import("@workspace/api-client-react");
@@ -204,6 +211,7 @@ describe("web portal: the 401 → refresh → retry contract", () => {
     expect(w.sent).toEqual(["/api/a Bearer T1"]);
   });
 
+  // DIFFERS FROM BEFORE: the earlier client passed the handler's own error on to the caller.
   it("a handler that throws leaves the caller with the request's own 401", async () => {
     const { w, client } = await setup();
     client.setOnUnauthorized(async () => {
@@ -262,6 +270,7 @@ describe("web portal: requests that are not the session's", () => {
     expect(w.sent).toEqual(["/api/b Bearer OTHER", "/api/b Bearer OTHER"]);
   });
 
+  // DIFFERS FROM BEFORE: the earlier client shared one refresh here (same outcomes, one refresh instead of two).
   it("two requests rejected at once with DIFFERENT tokens never refresh at the same moment (no refresh-token reuse, no sign-out)", async () => {
     const { w, client } = await setup();
     let open: () => void = () => {};
@@ -279,6 +288,7 @@ describe("web portal: requests that are not the session's", () => {
     expect(w.refreshCalls).toBe(2);
   });
 
+  // DIFFERS FROM BEFORE: the earlier client refreshed and repeated the cancelled request.
   it("a request its caller cancelled is not repeated when its 401 arrives late, and starts no refresh", async () => {
     const { w, client } = await setup();
     let release: (r: Response) => void = () => {};

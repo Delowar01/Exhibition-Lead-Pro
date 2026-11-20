@@ -263,9 +263,10 @@ their pure rules and by source checks, not by running the providers.
 ## 5b. Final hardening (targeted correctness and data-preservation pass)
 
 Each point was first reproduced on the previous head of this branch (or ruled
-out), then corrected, then covered by `lib/hardening.test.ts` (49 tests) and,
-for the shared API client, `artifacts/web-app/src/lib/api-client-session.test.ts`
-(17 tests).
+out), then corrected, then covered by `lib/hardening.test.ts` (50 tests),
+`lib/hardening-review.test.ts` (25 tests, the findings of the second review,
+§5c) and, for the shared API client,
+`artifacts/web-app/src/lib/api-client-session.test.ts` (17 tests).
 
 ### A. A damaged queue index
 
@@ -281,25 +282,37 @@ Confirmed on the previous head:
 Now:
 
 - **What can be read is read.** A value that is not valid JSON is searched for
-  the complete entries it still contains, also after a broken one. Each comes
-  back exactly as stored (owner, event, position, progress, the user's
-  decision). Nothing is repaired or guessed; an incomplete entry is counted.
+  the complete entries it still contains, also after a broken one and also when
+  the damage upset the quoting. Each comes back exactly as stored (owner,
+  event, position, progress, the user's decision). Nothing is repaired or
+  guessed. How many entries a damaged text has lost cannot be told, so no
+  number is claimed for it; a number is given only when it is exact (a
+  well-formed list with entries that are not queue items).
 - **The original is kept first.** Byte for byte, under a key of its own, read
   back and compared, before a readable index replaces the damaged one. A later
   incident uses the next key (three in all); the same original is never stored
   twice. If it cannot be kept — no space, or all three places hold earlier
   originals — nothing is written at all for that session and the damaged index
   stays where it is.
-- **It is said.** An alert at once, and a report in the Sync Center: entries
-  read back, entries that could not be read, that the original is kept. The
-  report stays until the user removes the kept copy (a confirmed action; the
-  only way an original ever leaves the device).
+- **It is said.** An alert at once, a line on the home screen, and a report in
+  the Sync Center: entries read back, entries that could not be read, that the
+  original is kept. The report stays until the user removes the kept data (a
+  confirmed action; the only way an original ever leaves the device) or, where
+  nothing is kept, confirms having seen it. The record and the kept data are
+  device-wide; the report says so.
+- **A list that is gone altogether.** No stored list at all while photos of
+  captures are on the device means the store was cleared or replaced
+  underneath the app (Android replaces a database it cannot open). This is
+  recorded and reported the same way, and those photos wait for the user. (One
+  photo whose very first save was interrupted looks the same and is treated
+  the same.)
 - **Nothing unknown is sent.** A photo from before the damage whose entry was
   lost is listed under "needs attention" and is not sent by an automatic run or
   by "Sync now" — only by the user's own Retry on it. The time of the damage is
   kept for good, so this also holds for an account that signs in weeks later.
   A photo newer than the damage only missed its entry (the app stopped while
-  saving) and is an ordinary waiting scan, as before.
+  saving) and is an ordinary waiting scan, as before. If the record of the
+  damage cannot be read at a start, every unlisted photo waits.
 - **Entries without a photo.** A recovered scan whose photo is gone is shown as
   "photo no longer on this device" and is not retried by itself; one the server
   had already read needs no photo and resumes at the contact.
@@ -319,9 +332,17 @@ asked to stop AND the caller is released with a "no answer" error. A late
 answer reaches nobody: the sync attempt it belonged to is closed (it can
 neither send its next request nor record progress), and the API client does
 not repeat a request whose caller has given up — also when its 401 arrives
-late. The session renewal has the same hard limit (30 s); if its answer still
-arrives later it is taken into use only for the same session and only while
-that session's tokens are unchanged.
+late. An answer that becomes due together with the deadline (the app was
+suspended) wins. Reading a queued photo back has a limit as well.
+
+The session renewal is different on purpose (`lib/session-renewal.ts`): its
+REQUEST is never cancelled, because the answer carries the only copy of the new
+refresh token. The 30 s limit ends the waiting of the request that needed the
+renewal; the renewal itself goes on, further requests wait on the same one
+instead of sending the single-use token again, and the answer is taken into
+use exactly once whenever it arrives — only for the session whose tokens are
+still the ones in use. A renewal silent for two minutes counts as lost; only
+then may its token be sent again.
 
 Ruled out: duplicate processing after a late answer (the scan check and the
 duplicate detection already cover "answer lost"); a late answer acting under
@@ -341,7 +362,11 @@ its items were nowhere.
 Now no step writes several keys together. The order is: new index, read back
 and checked → completion note → old queue removed. The old queue goes only when
 the stored index (or the list of finished items) accounts for every one of its
-items; the note alone never authorises it. Stopped after each single storage
+items; the note alone never authorises it. The note is a mark of the old
+queue's exact value: the same old queue is never taken over a second time, so
+what was uploaded, removed or replaced since cannot come back from one that
+stays on the device (because part of it is unreadable, or its removal fails).
+A card edit replaced by a newer one is recorded as finished. Stopped after each single storage
 change in turn, the old queue is never gone before the new index holds it, and
 the next start completes the take-over without duplicates. The ordinary save
 writes the list of finished items before the index, each on its own, so the
@@ -371,6 +396,29 @@ earlier client, all outside what the portal does: a handler that throws leaves
 the caller with the request's 401 instead of the handler's error; two
 differently-tokened rejections get two refreshes one after the other instead of
 one shared; a cancelled request is not repeated when its 401 arrives late.
+
+## 5c. Second independent review (of the hardening itself)
+
+No blocker, no loss of queued data, nothing sent under a wrong account. One
+major and several minor findings, all corrected; regression tests in
+`lib/hardening-review.test.ts`.
+
+| # | Finding | Correction |
+| --- | --- | --- |
+| 1 | The renewal deadline cancelled the renewal request. A slow answer was thrown away, the next renewal presented the replaced token, the API revoked the session and the user was signed out | The renewal request is never cancelled; requests wait on the one renewal; its answer is taken into use once, whenever it arrives |
+| 2 | An old queue that stays on the device was merged again at every start: a replaced card edit, or an item uploaded more than 400 finished captures ago, came back and would be sent again | The completion note is a mark of the old queue's value; the same value is not taken over twice; replaced card edits are recorded as finished |
+| 3 | After an interrupted removal of the kept copy, a later damage kept the OLD time: photos taken in between counted as "newer than the damage" and were sent unasked. The notice could claim a kept copy that was gone | The time is kept only when the very same original is met again; a record naming a missing copy is put right at the next start |
+| 4 | Damage that upset the quoting hid the entries after it, and the Sync Center showed "could not be read: 1" when more were lost | The salvage tries every following entry start afresh; no number is claimed for damaged text |
+| 5 | "N photos were restored and will be processed" also counted photos that wait for the user | Only photos that really are processed by themselves are counted |
+| — | A store that was cleared (not merely damaged) while photos remain: the photos were sent unasked, without notice | Detected, recorded, reported; the photos wait for the user |
+| — | A kept original the record did not name could never be removed by the user | Every place for originals is looked at; all are listed |
+| — | Wording that promised more than the code does (among them "nothing was sent by itself") | Rewritten in both languages; the session notice of the sync no longer tells a signed-in user to sign in again |
+| — | Tests that did not test what their name said; a test-file header that understated the differences to the earlier API client | Tied to the real recovery paths; the three differences are named |
+
+Left as is: a write to the device's storage that never returns cannot be given
+a deadline safely (a late write could land after a newer one); the two React
+providers are still covered by their extracted rules and by source checks, not
+by being run.
 
 ## 6. Open — backend dependencies
 
