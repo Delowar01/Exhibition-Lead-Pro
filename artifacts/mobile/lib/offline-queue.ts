@@ -1,7 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { inspectStoredQueue, serializeQueue, type QueueItem } from "./offline-queue-model";
-import { MAX_DONE_IDS, MAX_INDEX_CHARS, externalizeImages, mergeLegacyItems, parseDoneIds } from "./offline-queue-store-model";
+import { readStoredQueue, serializeQueue, type QueueItem } from "./offline-queue-model";
+import {
+  MAX_DAMAGED_COPIES,
+  MAX_DONE_IDS,
+  MAX_INDEX_CHARS,
+  externalizeImages,
+  mergeLegacyItems,
+  parseDoneIds,
+  parseIncident,
+  uncoveredIds,
+  type QueueIncident,
+} from "./offline-queue-store-model";
 import type { ScanFileStore } from "./scan-files";
 
 export type { QueueItem, QueueItemKind, QueueItemStatus } from "./offline-queue-model";
@@ -9,26 +19,38 @@ export { makeQueueId } from "./offline-queue-model";
 
 // Phase 2 Batch 1 — where the queue lives.
 //
-//   csp_offline_queue_v2       the queue INDEX: every item, but a scan carries
-//                              only the NAME of its image file (lib/scan-files.ts).
-//   csp_offline_queue          the queue of earlier versions, with the images
-//                              inline. Read once: its items move into the index,
-//                              their images into files. It is removed only after
-//                              the index holding those items was written, and it
-//                              is left untouched when it cannot be read.
-//   csp_offline_queue_migrated "1" once that move is complete.
-//   csp_offline_done           ids of items that were uploaded or removed, so an
-//                              image file left behind is never taken for a new scan.
-//   csp_offline_queue_damaged  copy of an index value that was not a queue, set
-//                              aside before a fresh index replaces it.
+//   csp_offline_queue_v2        the queue INDEX: every item, but a scan carries
+//                               only the NAME of its image file (lib/scan-files.ts).
+//   csp_offline_queue           the queue of earlier versions, with the images
+//                               inline. Its items move into the index, their
+//                               images into files. It is removed only after the
+//                               STORED index was read back and found to hold
+//                               every one of them, and it is left untouched
+//                               when it cannot be read (in whole or in part).
+//   csp_offline_queue_migrated  "1" once that move was verified.
+//   csp_offline_done            ids of items that were uploaded or removed, so an
+//                               image file left behind is never taken for a new
+//                               scan and a stale index cannot bring them back.
+//   csp_offline_queue_damaged,  the ORIGINAL of an index that could not be read
+//   …_damaged_2, …_damaged_3    as it was, each kept untouched under a key of
+//                               its own until the user removes it.
+//   csp_offline_queue_incident  the record of that damage (when, how much was
+//                               read back, where the originals are).
 //
-// Nothing here deletes queued work on its own, and no write happens while the
-// stored index is unknown or unreadable.
+// Rules that hold throughout:
+//   • nothing here deletes queued work on its own;
+//   • no write happens while the stored index is unknown or unreadable;
+//   • a damaged index is never replaced before its original is safely kept;
+//   • every step is ONE key written at a time, in an order whose every
+//     interruption leaves a state the next start completes. No step relies on
+//     several keys being written together (that is one transaction on Android
+//     but not on every platform this code runs on).
 export const OFFLINE_QUEUE_KEY = "csp_offline_queue_v2";
 export const LEGACY_QUEUE_KEY = "csp_offline_queue";
 const MIGRATED_FLAG_KEY = "csp_offline_queue_migrated";
 const DONE_KEY = "csp_offline_done";
-const DAMAGED_KEY = "csp_offline_queue_damaged";
+const DAMAGED_KEYS = ["csp_offline_queue_damaged", "csp_offline_queue_damaged_2", "csp_offline_queue_damaged_3"] as const;
+const INCIDENT_KEY = "csp_offline_queue_incident";
 
 export interface QueueLoad {
   /** Every stored item (all accounts and quarantined ones). */
@@ -36,13 +58,18 @@ export interface QueueLoad {
   /** Ids already uploaded or removed (see csp_offline_done). */
   doneIds: string[];
   /**
-   * False when the stored index could not be read at all: nothing is written
-   * for the rest of this session, so whatever is stored cannot be overwritten.
+   * False when the stored index could not be read at all, or was damaged and
+   * its original could not be kept: nothing is written for the rest of this
+   * session, so whatever is stored cannot be overwritten.
    */
   writable: boolean;
-  /** The index held something that was not a queue (set aside under csp_offline_queue_damaged when possible). */
+  /** The index was found damaged in THIS load (see `incident` for the lasting record). */
   indexDamaged: boolean;
-  /** The queue of an earlier version exists but cannot be read on this device. It is kept as it is. */
+  /** The index was damaged and its original could NOT be kept (no space, no free place): nothing was touched. */
+  damagedCopyFailed: boolean;
+  /** The lasting record of a damaged index (null = it never happened on this device). */
+  incident: QueueIncident | null;
+  /** The queue of an earlier version exists but cannot be read (fully) on this device. It is kept as it is. */
   legacyUnreadable: boolean;
   /** Items taken over from the earlier version's queue in this load. */
   migrated: number;
@@ -51,82 +78,141 @@ export interface QueueLoad {
 }
 
 let writable = false;
+let incident: QueueIncident | null = null;
+/** The finished-id list as last stored by this session (null = not written yet). */
+let storedDone: string | null = null;
+
+async function read(key: string): Promise<{ ok: true; value: string | null } | { ok: false }> {
+  try {
+    return { ok: true, value: await AsyncStorage.getItem(key) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Store one value and confirm it by reading it back. */
+async function storeVerified(key: string, value: string): Promise<boolean> {
+  try {
+    await AsyncStorage.setItem(key, value);
+    return (await AsyncStorage.getItem(key)) === value;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Keep the original of a damaged index, untouched, under a key of its own.
+ * Returns the keys now holding originals, or null when it could not be kept.
+ * The same original is never stored twice (an interrupted recovery repeats).
+ */
+async function keepDamagedOriginal(raw: string, known: readonly string[]): Promise<string[] | null> {
+  const occupied: string[] = [];
+  let free: string | null = null;
+  for (const key of DAMAGED_KEYS) {
+    const existing = await read(key);
+    if (!existing.ok) {
+      occupied.push(key); // cannot be inspected: never written over
+      continue;
+    }
+    if (existing.value === raw) return [...new Set([...known, ...occupied, key])].filter((k) => (DAMAGED_KEYS as readonly string[]).includes(k));
+    if (existing.value !== null && existing.value !== "") occupied.push(key);
+    else if (free === null) free = key;
+  }
+  if (free === null || occupied.length >= MAX_DAMAGED_COPIES) return null;
+  if (!(await storeVerified(free, raw))) return null;
+  return [...occupied, free];
+}
 
 /**
  * Read the stored queue, taking over an earlier version's queue on the way.
  * Never throws; every problem is reported in the result.
  */
-export async function loadQueue(files: ScanFileStore): Promise<QueueLoad> {
-  const out: QueueLoad = { items: [], doneIds: [], writable: true, indexDamaged: false, legacyUnreadable: false, migrated: 0, inlineImages: 0 };
+export async function loadQueue(files: ScanFileStore, now: number = Date.now()): Promise<QueueLoad> {
+  const out: QueueLoad = {
+    items: [],
+    doneIds: [],
+    writable: true,
+    indexDamaged: false,
+    damagedCopyFailed: false,
+    incident: null,
+    legacyUnreadable: false,
+    migrated: 0,
+    inlineImages: 0,
+  };
+  let publish = false;
+
+  const storedIncident = await read(INCIDENT_KEY);
+  out.incident = storedIncident.ok ? parseIncident(storedIncident.value) : null;
 
   // 1. The index.
-  let rawIndex: string | null = null;
-  try {
-    rawIndex = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
-  } catch {
+  const index = await read(OFFLINE_QUEUE_KEY);
+  if (!index.ok) {
     // Unreadable: do not guess, and above all do not write over it.
     out.writable = false;
     out.indexDamaged = true;
-  }
-  if (out.writable) {
-    const index = inspectStoredQueue(rawIndex);
-    if (index.state === "corrupt") {
+  } else {
+    const reading = readStoredQueue(index.value);
+    if (reading.state === "damaged") {
       out.indexDamaged = true;
-      try {
-        await AsyncStorage.setItem(DAMAGED_KEY, rawIndex ?? "");
-      } catch {
-        out.writable = false; // could not set it aside → keep it where it is
+      // The original first: nothing replaces a damaged index before it is kept.
+      const copies = await keepDamagedOriginal(index.value as string, out.incident?.copies ?? []);
+      const record: QueueIncident | null = copies
+        ? {
+            at: out.incident && copies.length === out.incident.copies.length ? out.incident.at : now,
+            salvaged: reading.items.length,
+            unreadable: reading.unreadable,
+            copies,
+            acknowledged: false,
+          }
+        : null;
+      if (record && (await storeVerified(INCIDENT_KEY, JSON.stringify(record)))) {
+        out.incident = record;
+        out.items = reading.items; // what could be read comes back exactly as it was stored
+        publish = true;
+      } else {
+        // Not kept, or not recorded: leave everything where it is.
+        out.writable = false;
+        out.damagedCopyFailed = true;
       }
     } else {
-      out.items = index.items;
+      out.items = reading.items;
     }
   }
 
   // 2. Ids already dealt with. An entry recorded as finished (uploaded, or
   //    removed by the user) whose removal from the index could not be stored
   //    is not brought back: it would be sent a second time.
-  try {
-    out.doneIds = parseDoneIds(await AsyncStorage.getItem(DONE_KEY));
-  } catch {
-    out.doneIds = [];
-  }
-  let finishedDropped = false;
+  const done = await read(DONE_KEY);
+  out.doneIds = done.ok ? parseDoneIds(done.value) : [];
   if (out.doneIds.length > 0 && out.items.length > 0) {
-    const done = new Set(out.doneIds);
-    const open = out.items.filter((it) => !done.has(it.id));
-    finishedDropped = open.length !== out.items.length;
+    const finished = new Set(out.doneIds);
+    const open = out.items.filter((it) => !finished.has(it.id));
+    if (open.length !== out.items.length) publish = true;
     out.items = open;
   }
 
-  // 3. The queue of an earlier version (once).
-  let migratedFlag = false;
-  try {
-    migratedFlag = (await AsyncStorage.getItem(MIGRATED_FLAG_KEY)) === "1";
-  } catch {
-    migratedFlag = false;
-  }
-  let legacyTaken = false;
-  if (!migratedFlag) {
-    let rawLegacy: string | null = null;
-    let legacyReadable = true;
-    try {
-      rawLegacy = await AsyncStorage.getItem(LEGACY_QUEUE_KEY);
-    } catch {
-      legacyReadable = false;
-      out.legacyUnreadable = true;
-    }
-    if (legacyReadable && rawLegacy !== null) {
-      const legacy = inspectStoredQueue(rawLegacy);
-      if (legacy.state === "corrupt") {
-        out.legacyUnreadable = true;
-      } else {
-        const merged = mergeLegacyItems(out.items, legacy.items, out.doneIds);
-        out.migrated = merged.added;
-        out.items = merged.items;
-        legacyTaken = true;
-      }
-    } else if (legacyReadable) {
-      legacyTaken = true; // nothing to take over
+  // 3. The queue of an earlier version. The completion flag is only a note:
+  //    whether the old queue may go is decided by what the STORED index holds.
+  const flag = await read(MIGRATED_FLAG_KEY);
+  const migratedFlag = flag.ok && flag.value === "1";
+  const legacy = await read(LEGACY_QUEUE_KEY);
+  let legacyItems: QueueItem[] | null = null;
+  let legacyComplete = false;
+  if (!legacy.ok) {
+    out.legacyUnreadable = true;
+  } else if (legacy.value !== null && out.writable) {
+    const reading = readStoredQueue(legacy.value);
+    if (reading.state === "damaged" && reading.items.length === 0) {
+      out.legacyUnreadable = true; // nothing of it can be read: it stays exactly where it is
+    } else {
+      const merged = mergeLegacyItems(out.items, reading.items, out.doneIds);
+      out.migrated = merged.added;
+      out.items = merged.items;
+      legacyItems = reading.items;
+      legacyComplete = reading.state !== "damaged";
+      // Part of it cannot be read: what can be is taken over, the original is never removed.
+      if (!legacyComplete) out.legacyUnreadable = true;
+      if (merged.added > 0) publish = true;
     }
   }
 
@@ -134,34 +220,45 @@ export async function loadQueue(files: ScanFileStore): Promise<QueueLoad> {
   const moved = await externalizeImages(out.items, files);
   out.items = moved.items;
   out.inlineImages = moved.remainingInline;
+  if (moved.changed) publish = true;
 
   writable = out.writable;
+  incident = out.incident;
+  storedDone = null;
 
-  // 5. Publish the result. The earlier version's queue goes only after the index that contains its items is stored.
-  if (out.writable && (out.migrated > 0 || moved.changed || finishedDropped || (!migratedFlag && legacyTaken))) {
-    const snapshot = serializeQueue(out.items);
-    if (snapshot.length <= MAX_INDEX_CHARS) {
+  // 5. Publish the index — one key, confirmed by reading it back.
+  let storedIds: Set<string> | null = null;
+  if (out.writable) {
+    if (publish) {
+      const snapshot = serializeQueue(out.items);
+      if (snapshot.length <= MAX_INDEX_CHARS && (await storeVerified(OFFLINE_QUEUE_KEY, snapshot))) {
+        storedIds = new Set(out.items.map((it) => it.id));
+      }
+      // Not stored: every source stays where it is, and the next start repeats this.
+    } else if (index.ok) {
+      // Nothing to publish: the stored index is exactly what was read.
+      storedIds = new Set(out.items.map((it) => it.id));
+    }
+  }
+
+  // 6. The earlier version's queue goes only when the STORED index (or the
+  //    finished list) accounts for every item of it — never on the flag alone.
+  if (legacyItems && storedIds && uncoveredIds(legacyItems, storedIds, out.doneIds).length === 0) {
+    let flagged = migratedFlag;
+    if (!flagged) {
       try {
-        const pairs: [string, string][] = [[OFFLINE_QUEUE_KEY, snapshot]];
-        if (!migratedFlag && legacyTaken) pairs.push([MIGRATED_FLAG_KEY, "1"]);
-        await AsyncStorage.multiSet(pairs);
-        if (!migratedFlag && legacyTaken) {
-          try {
-            await AsyncStorage.removeItem(LEGACY_QUEUE_KEY);
-          } catch {
-            /* the flag already says it was taken over; removal is retried by the next cleanup */
-          }
-        }
+        await AsyncStorage.setItem(MIGRATED_FLAG_KEY, "1");
+        flagged = true;
       } catch {
-        /* not stored: the earlier queue stays, and the take-over is repeated at the next start */
+        /* repeated at the next start */
       }
     }
-  } else if (out.writable && migratedFlag) {
-    // Left over from an interrupted removal.
-    try {
-      await AsyncStorage.removeItem(LEGACY_QUEUE_KEY);
-    } catch {
-      /* noop */
+    if (flagged && legacyComplete) {
+      try {
+        await AsyncStorage.removeItem(LEGACY_QUEUE_KEY);
+      } catch {
+        /* repeated at the next start */
+      }
     }
   }
   return out;
@@ -176,36 +273,35 @@ let writeChain: Promise<unknown> = Promise.resolve();
  * Store the queue index (and the list of finished ids). Resolves `true` only
  * when the store accepted it. `false` = NOT stored: the caller must tell the
  * user instead of reporting the capture as saved.
+ *
+ * Two single-key writes, the finished list FIRST. Whatever interrupts them
+ * leaves a state that is safe to start from:
+ *   • neither stored          — as before the call;
+ *   • only the finished list  — the index still lists a finished item; the next
+ *                               start drops it (it is recorded as finished);
+ *   • both                    — done.
+ * The index never gets ahead of the finished list, so a photo left behind by an
+ * uploaded scan is always recognised as finished and never taken for new work.
  */
 export function saveQueue(items: QueueItem[], doneIds: readonly string[] = []): Promise<boolean> {
   if (!writable) return Promise.resolve(false);
   const snapshot = serializeQueue(items);
   const done = JSON.stringify(doneIds.slice(-MAX_DONE_IDS));
   const run = async (): Promise<boolean> => {
-    // An index that large could be written but not read back on Android. The
-    // (small) list of finished ids is still stored, so work that was uploaded
-    // is not sent again after a restart.
-    if (snapshot.length > MAX_INDEX_CHARS) {
+    if (done !== storedDone) {
       try {
         await AsyncStorage.setItem(DONE_KEY, done);
+        storedDone = done;
       } catch {
-        /* nothing more can be done here; the caller is told the index was not stored */
+        return false;
       }
-      return false;
     }
+    // An index that large could be written but not read back on Android.
+    if (snapshot.length > MAX_INDEX_CHARS) return false;
     try {
-      await AsyncStorage.multiSet([
-        [OFFLINE_QUEUE_KEY, snapshot],
-        [DONE_KEY, done],
-      ]);
+      await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, snapshot);
       return true;
     } catch {
-      // The pair could not be stored together: try the finished ids alone.
-      try {
-        await AsyncStorage.setItem(DONE_KEY, done);
-      } catch {
-        /* see above */
-      }
       return false;
     }
   };
@@ -217,4 +313,31 @@ export function saveQueue(items: QueueItem[], doneIds: readonly string[] = []): 
 /** Whether queue writes are possible in this session (false after an unreadable index). */
 export function queueWritable(): boolean {
   return writable;
+}
+
+/**
+ * The user's own, confirmed decision: remove the kept originals of a damaged
+ * index. The record of the damage stays (it still decides which unlisted
+ * photos wait for the user). Resolves the record as it now stands, or null
+ * when nothing could be changed.
+ */
+export async function discardDamagedCopies(): Promise<QueueIncident | null> {
+  if (!incident) return null;
+  const remaining: string[] = [];
+  for (const key of incident.copies) {
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch {
+      remaining.push(key);
+    }
+  }
+  const next: QueueIncident = { ...incident, copies: remaining, acknowledged: remaining.length === 0 };
+  try {
+    await AsyncStorage.setItem(INCIDENT_KEY, JSON.stringify(next));
+  } catch {
+    // The copies are gone; the note about it could not be updated. The next
+    // start finds the keys empty and the notice simply shows once more.
+  }
+  incident = next;
+  return next;
 }

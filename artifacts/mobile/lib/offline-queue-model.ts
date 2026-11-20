@@ -210,28 +210,37 @@ export function parseStoredQueue(raw: string | null): QueueItem[] {
   if (!Array.isArray(parsed)) return [];
   const out: QueueItem[] = [];
   for (const entry of parsed) {
-    if (!entry || typeof entry !== "object") continue;
-    const it = entry as Record<string, unknown>;
-    if (typeof it.id !== "string" || !isKind(it.kind)) continue;
-    const conflict = parseConflict(it.conflict);
-    // A conflict without its contact cannot be resolved: it waits as an ordinary pending item.
-    const status: QueueItemStatus = it.status === "failed" ? "failed" : it.status === "conflict" && conflict ? "conflict" : "pending";
-    const interrupted = it.status === "syncing" && repeatIsUnverifiable(it as unknown as QueueItem);
-    out.push({
-      ...(it as unknown as QueueItem),
-      status,
-      ...(interrupted ? { uncertain: true, resolution: undefined } : {}),
-      owner: isTenantOwnerKey(it.owner) ? it.owner : null,
-      createdAt: typeof it.createdAt === "number" ? it.createdAt : 0,
-      attempts: typeof it.attempts === "number" ? it.attempts : 0,
-      label: typeof it.label === "string" ? it.label : "",
-      source: typeof it.source === "string" ? it.source : "",
-      conflict: status === "conflict" ? conflict ?? undefined : undefined,
-      scanId: typeof it.scanId === "number" && Number.isInteger(it.scanId) && it.scanId > 0 ? it.scanId : undefined,
-      imageFile: typeof it.imageFile === "string" && it.imageFile.length > 0 ? it.imageFile : undefined,
-    });
+    const item = normalizeStoredItem(entry);
+    if (item) out.push(item);
   }
   return out;
+}
+
+/**
+ * One stored entry as a queue item, or `null` when it is not one (no id, or a
+ * kind this app does not know). See {@link parseStoredQueue} for the rules.
+ */
+export function normalizeStoredItem(entry: unknown): QueueItem | null {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const it = entry as Record<string, unknown>;
+  if (typeof it.id !== "string" || it.id.length === 0 || !isKind(it.kind)) return null;
+  const conflict = parseConflict(it.conflict);
+  // A conflict without its contact cannot be resolved: it waits as an ordinary pending item.
+  const status: QueueItemStatus = it.status === "failed" ? "failed" : it.status === "conflict" && conflict ? "conflict" : "pending";
+  const interrupted = it.status === "syncing" && repeatIsUnverifiable(it as unknown as QueueItem);
+  return {
+    ...(it as unknown as QueueItem),
+    status,
+    ...(interrupted ? { uncertain: true, resolution: undefined } : {}),
+    owner: isTenantOwnerKey(it.owner) ? it.owner : null,
+    createdAt: typeof it.createdAt === "number" ? it.createdAt : 0,
+    attempts: typeof it.attempts === "number" ? it.attempts : 0,
+    label: typeof it.label === "string" ? it.label : "",
+    source: typeof it.source === "string" ? it.source : "",
+    conflict: status === "conflict" ? conflict ?? undefined : undefined,
+    scanId: typeof it.scanId === "number" && Number.isInteger(it.scanId) && it.scanId > 0 ? it.scanId : undefined,
+    imageFile: typeof it.imageFile === "string" && it.imageFile.length > 0 ? it.imageFile : undefined,
+  };
 }
 
 function parseConflict(value: unknown): QueueConflict | null {
@@ -245,24 +254,145 @@ function parseConflict(value: unknown): QueueConflict | null {
   };
 }
 
-/** How the stored queue value reads: nothing stored, a usable queue, or data that cannot be used. */
-export type StoredQueueState = "empty" | "ok" | "corrupt";
+/** What a stored queue value turned out to be. */
+export interface StoredQueueReading {
+  /**
+   * `empty`   — nothing was stored;
+   * `ok`      — every stored entry was read;
+   * `damaged` — something is stored that could not be read as it is: the text
+   *             is not a queue, or some of its entries are not queue items.
+   */
+  state: "empty" | "ok" | "damaged";
+  /** Every entry that could be read. For `damaged`: what could be salvaged, exactly as it was stored. */
+  items: QueueItem[];
+  /** Entries that are there but could not be read. `null` = it cannot be told how many. */
+  unreadable: number | null;
+}
 
 /**
- * Like {@link parseStoredQueue}, but tells "nothing was stored" apart from
- * "something was stored and it is not a queue". The caller must NOT overwrite
- * a corrupt value with a fresh queue without setting it aside first.
+ * Read a stored queue value WITHOUT giving up on the whole of it when a part
+ * is bad. A value that is not valid JSON (a write that was cut short, a
+ * damaged store) is searched for the complete entries it still contains; each
+ * of them is a queue item exactly as it was stored, with its owner, its
+ * progress and its details. Nothing is invented and nothing is repaired: an
+ * entry that is itself incomplete is counted as unreadable, never guessed at.
+ *
+ * The caller must keep the original value whenever the state is `damaged`.
  */
-export function inspectStoredQueue(raw: string | null): { state: StoredQueueState; items: QueueItem[] } {
-  if (raw === null || raw === "") return { state: "empty", items: [] };
-  let parsed: unknown;
+export function readStoredQueue(raw: string | null): StoredQueueReading {
+  if (raw === null || raw === "") return { state: "empty", items: [], unreadable: 0 };
+  let entries: unknown[];
+  let broken = 0;
+  let wellFormed = false;
   try {
-    parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      entries = parsed;
+      wellFormed = true;
+    } else if (parsed && typeof parsed === "object") {
+      entries = [parsed]; // a single entry where a list was expected
+    } else {
+      return { state: "damaged", items: [], unreadable: null };
+    }
   } catch {
-    return { state: "corrupt", items: [] };
+    const salvaged = salvageJsonObjects(raw);
+    entries = salvaged.objects;
+    broken = salvaged.broken;
+    if (entries.length === 0 && broken === 0) return { state: "damaged", items: [], unreadable: null };
   }
-  if (!Array.isArray(parsed)) return { state: "corrupt", items: [] };
-  return { state: "ok", items: parseStoredQueue(raw) };
+  const items: QueueItem[] = [];
+  const seen = new Set<string>();
+  let unreadable = broken;
+  for (const entry of entries) {
+    const item = normalizeStoredItem(entry);
+    if (!item) unreadable += 1;
+    else if (seen.has(item.id)) continue; // the same entry twice: one is enough
+    else {
+      seen.add(item.id);
+      items.push(item);
+    }
+  }
+  if (wellFormed && unreadable === 0) return { state: "ok", items, unreadable: 0 };
+  return { state: "damaged", items, unreadable };
+}
+
+/** How often the search may start again inside a broken entry (bounds the work on hopeless input). */
+const MAX_SALVAGE_RESTARTS = 200;
+
+/**
+ * The complete JSON objects found in a text that is not valid JSON as a whole,
+ * and how many entries were started but are broken or cut off.
+ *
+ * A broken entry does not end the search: it resumes right after that entry's
+ * opening brace, so complete entries FOLLOWING a broken one are still found.
+ * While resuming, the search is inside a broken entry and may come across that
+ * entry's own inner objects (a payload, for example) — only objects that are
+ * queue entries themselves (`looksLikeEntry`) are taken from there, and the
+ * first one found means the search is back among the entries.
+ */
+function salvageJsonObjects(raw: string): { objects: unknown[]; broken: number } {
+  const objects: unknown[] = [];
+  let broken = 0;
+  let restarts = 0;
+  let insideBroken = false;
+  let from = 0;
+  while (from < raw.length) {
+    let depth = 0;
+    let start = -1;
+    let inString = false;
+    let escaped = false;
+    let failedAt = -1;
+    let i = from;
+    for (; i < raw.length; i += 1) {
+      const ch = raw.charCodeAt(i);
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === 92 /* backslash */) escaped = true;
+        else if (ch === 34 /* " */) inString = false;
+        continue;
+      }
+      if (ch === 34) inString = true;
+      else if (ch === 123 /* { */) {
+        if (depth === 0) start = i;
+        depth += 1;
+      } else if (ch === 125 /* } */ && depth > 0) {
+        depth -= 1;
+        if (depth === 0) {
+          let parsed: unknown;
+          let ok = true;
+          try {
+            parsed = JSON.parse(raw.slice(start, i + 1));
+          } catch {
+            ok = false;
+          }
+          if (!ok) {
+            failedAt = start;
+            break;
+          }
+          if (!insideBroken) objects.push(parsed);
+          else if (looksLikeEntry(parsed)) {
+            objects.push(parsed);
+            insideBroken = false; // back among the entries
+          }
+          start = -1;
+        }
+      }
+    }
+    if (failedAt < 0 && i >= raw.length && depth > 0) failedAt = start; // an entry that never closes (cut off)
+    if (failedAt < 0) break;
+    if (!insideBroken) broken += 1;
+    insideBroken = true;
+    restarts += 1;
+    if (restarts > MAX_SALVAGE_RESTARTS) break;
+    from = failedAt + 1;
+  }
+  return { objects, broken };
+}
+
+function looksLikeEntry(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.id === "string" && v.id.length > 0 && isKind(v.kind);
 }
 
 /** Serialize for storage: every item exactly as held (owners included, quarantined ones as null). */
@@ -592,9 +722,18 @@ export async function syncOwnedQueue(deps: SyncDeps): Promise<SyncResult> {
       result.stopped = "storage";
       break;
     }
+    // The attempt is "open" only while the engine waits for it. Once its
+    // outcome has been taken (an answer, a failure, a time limit), nothing that
+    // still runs on its behalf may send a request or change the item: a
+    // response that arrives late finds the attempt closed.
+    let open = true;
     const ctx: PerformContext = {
-      guard,
+      guard: () => {
+        if (!open) throw new SyncAbort("offline");
+        guard();
+      },
       progress: async (change) => {
+        if (!open) throw new SyncAbort("offline");
         if (!(await patch(item.id, (it) => ({ ...it, ...change })))) throw new SyncAbort("storage");
       },
     };
@@ -602,6 +741,7 @@ export async function syncOwnedQueue(deps: SyncDeps): Promise<SyncResult> {
     try {
       const current = deps.getQueue().find((it) => it.id === item.id && it.owner === owner) ?? item;
       await deps.perform(current, ctx);
+      open = false;
       const done = deps.getQueue().find((it) => it.id === item.id && it.owner === owner) ?? current;
       deps.onUploaded?.(done);
       stored = (await deps.setQueue(deps.getQueue().filter((it) => !(it.id === item.id && it.owner === owner)))) !== false;
@@ -616,6 +756,7 @@ export async function syncOwnedQueue(deps: SyncDeps): Promise<SyncResult> {
         }
       }
     } catch (err) {
+      open = false;
       const waiting = (it: QueueItem, kind: string | undefined): QueueItem => ({ ...it, status: "pending" as const, errorKind: kind, lastAttemptAt: now() });
       /** Doubt is recorded only where a repeat cannot be checked; a decision given for a conflict is then asked again. */
       const doubt = (it: QueueItem, lost: boolean | undefined): Partial<QueueItem> => {

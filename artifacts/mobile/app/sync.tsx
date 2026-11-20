@@ -20,6 +20,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import type { Locale } from "@/hooks/useLocale";
 import type { QueueItem } from "@/lib/offline-queue";
+import { incidentNeedsAttention } from "@/lib/offline-queue-store-model";
 import { syncProblemKey } from "@/lib/offline-sync";
 
 function sourceLabel(t: Locale["t"], source: string): string {
@@ -71,6 +72,8 @@ export default function SyncScreen() {
     storageProblem,
     legacyUnreadable,
     recoveredCount,
+    incident,
+    discardDamagedCopies,
     syncNow,
     retryItem,
     removeItem,
@@ -93,6 +96,15 @@ export default function SyncScreen() {
     Alert.alert(t("sync.removeTitle"), t(item.kind === "scan" ? "sync.removeScanBody" : "sync.removeBody"), [
       { text: t("common.cancel"), style: "cancel" },
       { text: t("sync.removeConfirm"), style: "destructive", onPress: () => removeItem(item.id) },
+    ]);
+  }
+
+  // The kept original of a damaged list holds what could not be read back:
+  // removing it is the user's own decision, and it is asked for first.
+  function confirmDiscardDamaged() {
+    Alert.alert(t("sync.damagedDiscardTitle"), t("sync.damagedDiscardBody"), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("sync.damagedDiscard"), style: "destructive", onPress: () => void discardDamagedCopies() },
     ]);
   }
 
@@ -287,8 +299,43 @@ export default function SyncScreen() {
             <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "flex-start", gap: 10 }}>
               <Feather name="alert-triangle" size={18} color={colors.destructive} />
               <Text style={[styles.noticeText, { color: colors.foreground, textAlign }]} testID="notice-storage-problem">
-                {t(storageProblem === "index-unreadable" ? "sync.storageUnreadableBody" : "sync.storageWriteFailedBody")}
+                {t(
+                  storageProblem === "index-unreadable"
+                    ? "sync.storageUnreadableBody"
+                    : storageProblem === "index-damaged-unsaved"
+                      ? "sync.storageDamagedUnsavedBody"
+                      : "sync.storageWriteFailedBody",
+                )}
               </Text>
+            </View>
+          </Card>
+        ) : null}
+        {incidentNeedsAttention(incident) && incident ? (
+          <Card style={{ marginBottom: 12, borderColor: colors.destructive + "60", backgroundColor: colors.destructive + "10" }}>
+            <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "flex-start", gap: 10 }}>
+              <Feather name="alert-triangle" size={18} color={colors.destructive} />
+              <View style={{ flex: 1, gap: 6 }} testID="notice-queue-damaged">
+                <Text style={[styles.noticeText, { color: colors.foreground, textAlign, fontFamily: "Inter_600SemiBold", flex: 0 }]}>
+                  {t("sync.damagedTitle")}
+                </Text>
+                <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>{t("sync.damagedBody")}</Text>
+                <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>
+                  {t("sync.damagedRecovered", { count: incident.salvaged })}
+                  {"\n"}
+                  {incident.unreadable === null ? t("sync.damagedUnreadableUnknown") : t("sync.damagedUnreadable", { count: incident.unreadable })}
+                </Text>
+                <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>{t("sync.damagedPhotos")}</Text>
+                {incident.copies.length > 0 ? (
+                  <>
+                    <Text style={[styles.noticeText, { color: colors.foreground, textAlign, flex: 0 }]}>{t("sync.damagedCopyKept")}</Text>
+                    <Pressable onPress={confirmDiscardDamaged} hitSlop={8} accessibilityRole="button" testID="discard-damaged-copy">
+                      <Text style={[styles.noticeText, { color: colors.destructive, textAlign, fontFamily: "Inter_600SemiBold", flex: 0 }]}>
+                        {t("sync.damagedDiscard")}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : null}
+              </View>
             </View>
           </Card>
         ) : null}

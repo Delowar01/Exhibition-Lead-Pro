@@ -10,7 +10,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AppState, Platform } from "react-native";
+import { Alert, AppState, Platform } from "react-native";
 
 import {
   createContact,
@@ -25,7 +25,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import i18n from "@/lib/i18n";
 
-import { loadQueue, queueWritable, saveQueue, type QueueItem } from "@/lib/offline-queue";
+import { discardDamagedCopies, loadQueue, queueWritable, saveQueue, type QueueItem } from "@/lib/offline-queue";
 import {
   canStartSync,
   discardQuarantined,
@@ -50,7 +50,7 @@ import {
   type QueueResolution,
   type SyncResult,
 } from "@/lib/offline-queue-model";
-import { enqueueFailureOf, recoveredItems, rememberDone, type EnqueueResult } from "@/lib/offline-queue-store-model";
+import { enqueueFailureOf, recoveredItems, rememberDone, type EnqueueResult, type QueueIncident } from "@/lib/offline-queue-store-model";
 import { classifySyncFailure, createPerformer } from "@/lib/offline-sync";
 import { SYNC_TIMEOUT_MS, withTimeout } from "@/lib/request-timeout";
 import { scanFiles } from "@/lib/scan-file-driver";
@@ -91,9 +91,12 @@ interface ScanProgress {
  * Something about the device's storage the user should know:
  *   • `write-failed`     — the last change to the queue could not be stored;
  *   • `index-unreadable` — the stored queue could not be read, so nothing is
- *     written in this session (what is stored is left exactly as it is).
+ *     written in this session (what is stored is left exactly as it is);
+ *   • `index-damaged-unsaved` — the stored queue is damaged AND its original
+ *     could not be kept (no space, or earlier kept copies fill the places for
+ *     them). Nothing is written in this session; nothing was changed.
  */
-export type StorageProblem = "none" | "write-failed" | "index-unreadable";
+export type StorageProblem = "none" | "write-failed" | "index-unreadable" | "index-damaged-unsaved";
 
 interface OfflineContextValue {
   /** True network reachability (ignores the manual override). */
@@ -122,6 +125,14 @@ interface OfflineContextValue {
   legacyUnreadable: boolean;
   /** Scans restored in this session from photos the queue no longer listed. */
   recoveredCount: number;
+  /**
+   * The record of the list of pending captures having been found damaged (null
+   * = never). The Sync Center reports it — what was read back, what could not
+   * be, that the original is kept — until the user removes the kept copies.
+   */
+  incident: QueueIncident | null;
+  /** The user's own, confirmed decision to remove the kept originals of a damaged list. */
+  discardDamagedCopies: () => Promise<void>;
   setManualOffline: (value: boolean) => void;
   /**
    * Keep a capture on the device. Resolves `{ ok: true }` only once it is
@@ -164,6 +175,8 @@ const OfflineContext = createContext<OfflineContextValue>({
   storageProblem: "none",
   legacyUnreadable: false,
   recoveredCount: 0,
+  incident: null,
+  discardDamagedCopies: async () => {},
   setManualOffline: () => {},
   captureOwner: () => null,
   enqueueContact: async () => NOT_READY,
@@ -205,6 +218,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   const [storageProblem, setStorageProblem] = useState<StorageProblem>("none");
   const [legacyUnreadable, setLegacyUnreadable] = useState(false);
   const [recoveredCount, setRecoveredCount] = useState(0);
+  const [incident, setIncident] = useState<QueueIncident | null>(null);
+  const incidentRef = useRef<QueueIncident | null>(null);
 
   // Refs mirror the latest state so the (long-lived) sync loop never works off
   // a stale closure while items are being mutated mid-flight.
@@ -236,7 +251,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     setQueue(next);
     const stored = await saveQueue(next, doneRef.current);
     if (stored) setStorageProblem((p) => (p === "write-failed" ? "none" : p));
-    else setStorageProblem(queueWritable() ? "write-failed" : "index-unreadable");
+    else setStorageProblem((p) => (queueWritable() ? "write-failed" : p === "index-damaged-unsaved" ? p : "index-unreadable"));
     return stored;
   }, []);
 
@@ -254,8 +269,17 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       queueRef.current = stored.items;
       doneRef.current = stored.doneIds;
       setQueue(stored.items);
-      setStorageProblem(stored.writable ? "none" : "index-unreadable");
+      setStorageProblem(stored.writable ? "none" : stored.damagedCopyFailed ? "index-damaged-unsaved" : "index-unreadable");
+      incidentRef.current = stored.incident;
+      setIncident(stored.incident);
       setLegacyUnreadable(stored.legacyUnreadable);
+      // Found damaged just now: say so at once, wherever the user is. The Sync
+      // Center keeps the full report (what was read back, what was not, that
+      // the original is kept) until the user has dealt with it.
+      if (stored.indexDamaged) {
+        const body = stored.writable ? "sync.damagedAlertBody" : stored.damagedCopyFailed ? "sync.storageDamagedUnsavedBody" : "sync.storageUnreadableBody";
+        Alert.alert(i18n.t("sync.damagedTitle"), i18n.t(body));
+      }
       setManualOfflineState(manual === "1");
       setHydrated(true);
       hydration.current?.resolve();
@@ -519,15 +543,18 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       }
       if (ownerRef.current !== owner) return;
       const present = new Set<string>([...queueRef.current.map((it) => it.id), ...inFlightRef.current]);
+      // A photo from BEFORE the list was last found damaged lost its entry with
+      // the list: it is put back but NOT sent by itself (see recoveredItems).
       const restored = recoveredItems(
         orphans.filter((o) => !done.has(o.id) && !present.has(o.id)),
         owner,
         Date.now(),
+        incidentRef.current?.at ?? 0,
       );
       if (restored.length === 0) return;
       await commit([...restored, ...queueRef.current]);
       setRecoveredCount(restored.length);
-      if (isOnlineRef.current) void syncNow();
+      if (isOnlineRef.current && restored.some((it) => it.status === "pending")) void syncNow();
     })();
   }, [hydrated, owner, commit, syncNow]);
 
@@ -704,6 +731,13 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     [commit, runSync],
   );
 
+  const discardDamaged = useCallback(async () => {
+    const next = await discardDamagedCopies();
+    if (!next) return;
+    incidentRef.current = next;
+    setIncident(next);
+  }, []);
+
   const discardLegacyItems = useCallback(() => {
     const dropped = queueRef.current.filter((it) => it.owner === null);
     if (dropped.length === 0) return;
@@ -732,6 +766,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     storageProblem,
     legacyUnreadable,
     recoveredCount,
+    incident,
+    discardDamagedCopies: discardDamaged,
     setManualOffline,
     captureOwner,
     enqueueContact,

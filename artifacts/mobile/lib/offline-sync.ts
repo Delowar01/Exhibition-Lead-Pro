@@ -311,6 +311,8 @@ export function syncProblemKey(kind: string | undefined): string {
       return "sync.problem.rejected";
     case "image-missing":
       return "sync.problem.imageMissing";
+    case "recovered_details_lost":
+      return "sync.problem.recoveredDetailsLost";
     case "storage-unavailable":
     case "storage-full":
       return "sync.problem.storage";

@@ -33,6 +33,7 @@ import {
 } from "@/lib/auth-storage";
 import { followBiometricSession, forgetBiometricSession, reconcileBiometricLogin } from "@/lib/biometric";
 import { createEntitlementRefresher } from "@/lib/entitlement-refresh";
+import { SESSION_RENEWAL_TIMEOUT_MS, withTimeout } from "@/lib/request-timeout";
 import { accountOwnerKey } from "@/lib/settings-model";
 
 interface AuthContextValue {
@@ -205,27 +206,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await endSession(decision.reason, snapshot.generation, current);
         return null;
       }
-      let renewed: { token: string; refreshToken: string } | null;
+      // Take a renewal answer into use — but only for the session that asked
+      // for it, and only while its tokens are still the ones in use. A sign-out,
+      // another sign-in or a later renewal makes the answer void.
+      const adopt = async (answer: unknown): Promise<string | null> => {
+        const renewed = parseRefreshResponse(answer);
+        if (!renewed) return null;
+        if (sessionEpochRef.current !== snapshot.generation) return null; // signed out or switched while renewing
+        if (!(await saveRotatedTokens(current.token, renewed))) return null;
+        issuedTokensRef.current = withIssuedToken(issuedTokensRef.current, renewed.token);
+        setToken(renewed.token);
+        try {
+          await followBiometricSession(current, renewed);
+        } catch {
+          // The remembered sign-in simply expires with its old tokens.
+        }
+        // Same as the web portal after a renewal: the plan entitlements are re-read.
+        void refresher.refresh("restore");
+        return renewed.token;
+      };
+      let answer: unknown;
       try {
-        renewed = parseRefreshResponse(await requestTokenRefresh({ refreshToken: decision.refreshToken }));
+        // A renewal that does not answer must not hold every waiting request
+        // for ever: after the limit this request fails and the session stays.
+        // If the answer still arrives later, the server HAS replaced the refresh
+        // token — so it is taken into use then (under the same conditions as
+        // above) instead of leaving the app with a token the server no longer accepts.
+        answer = await withTimeout(SESSION_RENEWAL_TIMEOUT_MS, (o) => requestTokenRefresh({ refreshToken: decision.refreshToken }, o), {
+          onLate: (late) => {
+            void adopt(late).catch(() => {});
+          },
+        });
       } catch (err) {
         const failure = classifyRefreshFailure(err);
         if (failure.kind === "ended") await endSession(failure.reason, snapshot.generation, current);
-        return null; // otherwise: no connection / server trouble — the session stays, only this request fails
+        return null; // otherwise: no connection / no answer in time / server trouble — the session stays, only this request fails
       }
-      if (!renewed) return null;
-      if (sessionEpochRef.current !== snapshot.generation) return null; // signed out or switched while renewing
-      if (!(await saveRotatedTokens(current.token, renewed))) return null;
-      issuedTokensRef.current = withIssuedToken(issuedTokensRef.current, renewed.token);
-      setToken(renewed.token);
       try {
-        await followBiometricSession(current, renewed);
+        return await adopt(answer);
       } catch {
-        // The remembered sign-in simply expires with its old tokens.
+        return null;
       }
-      // Same as the web portal after a renewal: the plan entitlements are re-read.
-      void refresher.refresh("restore");
-      return renewed.token;
     },
     [endSession, refresher],
   );

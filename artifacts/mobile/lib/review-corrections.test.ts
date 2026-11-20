@@ -519,7 +519,7 @@ describe("review 7 — finished work is recorded even when the queue index canno
     await mod.loadQueue(files());
     const huge = contact("big", { label: "y".repeat(1_600_000) });
     expect(await mod.saveQueue([huge], ["done-1"])).toBe(false);
-    expect(storage.current.data.get(INDEX)).toBe("[]"); // the index stored before is untouched
+    expect(storage.current.data.has(INDEX)).toBe(false); // nothing of the index reached the store
     expect(JSON.parse(storage.current.data.get(DONE) ?? "[]")).toEqual(["done-1"]);
   });
 

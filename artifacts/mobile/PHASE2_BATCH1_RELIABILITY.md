@@ -40,13 +40,20 @@ changed. One shared client file changed (`lib/api-client-react/src/custom-fetch.
   why (not signed in, storage full, storage error, unusable photo) and the
   capture is not shown as kept.
 - **Nothing stored is overwritten while it cannot be read.** An unreadable index
-  disables writing for the session; an index that is not a queue is set aside
-  first. No write happens before the stored queue is loaded.
+  disables writing for the session. No write happens before the stored queue is
+  loaded.
+- **A damaged index is recovered, kept and reported** (§5b-A). The entries that
+  can still be read come back exactly as they were stored; the damaged original
+  is kept untouched under a key of its own before anything replaces it; the
+  user is told at once and in the Sync Center; photos whose entry was lost are
+  put back but not sent until the user decides.
 - **Upgrade keeps existing work.** The previous queue (`csp_offline_queue`) is
-  read once: its items move to the new index (`csp_offline_queue_v2`) with their
-  owners unchanged, their photos move into files, and the old value is removed
-  only after the new index is stored. If it cannot be read it is left where it
-  is and the Sync Center says so. An interrupted take-over repeats safely.
+  taken over: its items move to the new index (`csp_offline_queue_v2`) with
+  their owners unchanged and their photos move into files. The old value is
+  removed only after the STORED new index was read back and found to hold every
+  one of its items (§5b-C). If it cannot be read — in whole or in part — it is
+  left where it is and the Sync Center says so. A take-over interrupted after
+  any single step is completed by the next start.
 - **A scan resumes instead of repeating.** The scan id returned by the first
   request is stored on the item before the second request. After an
   interruption the app asks the API whether that scan already has its contact
@@ -117,7 +124,9 @@ changed. One shared client file changed (`lib/api-client-react/src/custom-fetch.
 | --- | --- |
 | `csp_offline_queue_v2` | queue index; every item carries its owner |
 | `csp_offline_queue` | previous queue; read once, never written |
-| `csp_offline_queue_migrated`, `csp_offline_done`, `csp_offline_queue_damaged` | take-over flag; ids already uploaded or removed; a set-aside unreadable index |
+| `csp_offline_queue_migrated`, `csp_offline_done` | take-over note; ids already uploaded or removed |
+| `csp_offline_queue_damaged`, `…_damaged_2`, `…_damaged_3` | the original of an index that could not be read as it was; each incident under a key of its own; removed only by the user |
+| `csp_offline_queue_incident` | record of such damage: when, how many entries read back / unreadable, where the originals are |
 | `csp_refresh` (secure store) | refresh token of the current session |
 | `<documents>/offline-scans/<userId>_<companyId>/<id>.jpg` | one photo per queued scan |
 
@@ -250,6 +259,118 @@ question asked — now one per delay instead of one per trigger.
 Reasoned from the code, not reproduced on a device: finding 5's timing and
 finding 6's trigger. The timer and the two React providers are covered by
 their pure rules and by source checks, not by running the providers.
+
+## 5b. Final hardening (targeted correctness and data-preservation pass)
+
+Each point was first reproduced on the previous head of this branch (or ruled
+out), then corrected, then covered by `lib/hardening.test.ts` (49 tests) and,
+for the shared API client, `artifacts/web-app/src/lib/api-client-session.test.ts`
+(17 tests).
+
+### A. A damaged queue index
+
+Confirmed on the previous head:
+
+| Reproduced | What happened |
+| --- | --- |
+| Index cut short (a scan the server had already read, a contact, a card edit) | The app started with an empty, writable queue. All three entries were gone from the app; the next save overwrote the index. A copy was kept but nothing told the user |
+| A second, different damage | It overwrote the kept copy of the first |
+| A valid list containing entries that are not queue items | They were dropped without any copy or report |
+| Photos of entries lost with the list | Put back as new scans and uploaded by themselves — without the event, the position or the fact that the card had already been read |
+
+Now:
+
+- **What can be read is read.** A value that is not valid JSON is searched for
+  the complete entries it still contains, also after a broken one. Each comes
+  back exactly as stored (owner, event, position, progress, the user's
+  decision). Nothing is repaired or guessed; an incomplete entry is counted.
+- **The original is kept first.** Byte for byte, under a key of its own, read
+  back and compared, before a readable index replaces the damaged one. A later
+  incident uses the next key (three in all); the same original is never stored
+  twice. If it cannot be kept — no space, or all three places hold earlier
+  originals — nothing is written at all for that session and the damaged index
+  stays where it is.
+- **It is said.** An alert at once, and a report in the Sync Center: entries
+  read back, entries that could not be read, that the original is kept. The
+  report stays until the user removes the kept copy (a confirmed action; the
+  only way an original ever leaves the device).
+- **Nothing unknown is sent.** A photo from before the damage whose entry was
+  lost is listed under "needs attention" and is not sent by an automatic run or
+  by "Sync now" — only by the user's own Retry on it. The time of the damage is
+  kept for good, so this also holds for an account that signs in weeks later.
+  A photo newer than the damage only missed its entry (the app stopped while
+  saving) and is an ordinary waiting scan, as before.
+- **Entries without a photo.** A recovered scan whose photo is gone is shown as
+  "photo no longer on this device" and is not retried by itself; one the server
+  had already read needs no photo and resumes at the contact.
+
+Limitation, stated to the user: an entry that cannot be read (a typed contact
+or a card edit inside the damaged part) cannot be restored by the app; it
+exists only in the kept original.
+
+### B. Hard deadlines
+
+Confirmed: `withTimeout` asked the request to stop and then waited for it. A
+request that ignores the signal never returned, and the sync stood still (ten
+minutes simulated for a one-second limit).
+
+Now the deadline does not depend on the request: at the limit the request is
+asked to stop AND the caller is released with a "no answer" error. A late
+answer reaches nobody: the sync attempt it belonged to is closed (it can
+neither send its next request nor record progress), and the API client does
+not repeat a request whose caller has given up — also when its 401 arrives
+late. The session renewal has the same hard limit (30 s); if its answer still
+arrives later it is taken into use only for the same session and only while
+that session's tokens are unchanged.
+
+Ruled out: duplicate processing after a late answer (the scan check and the
+duplicate detection already cover "answer lost"); a late answer acting under
+another account (the run is bound to its account, and the client retries only
+with a token the handler returns for that request).
+
+### C. The take-over of the earlier queue
+
+Evidence, from the installed storage library's own source: on Android a
+multi-key write is one database transaction (both implementations); on iOS and
+in the web preview it is not.
+
+Confirmed (where a multi-key write is not atomic): the completion flag could be
+stored without the new index; the next start then deleted the old queue, and
+its items were nowhere.
+
+Now no step writes several keys together. The order is: new index, read back
+and checked → completion note → old queue removed. The old queue goes only when
+the stored index (or the list of finished items) accounts for every one of its
+items; the note alone never authorises it. Stopped after each single storage
+change in turn, the old queue is never gone before the new index holds it, and
+the next start completes the take-over without duplicates. The ordinary save
+writes the list of finished items before the index, each on its own, so the
+index never gets ahead of it.
+
+Ruled out: the reverse interruption (index stored, note missing) — it repeated
+safely before and still does.
+
+### D. The shared API client (also used by the web portal)
+
+The same scenarios were run against the client before this PR and now, with a
+replica of the portal's handler: single and concurrent 401s, refused refresh,
+repeat rejected again, no refresh token, sign-in endpoint, sign-out during a
+refresh, another account signing in during a refresh, a stale request, failed
+token storage, both kinds of 403.
+
+Confirmed and corrected:
+
+| Found | Correction |
+| --- | --- |
+| Two requests rejected at once with different tokens started two refreshes at the same moment; the second presented a refresh token that had just been replaced, and the API revoked the session | Handler runs are queued: never two at once |
+| A request with its own Authorization header was repeated with the session's token instead of its own | The repeat keeps the caller's header, as before |
+
+Ruled out: every scenario the portal can reach today behaves as before (the
+portal sends no request with a header of its own). Remaining differences to the
+earlier client, all outside what the portal does: a handler that throws leaves
+the caller with the request's 401 instead of the handler's error; two
+differently-tokened rejections get two refreshes one after the other instead of
+one shared; a cancelled request is not repeated when its 401 arrives late.
 
 ## 6. Open — backend dependencies
 

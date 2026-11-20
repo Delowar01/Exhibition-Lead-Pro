@@ -182,12 +182,12 @@ describe("upgrade: the queue of the previous version is taken over, nothing is l
     expect(storage.current.data.get(INDEX)).not.toContain("base64");
   });
 
-  it("a fresh install has nothing to take over and writes nothing but the flag", async () => {
+  it("a fresh install has nothing to take over and writes nothing at all", async () => {
     const { files } = setup();
     const { loadQueue } = await freshModule();
-    expect(await loadQueue(files)).toMatchObject({ items: [], migrated: 0, writable: true });
-    expect(storage.current.data.get(FLAG)).toBe("1");
-    expect(storage.current.data.get(INDEX)).toBe("[]");
+    expect(await loadQueue(files)).toMatchObject({ items: [], migrated: 0, writable: true, indexDamaged: false, incident: null });
+    expect(storage.current.log).toEqual([]);
+    expect([...storage.current.data.keys()]).toEqual([]);
   });
 });
 
@@ -256,7 +256,7 @@ describe("a save reports the truth", () => {
     await loadQueue(files);
     const huge: QueueItem = { ...one, id: "big", kind: "scan", imageData: `data:image/jpeg;base64,${"A".repeat(MAX_INDEX_CHARS)}` };
     expect(await saveQueue([huge])).toBe(false);
-    expect(storage.current.data.get(INDEX)).toBe("[]");
+    expect(storage.current.data.has(INDEX)).toBe(false); // nothing of it reached the store
   });
 
   it("writes land in the order they were made, the finished ids with them in one step", async () => {

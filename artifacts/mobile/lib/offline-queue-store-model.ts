@@ -84,27 +84,96 @@ export function createdAtOfId(id: string, fallback: number): number {
   return Number.isFinite(ms) && ms > 1_500_000_000_000 && ms < 4_000_000_000_000 ? ms : fallback;
 }
 
+/** Why a recovered photo waits for the user instead of being sent (see {@link recoveredItems}). */
+export const RECOVERED_DETAILS_LOST = "recovered_details_lost";
+
 /**
- * Queue items for image files of `owner` that the index does not list (the
- * index was damaged, or the app stopped between writing the image and the
- * index). They come back as ordinary pending scans of that same account; the
- * capture's event and position are not known any more.
+ * Queue items for image files of `owner` that the index does not list. They
+ * come back as scans of that same account; the capture's event and position
+ * are not known any more.
+ *
+ * Two cases, told apart by `damagedAt` (when the list of pending captures was
+ * last found damaged; 0 = never):
+ *   • the photo is NEWER than that — the app stopped between writing the photo
+ *     and its entry. Nothing else was ever known about it: it is an ordinary
+ *     waiting scan.
+ *   • the photo is from BEFORE the damage — its entry existed and was lost with
+ *     the list. That entry may have said the card was already read, or already
+ *     sent, or which contact the user chose for it. Sending the photo again
+ *     unasked could repeat that work, so it is NOT sent by itself: it waits,
+ *     marked as needing attention, until the user decides (send it as a new
+ *     card, or remove it).
  */
-export function recoveredItems(orphans: OrphanImage[], owner: string, now: number): QueueItem[] {
+export function recoveredItems(orphans: OrphanImage[], owner: string, now: number, damagedAt = 0): QueueItem[] {
   if (!isTenantOwnerKey(owner)) return [];
-  return orphans.map((o) => ({
-    id: o.id,
-    kind: "scan" as const,
-    status: "pending" as const,
-    createdAt: createdAtOfId(o.id, now),
-    attempts: 0,
-    owner,
-    label: "",
-    source: "card",
-    imageFile: o.file,
-    imageBytes: o.bytes,
-    recovered: true,
-  }));
+  return orphans.map((o) => {
+    const createdAt = createdAtOfId(o.id, now);
+    const base = {
+      id: o.id,
+      kind: "scan" as const,
+      createdAt,
+      attempts: 0,
+      owner,
+      label: "",
+      source: "card",
+      imageFile: o.file,
+      imageBytes: o.bytes,
+      recovered: true,
+    };
+    if (damagedAt > 0 && createdAt <= damagedAt) {
+      return { ...base, status: "failed" as const, retryable: false, errorKind: RECOVERED_DETAILS_LOST };
+    }
+    return { ...base, status: "pending" as const };
+  });
+}
+
+/** How many copies of a damaged list are kept at most (each under a key of its own). */
+export const MAX_DAMAGED_COPIES = 3;
+
+/**
+ * The record of the list of pending captures having been found damaged. Kept
+ * for good (it is a few bytes): `at` decides which unlisted photos must wait
+ * for the user, long after the notice itself was dismissed.
+ */
+export interface QueueIncident {
+  /** When the damage was (last) found. */
+  at: number;
+  /** Entries read from the damaged list and put back, exactly as they were stored. */
+  salvaged: number;
+  /** Entries that were there but could not be read; null = it cannot be told how many. */
+  unreadable: number | null;
+  /** Storage keys that hold the damaged original(s), untouched. */
+  copies: string[];
+  /** The user has seen the report and removed the kept copies. */
+  acknowledged: boolean;
+}
+
+export function parseIncident(raw: string | null): QueueIncident | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!v || typeof v !== "object" || typeof v.at !== "number" || !Number.isFinite(v.at) || v.at <= 0) return null;
+    return {
+      at: v.at,
+      salvaged: typeof v.salvaged === "number" && v.salvaged >= 0 ? v.salvaged : 0,
+      unreadable: typeof v.unreadable === "number" && v.unreadable >= 0 ? v.unreadable : null,
+      copies: Array.isArray(v.copies) ? v.copies.filter((k): k is string => typeof k === "string" && k.length > 0).slice(0, MAX_DAMAGED_COPIES) : [],
+      acknowledged: v.acknowledged === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Is there something about a damaged list the user has not dealt with yet? */
+export function incidentNeedsAttention(incident: QueueIncident | null): boolean {
+  return !!incident && (!incident.acknowledged || incident.copies.length > 0);
+}
+
+/** Ids of `legacy` that are neither in the stored index nor recorded as finished. */
+export function uncoveredIds(legacy: readonly QueueItem[], storedIds: ReadonlySet<string>, doneIds: readonly string[]): string[] {
+  const done = new Set(doneIds);
+  return legacy.filter((it) => !storedIds.has(it.id) && !done.has(it.id)).map((it) => it.id);
 }
 
 /** Why a capture could not be kept on the device. */

@@ -165,6 +165,11 @@ synthetic test cards and test accounts only.
 | O17 | Very slow or stalled connection during sync (network throttling): the sync does not hang; items wait and continue later | | |
 | O18 | "Create separately" for an "Already exists" item, switching airplane mode on right after the tap: exactly one new contact results; the item asks again instead of creating a second one | | |
 | O19 | An item being sent has no remove button; double tap on Save (manual entry, scan review) while offline queues one entry | | |
+| O20 | Damaged list (debug build: overwrite the stored index with cut-off text while scans, a typed contact and a card edit are queued): an alert appears at start; the Sync Center lists what was read back, counts what was not, and says the original is kept | | |
+| O21 | After O20: a photo whose entry was lost is shown under "needs attention" and is NOT sent by "Sync now"; Retry on it sends it as a new card | | |
+| O22 | After O20: restart the app — the report and the recovered entries are still there; "Delete the kept copy" asks first, and afterwards the report is gone and the queue unchanged | | |
+| O23 | Upgrade from the previous APK and force-stop the app repeatedly during its first start: every queued capture is present exactly once afterwards | | |
+| O24 | Sync on a network that accepts the connection but never answers (proxy that stalls): each request gives up at its limit (3 min for a photo, 1 min otherwise), the items keep waiting, and nothing is created twice when the network returns | | |
 
 ## C. Session
 
