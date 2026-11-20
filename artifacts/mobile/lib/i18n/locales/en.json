@@ -151,7 +151,8 @@
     "to": "To",
     "am": "AM",
     "pm": "PM",
-    "time": "Time"
+    "time": "Time",
+    "downloading": "Downloading…"
   },
   "nav": {
     "home": "Home",
@@ -197,7 +198,12 @@
     "sendFailedRateLimited": "You're sending requests too quickly. Wait a moment and try again.",
     "sendFailedBudget": "Your organization's monthly AI budget is used up. Ask an admin to raise it in AI Settings.",
     "retry": "Retry",
-    "notEntitled": "The AI Assistant is not included in your organisation's plan."
+    "notEntitled": "The AI Assistant is not included in your organisation's plan.",
+    "sendFailedSession": "Your session has ended. Sign in again to use the AI assistant.",
+    "sendFailedNotEntitled": "The AI assistant isn't included in your organization's plan.",
+    "sendFailedDisabled": "AI features are turned off for your organization.",
+    "sendFailedNotConfigured": "The AI assistant isn't set up for this environment. Contact your administrator.",
+    "sendFailedUnavailable": "The AI assistant is temporarily unavailable. Try again shortly."
   },
   "companies": {
     "title": "Companies",
@@ -265,7 +271,10 @@
     "biometrics": "Biometrics",
     "rememberMe": "Remember me",
     "showPassword": "Show password",
-    "hidePassword": "Hide password"
+    "hidePassword": "Hide password",
+    "sessionExpiredNotice": "Your session has ended. Sign in again to continue. Captures saved on this device are kept and will sync after you sign in.",
+    "sessionBlockedNotice": "This account cannot be used right now. Sign in again or contact your administrator. Captures saved on this device are kept.",
+    "tooManyAttempts": "Too many sign-in attempts. Wait a few minutes, then try again."
   },
   "home": {
     "greetingMorning": "Good morning",
@@ -416,7 +425,12 @@
     "qualityLabel": "Capture quality",
     "qualityGood": "Good quality",
     "qualityFair": "Fair — hold steady",
-    "qualityPoor": "Low quality — improve lighting"
+    "qualityPoor": "Low quality — improve lighting",
+    "errPermission": "You don't have permission to scan cards. Ask your administrator.",
+    "errNotEntitled": "Card scanning isn't included in your organization's plan. Ask your administrator.",
+    "errLimit": "Your organization's plan limit has been reached. Ask your administrator.",
+    "keptForLater": "The photo was saved on this device and will be processed automatically.",
+    "duplicateKept": "This contact may already exist. The capture was saved — review it in Sync."
   },
   "captureIntel": {
     "title": "Capture Intelligence",
@@ -1314,7 +1328,53 @@
     "legacyItemsWarning_other": "{{count}} offline items from an older app version have no account ownership and must be removed before they can be used.",
     "legacyItemsDiscard": "Remove older items",
     "notSignedInTitle": "Not saved",
-    "notSignedInBody": "Sign in to your company account to keep captures for later sync."
+    "notSignedInBody": "Sign in to your company account to keep captures for later sync.",
+    "notSavedTitle": "Not saved",
+    "storageFullBody": "This device is almost out of storage, so the capture could not be kept. Free up some space and try again.",
+    "storageErrorBody": "The capture could not be saved on this device. Try again; if it keeps happening, free up storage space or restart the app.",
+    "imageInvalidBody": "The photo could not be saved. Please take it again.",
+    "storageUnreadableBody": "The list of pending captures on this device could not be read. Nothing was deleted. Restart the app; until then, new captures cannot be kept offline.",
+    "storageWriteFailedBody": "The latest change could not be saved on this device. Free up storage space; captures made now may not be kept.",
+    "legacyUnreadableBody": "Captures saved by an older version of the app are still on this device but cannot be opened. They have not been deleted.",
+    "recoveredNotice_one": "{{count}} photo that was no longer listed was restored and will be processed.",
+    "recoveredNotice_other": "{{count}} photos that were no longer listed were restored and will be processed.",
+    "recoveredLabel": "Recovered capture",
+    "photosOnDevice_one": "{{count}} photo waiting on this device ({{size}} MB)",
+    "photosOnDevice_other": "{{count}} photos waiting on this device ({{size}} MB)",
+    "conflict": "Already exists",
+    "conflictView": "View contact",
+    "conflictAdd": "Add to this contact",
+    "conflictSeparate": "Create separately",
+    "needsAttentionShort": "Needs attention",
+    "removeTitle": "Remove this capture?",
+    "removeBody": "It has not been synced. Removing it cannot be undone.",
+    "removeScanBody": "This photo has not been processed yet. Removing it deletes it from this device and cannot be undone.",
+    "removeConfirm": "Remove",
+    "legacyDiscardTitle": "Remove older items?",
+    "legacyDiscardBody": "These captures from an older app version cannot be synced. Removing them cannot be undone.",
+    "sourceNfc": "NFC",
+    "problem": {
+      "network": "No connection. It will be sent automatically when you are back online.",
+      "session": "Your session could not be confirmed. Sign in again to continue syncing.",
+      "rateLimited": "Too many requests at once. Syncing continues in a moment.",
+      "duplicate": "A matching contact already exists. Choose what to do.",
+      "duplicateNamed": "Already in your contacts: {{name}}. Choose what to do.",
+      "duplicateMaybeSaved": "{{name}} is already in your contacts. An earlier attempt to send this entry lost its connection, so it may be that very contact — open it to check before you decide.",
+      "duplicateUnnamed": "a matching contact",
+      "aiDisabled": "AI features are turned off for your organization. This photo waits until they are enabled.",
+      "aiNotConfigured": "AI card scanning isn't set up for this environment. This photo waits; contact your administrator.",
+      "aiUnavailable": "AI card scanning is temporarily unavailable. This photo waits and is tried again later.",
+      "aiBudget": "Your organization's monthly AI budget is used up. This photo waits until the budget is raised or renewed.",
+      "noCard": "No readable business card was found in this photo. Remove it and capture the card again.",
+      "imageRejected": "This photo could not be processed. Remove it and capture the card again.",
+      "rejected": "The server did not accept this entry as it is (for example, its event may no longer exist). Tap Retry; if it is refused again, remove it and capture it again.",
+      "imageMissing": "The photo for this capture is no longer on this device. Remove it and capture the card again.",
+      "storage": "This device could not read the saved photo. Try again.",
+      "storageWrite": "This device could not save the sync progress, so syncing was paused. Free some storage space, then tap Sync now. Nothing was deleted.",
+      "limit": "Your organization's plan limit has been reached. Ask your administrator, then retry.",
+      "permission": "You don't have permission for this. Ask your administrator, then retry.",
+      "generic": "It could not be sent. It will be tried again."
+    }
   },
   "validation": {
     "required": "This field is required",
@@ -1481,7 +1541,13 @@
     "retryOcr": "Retry OCR",
     "saveError": "Couldn't save this contact. Check the details and try again.",
     "skipCard": "Skip this card",
-    "progress": "{{index}} of {{total}} · {{saved}} saved"
+    "progress": "{{index}} of {{total}} · {{saved}} saved",
+    "keepForLater": "Save photo for later",
+    "closeTitle": "Close the review?",
+    "closeBody_one": "{{count}} card has not been saved and will be discarded.",
+    "closeBody_other": "{{count}} cards have not been saved and will be discarded.",
+    "closeKeepReviewing": "Keep reviewing",
+    "closeDiscard": "Discard"
   },
   "dateField": {
     "m1": "January",

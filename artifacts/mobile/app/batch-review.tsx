@@ -3,16 +3,17 @@ import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  ApiError,
   type ExtractedCardData,
   useCreateContact,
   useCreateScan,
 } from "@workspace/api-client-react";
-import { describeScanError } from "@/lib/scan-error";
+import { answerWasLost, lostConnectionOrSession, worthKeepingForLater } from "@/lib/api-failure";
+import { enqueueFailureKeys } from "@/lib/offline-queue-store-model";
+import { describeScanFailure } from "@/lib/scan-error";
 
 import {
   ContactForm,
@@ -21,6 +22,7 @@ import {
   type ContactFormValues,
 } from "@/components/ContactForm";
 import { Card, FONT, LoadingState, PrimaryButton } from "@/components/ui";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
@@ -59,7 +61,8 @@ export default function BatchReviewScreen() {
   const createScan = useCreateScan();
   const createContact = useCreateContact();
   const { activeEventId, language } = useSettings();
-  const { t } = useLocale();
+  const { t, isRTL, textAlign } = useLocale();
+  const { enqueueScan, enqueueContact, captureOwner } = useOffline();
   const eventId = activeEventId ?? null;
 
   // Snapshot the buffer once; the store is cleared as we go.
@@ -72,8 +75,15 @@ export default function BatchReviewScreen() {
   const [ocrError, setOcrError] = useState(false);
   // Batch 7: specific error key (budget/rate-limit/no-card…) for the failure banner.
   const [ocrErrorKey, setOcrErrorKey] = useState<string | null>(null);
+  // Phase 2 Batch 1: the classified cause, to offer "save the photo for later"
+  // when nothing is wrong with the photo itself (no connection, AI unavailable…).
+  const [ocrErrorKind, setOcrErrorKind] = useState<string | null>(null);
+  const [keeping, setKeeping] = useState(false);
   const [values, setValues] = useState<ContactFormValues | null>(null);
   const formKey = useRef(0);
+  // The account reviewing this batch: anything kept for later belongs to it,
+  // whoever is signed in when a failed request finally returns.
+  const batchOwner = useRef(captureOwner());
 
   const current = captures[index];
 
@@ -85,11 +95,16 @@ export default function BatchReviewScreen() {
         formKey.current += 1;
         setValues(extractedToValues(precomputed.extracted ?? {}));
         setOcrError(false);
+        setOcrErrorKey(null);
+        setOcrErrorKind(null);
         return;
       }
       if (precomputed?.status === "error") {
         formKey.current += 1;
         setValues({ ...EMPTY_CONTACT });
+        // The background read failed: show ITS reason, not a generic one.
+        setOcrErrorKey(precomputed.errorKey ?? null);
+        setOcrErrorKind(precomputed.errorKind ?? null);
         setOcrError(true);
         return;
       }
@@ -114,6 +129,8 @@ export default function BatchReviewScreen() {
           if (result?.status === "error") {
             formKey.current += 1;
             setValues({ ...EMPTY_CONTACT });
+            setOcrErrorKey(result.errorKey ?? null);
+            setOcrErrorKind(result.errorKind ?? null);
             setOcrError(true);
             setOcrLoading(false);
             return;
@@ -135,6 +152,7 @@ export default function BatchReviewScreen() {
       setOcrLoading(true);
       setOcrError(false);
       setOcrErrorKey(null);
+      setOcrErrorKind(null);
       setValues(null);
       try {
         const scan = await createScan.mutateAsync({
@@ -150,7 +168,10 @@ export default function BatchReviewScreen() {
         formKey.current += 1;
         setValues(extractedToValues(scan.extractedData ?? {}));
       } catch (e) {
-        if (e instanceof ApiError) setOcrErrorKey(describeScanError(e.status, e.data).key);
+        // Shared classification: also covers "no connection" (not an ApiError).
+        const d = describeScanFailure(e);
+        setOcrErrorKey(d.key);
+        setOcrErrorKind(d.kind);
         setOcrError(true);
         formKey.current += 1;
         setValues({ ...EMPTY_CONTACT });
@@ -172,6 +193,48 @@ export default function BatchReviewScreen() {
     router.replace("/contacts");
   }
 
+  // Closing the review drops every card not saved yet (the batch lives in
+  // memory only). Ask first instead of losing them to one tap.
+  function confirmClose() {
+    const remaining = total - index;
+    if (remaining <= 0) {
+      finish();
+      return;
+    }
+    Alert.alert(t("batch.closeTitle"), t("batch.closeBody", { count: remaining }), [
+      { text: t("batch.closeKeepReviewing"), style: "cancel" },
+      { text: t("batch.closeDiscard"), style: "destructive", onPress: finish },
+    ]);
+  }
+
+  // The card could not be read for a reason that is not the photo's fault:
+  // keep the photo on the device and let the sync read it later.
+  async function keepPhotoForLater() {
+    if (!current || keeping) return;
+    setKeeping(true);
+    try {
+      const kept = await enqueueScan(current.imageData, {
+        label: t("scanReview.sourceCard"),
+        source: "card",
+        owner: batchOwner.current,
+        appLanguage: language === "ar" ? "ar" : "en",
+        eventId,
+        latitude: current.latitude,
+        longitude: current.longitude,
+        gpsAccuracy: current.gpsAccuracy,
+      });
+      if (!kept.ok) {
+        const msg = enqueueFailureKeys(kept.reason);
+        Alert.alert(t(msg.title), t(msg.body));
+        return;
+      }
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      advance();
+    } finally {
+      setKeeping(false);
+    }
+  }
+
   function advance() {
     if (index + 1 >= total) {
       finish();
@@ -189,6 +252,9 @@ export default function BatchReviewScreen() {
       longitude: current?.longitude ?? null,
       gpsAccuracy: current?.gpsAccuracy ?? null,
       cardImageUrl: ocrResult?.scanId ? `/api/scans/${ocrResult.scanId}/image` : null,
+      // The contact names its scan: the server links the two, and a card kept
+      // after this request failed can later be checked instead of saved twice.
+      scanId: ocrResult?.scanId ?? undefined,
     };
     try {
       await createContact.mutateAsync({ data: payload });
@@ -197,8 +263,32 @@ export default function BatchReviewScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       advance();
-    } catch {
-      // surfaced via createContact.isError
+    } catch (err) {
+      // The connection dropped (or the session ended) while saving: the reviewed
+      // card is kept on the device and sent later, and the review goes on.
+      if (lostConnectionOrSession(err)) {
+        const label =
+          [payload.firstName, payload.lastName].filter(Boolean).join(" ") || payload.contactCompany || t("contacts.newContact");
+        const kept = await enqueueContact(payload, {
+          label,
+          source: "card",
+          eventId,
+          latitude: payload.latitude,
+          longitude: payload.longitude,
+          gpsAccuracy: payload.gpsAccuracy,
+          owner: batchOwner.current,
+          answerLost: answerWasLost(err),
+        });
+        if (kept.ok) {
+          createContact.reset();
+          setSavedCount((c) => c + 1);
+          advance();
+          return;
+        }
+        const msg = enqueueFailureKeys(kept.reason);
+        Alert.alert(t(msg.title), t(msg.body));
+      }
+      // otherwise surfaced via createContact.isError
     }
   }
 
@@ -217,7 +307,7 @@ export default function BatchReviewScreen() {
           {t("batch.nothingDesc")}
         </Text>
         <View style={{ height: 20 }} />
-        <PrimaryButton label={t("batch.backToContacts")} icon="arrow-left" onPress={finish} />
+        <PrimaryButton label={t("batch.backToContacts")} icon={isRTL ? "arrow-right" : "arrow-left"} onPress={finish} />
       </View>
     );
   }
@@ -225,11 +315,12 @@ export default function BatchReviewScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20, paddingBottom: 8 }}>
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Pressable
-            onPress={finish}
+            onPress={confirmClose}
             hitSlop={10}
             style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            testID="button-batch-close"
           >
             <Feather name="x" size={20} color={colors.foreground} />
           </Pressable>
@@ -267,16 +358,16 @@ export default function BatchReviewScreen() {
         >
           {ocrError ? (
             <Card padded={false} style={{ backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40", marginBottom: 16 }}>
-              <View style={styles.errorBox}>
+              <View style={[styles.errorBox, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
                 <Feather name="alert-circle" size={16} color={colors.destructive} />
-                <Text style={[styles.errorText, { color: colors.destructive }]}>
+                <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
                   {ocrErrorKey ? t(ocrErrorKey) : t("batch.readError")}
                 </Text>
               </View>
               <Pressable
                 onPress={() => current && void runSequentialOcr(current)}
-                disabled={ocrLoading || createContact.isPending}
-                style={[styles.retryBtn, { borderColor: colors.destructive + "60" }]}
+                disabled={ocrLoading || createContact.isPending || keeping}
+                style={[styles.retryBtn, { borderColor: colors.destructive + "60", flexDirection: isRTL ? "row-reverse" : "row" }]}
                 testID="button-batch-retry-ocr"
               >
                 <Feather name="refresh-cw" size={14} color={colors.destructive} />
@@ -284,14 +375,27 @@ export default function BatchReviewScreen() {
                   {t("batch.retryOcr")}
                 </Text>
               </Pressable>
+              {ocrErrorKind && worthKeepingForLater(ocrErrorKind as Parameters<typeof worthKeepingForLater>[0]) ? (
+                <Pressable
+                  onPress={() => void keepPhotoForLater()}
+                  disabled={ocrLoading || createContact.isPending || keeping}
+                  style={[styles.retryBtn, { borderColor: colors.primary + "60", flexDirection: isRTL ? "row-reverse" : "row" }]}
+                  testID="button-batch-keep-later"
+                >
+                  <Feather name="clock" size={14} color={colors.primary} />
+                  <Text style={[styles.retryText, { color: colors.primary }]}>
+                    {t("batch.keepForLater")}
+                  </Text>
+                </Pressable>
+              ) : null}
             </Card>
           ) : null}
 
           {createContact.isError ? (
             <Card padded={false} style={{ backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40", marginBottom: 16 }}>
-              <View style={styles.errorBox}>
+              <View style={[styles.errorBox, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
                 <Feather name="alert-circle" size={16} color={colors.destructive} />
-                <Text style={[styles.errorText, { color: colors.destructive }]}>
+                <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
                   {t("batch.saveError")}
                 </Text>
               </View>

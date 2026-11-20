@@ -5,11 +5,24 @@ export type CustomFetchOptions = RequestInit & {
 };
 
 /**
- * Handler invoked when a request returns 401. Should attempt to obtain a fresh
- * access token (e.g. by calling the refresh endpoint). Returns the new token on
- * success, or null when the session can no longer be refreshed.
+ * What the rejected request looked like. `failedToken` is the bearer token it
+ * was sent with (null when it carried none), so a handler can tell a request of
+ * the CURRENT session from one that was sent before the session changed (a
+ * sign-out or another account signing in while it was in flight) and refuse to
+ * have it retried under the new session. `url` is where it was sent, so a
+ * handler can leave alone a 401 that is not about the session at all (the API
+ * answers 401 for a wrong current password, for example).
  */
-export type UnauthorizedHandler = () => Promise<string | null>;
+export type UnauthorizedContext = { failedToken: string | null; url: string };
+
+/**
+ * Handler invoked when a request returns 401. Should attempt to obtain a fresh
+ * access token (e.g. by calling the refresh endpoint). Returns the token the
+ * rejected request may be retried with, or null when it must not be retried
+ * (the session can no longer be refreshed, or the request belongs to another
+ * session). The retry is sent with exactly the returned token.
+ */
+export type UnauthorizedHandler = (context: UnauthorizedContext) => Promise<string | null>;
 
 /**
  * Observer invoked when a response is a 403 whose body code is
@@ -36,8 +49,11 @@ let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _onUnauthorized: UnauthorizedHandler | null = null;
 let _onFeatureDenied: FeatureDeniedHandler | null = null;
-// Shared in-flight refresh promise so concurrent 401s trigger only one refresh.
-let _refreshInFlight: Promise<string | null> | null = null;
+// In-flight refreshes, one per rejected token: concurrent 401s of the same
+// session share a single refresh, while a request rejected with ANOTHER token
+// (sent under a session that has since changed) gets its own answer and never
+// borrows the first one's result.
+const _refreshInFlight = new Map<string, Promise<string | null>>();
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -417,6 +433,11 @@ export async function customFetch<T = unknown>(
     }
   }
 
+  // The bearer token this request is actually sent with (see UnauthorizedContext).
+  const sentAuthorization = headers.get("authorization");
+  const sentToken =
+    sentAuthorization && /^bearer /i.test(sentAuthorization) ? sentAuthorization.slice(7).trim() || null : null;
+
   const requestInfo = { method, url: resolveUrl(input) };
 
   const response = await fetch(input, { ...init, method, headers });
@@ -429,16 +450,28 @@ export async function customFetch<T = unknown>(
       !__isRetry &&
       !isAuthFlowEndpoint(requestInfo.url)
     ) {
-      if (!_refreshInFlight) {
-        _refreshInFlight = Promise.resolve()
-          .then(() => _onUnauthorized!())
+      const refreshKey = sentToken ?? "";
+      let refresh = _refreshInFlight.get(refreshKey);
+      if (!refresh) {
+        const handler = _onUnauthorized;
+        refresh = Promise.resolve()
+          .then(() => handler({ failedToken: sentToken, url: requestInfo.url }))
+          // A handler that throws means "no retry", never a different error for the caller.
+          .catch(() => null)
           .finally(() => {
-            _refreshInFlight = null;
+            _refreshInFlight.delete(refreshKey);
           });
+        _refreshInFlight.set(refreshKey, refresh);
       }
-      const newToken = await _refreshInFlight;
+      const newToken = await refresh;
       if (newToken) {
-        return customFetch<T>(originalInput, { ...options, __isRetry: true });
+        // Retry with exactly the token the handler returned for THIS rejected
+        // request — not with whatever the token getter yields by then.
+        return customFetch<T>(originalInput, {
+          ...options,
+          headers: mergeHeaders(headersInit, { authorization: `Bearer ${newToken}` }),
+          __isRetry: true,
+        });
       }
     }
 

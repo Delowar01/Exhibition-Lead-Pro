@@ -158,7 +158,7 @@ export default function TasksScreen() {
             ) : null}
           </View>
         </View>
-        <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        <Feather name="chevron-right" directional size={18} color={colors.mutedForeground} />
       </Pressable>
     );
   }

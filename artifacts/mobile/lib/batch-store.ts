@@ -12,6 +12,10 @@ export interface BatchOcrResult {
   status: "pending" | "done" | "error";
   extracted: ExtractedCardData | null;
   scanId: number | null;
+  /** status === "error": i18n key of the specific reason (lib/scan-error.ts). */
+  errorKey?: string;
+  /** status === "error": the classified cause (lib/api-failure.ts), e.g. to offer "save for later". */
+  errorKind?: string;
 }
 
 let captures: BatchCapture[] = [];

@@ -837,7 +837,7 @@ export default function DuplicatesScreen() {
             Platform.OS === "web"
               ? () => (
                   <Pressable onPress={() => router.back()} hitSlop={10}>
-                    <Feather name="arrow-left" size={22} color={colors.foreground} />
+                    <Feather name="arrow-left" directional size={22} color={colors.foreground} />
                   </Pressable>
                 )
               : undefined,

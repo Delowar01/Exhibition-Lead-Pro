@@ -105,7 +105,7 @@ export default function EventPickerScreen() {
           hitSlop={10}
           style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
         >
-          <Feather name="chevron-left" size={20} color={colors.foreground} />
+          <Feather name="chevron-left" directional size={20} color={colors.foreground} />
         </Pressable>
         <Text style={[styles.heading, { color: colors.foreground }]}>
           {creating ? t("events.newEvent") : t("events.chooseEvent")}
@@ -262,7 +262,7 @@ export default function EventPickerScreen() {
                   {active ? (
                     <Feather name="check-circle" size={20} color={colors.primary} />
                   ) : (
-                    <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+                    <Feather name="chevron-right" directional size={20} color={colors.mutedForeground} />
                   )}
                 </Pressable>
               );

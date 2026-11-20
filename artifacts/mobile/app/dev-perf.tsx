@@ -321,7 +321,7 @@ export default function DevPerfScreen() {
         ]}
       >
         <Pressable onPress={() => router.back()} hitSlop={12} style={screenStyles.backBtn}>
-          <Feather name="arrow-left" size={22} color={colors.foreground} />
+          <Feather name="arrow-left" directional size={22} color={colors.foreground} />
         </Pressable>
         <Text style={[screenStyles.title, { color: colors.foreground }]}>Dev Performance</Text>
         <Pressable onPress={onClear} hitSlop={12} style={screenStyles.clearBtn} disabled={metrics.length === 0}>

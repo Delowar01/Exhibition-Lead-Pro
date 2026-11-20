@@ -26,7 +26,10 @@ describe("describeScanError", () => {
 
   it("maps AI-disabled (403 + code) distinctly from generic auth failures", () => {
     expect(describeScanError(403, { code: "AI_DISABLED" }).key).toBe("capture.errAiDisabled");
-    expect(describeScanError(403, {}).key).toBe("capture.errAuth");
+    // Phase 2 Batch 1: a 403 is a refusal, not an expired session — it no longer
+    // tells the user to sign in again. Only a 401 does.
+    expect(describeScanError(403, {}).key).toBe("capture.errPermission");
+    expect(describeScanError(403, { code: "FEATURE_NOT_ENTITLED" }).key).toBe("capture.errNotEntitled");
     expect(describeScanError(401, {}).key).toBe("capture.errAuth");
   });
 
@@ -104,8 +107,15 @@ describe("describeScanError", () => {
       "capture.errHeic",
       "capture.errOcr",
       "capture.errAuth",
+      "capture.errPermission",
+      "capture.errNotEntitled",
+      "capture.errLimit",
+      "capture.errNetwork",
       "capture.errServer",
       "capture.captureFailed",
+      "capture.keptForLater",
+      "capture.duplicateKept",
+      "batch.keepForLater",
       "batch.retryOcr",
       "batch.readError",
     ];

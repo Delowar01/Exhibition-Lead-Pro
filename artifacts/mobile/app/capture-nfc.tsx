@@ -56,6 +56,7 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useLocale } from "@/hooks/useLocale";
 import { extractedToContact } from "@/lib/contact-parse";
+import { enqueueFailureKeys } from "@/lib/offline-queue-store-model";
 import { featureAllowed } from "@/lib/entitlements";
 import {
   NfcError,
@@ -457,13 +458,13 @@ const TIPS = [
 ];
 
 const InstructionCard = memo(function InstructionCard() {
-  const { t } = useLocale();
+  const { t, isRTL } = useLocale();
   return (
     <View style={styles.instructionCard}>
       <Text style={styles.instructionTitle}>
         {t("nfc.instructionTitle")}
       </Text>
-      <View style={styles.tipsRow}>
+      <View style={[styles.tipsRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
         {TIPS.map(({ icon, textKey }) => (
           <View key={icon} style={styles.tip}>
             <View style={styles.tipIcon}>
@@ -481,7 +482,7 @@ const InstructionCard = memo(function InstructionCard() {
 export default function CaptureNfcScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { t } = useLocale();
+  const { t, isRTL } = useLocale();
   const { isOnline, enqueueContact } = useOffline();
   const { activeEventId } = useSettings();
   const eventId = activeEventId ?? null;
@@ -543,8 +544,11 @@ export default function CaptureNfcScreen() {
           t("nfc.contactFallback");
         // The capture mode travels WITH the contact (`source: "nfc"`), so the
         // API applies the `nfc.capture` entitlement when the item syncs.
-        if (!enqueueContact({ ...extractedToContact(data), eventId, source: "nfc" }, { label, source: "nfc", eventId })) {
-          Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
+        const kept = await enqueueContact({ ...extractedToContact(data), eventId, source: "nfc" }, { label, source: "nfc", eventId });
+        if (!kept.ok) {
+          const msg = enqueueFailureKeys(kept.reason);
+          Alert.alert(t(msg.title), t(msg.body));
+          setPhase("ready");
           return;
         }
         router.replace("/contacts");
@@ -643,9 +647,9 @@ export default function CaptureNfcScreen() {
           </Pressable>
         )}
         {phase === "success" && (
-          <View style={styles.successLabel}>
+          <View style={[styles.successLabel, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="check-circle" size={18} color={SUCCESS} />
-            <Text style={[styles.ghostBtnText, { color: SUCCESS, marginLeft: 6 }]}>
+            <Text style={[styles.ghostBtnText, { color: SUCCESS }, isRTL ? { marginRight: 6 } : { marginLeft: 6 }]}>
               {t("nfc.detectedSuccess")}
             </Text>
           </View>
@@ -679,7 +683,7 @@ export default function CaptureNfcScreen() {
         {(phase === "unsupported" || phase === "not_entitled") && (
           <PremiumButton
             label={t("nfc.goBack")}
-            icon="arrow-left"
+            icon={isRTL ? "arrow-right" : "arrow-left"}
             onPress={() => router.back()}
             color="#4B5563"
           />
@@ -732,6 +736,7 @@ function PremiumButton({
   onPress: () => void;
   color: string;
 }) {
+  const { isRTL } = useLocale();
   const scale = useSharedValue(1);
   const btnStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -748,7 +753,7 @@ function PremiumButton({
           colors={[color, adjustBrightness(color, -20)]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.premiumBtn}
+          style={[styles.premiumBtn, { flexDirection: isRTL ? "row-reverse" : "row" }]}
         >
           <Feather name={icon} size={18} color="#FFFFFF" />
           <Text style={styles.premiumBtnText}>{label}</Text>

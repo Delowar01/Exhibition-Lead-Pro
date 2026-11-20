@@ -12,6 +12,7 @@ import {
   parseStoredVault,
   reconcileBiometricOwner,
   serializeBiometricAccountHint,
+  vaultFollowsSession,
 } from "./biometric-account-model";
 import { deleteSecureItem, getSecureItem, setSecureItem } from "./secure-prefs";
 
@@ -46,6 +47,18 @@ export interface BiometricSignIn {
   owner: string;
   token: string;
   user: User;
+  /** Refresh token of the remembered session (absent in vaults written by earlier versions). */
+  refreshToken: string | null;
+}
+
+/** The tokens of one session, as far as the vault is concerned. */
+export interface SessionTokens {
+  token: string;
+  refreshToken: string | null;
+}
+
+function vaultJson(tokens: SessionTokens, user: unknown): string {
+  return JSON.stringify(tokens.refreshToken ? { token: tokens.token, user, refreshToken: tokens.refreshToken } : { token: tokens.token, user });
 }
 
 export async function isBiometricSupported(): Promise<boolean> {
@@ -105,10 +118,11 @@ export async function authenticateBiometric(
 export async function saveBiometricLogin(
   token: string,
   user: User,
+  refreshToken: string | null = null,
 ): Promise<void> {
   const hint = biometricAccountHint(user);
   if (!hint) throw new Error("Account has no stable identity for biometric sign-in");
-  await setSecureItem(VAULT_KEY, JSON.stringify({ token, user }));
+  await setSecureItem(VAULT_KEY, vaultJson({ token, refreshToken }, user));
   await setSecureItem(ACCOUNT_KEY, serializeBiometricAccountHint(hint));
 }
 
@@ -133,7 +147,7 @@ export async function readBiometricSignIn(
   if (target.kind !== "login") return null;
   // The vault is written from a `User` by saveBiometricLogin; its identity was
   // validated by the model, the remaining fields are the server's user record.
-  return { owner: target.owner, token: target.token, user: target.user as User };
+  return { owner: target.owner, token: target.token, user: target.user as User, refreshToken: target.refreshToken ?? null };
 }
 
 /** Forget the remembered account: secret vault AND its destination record. */
@@ -151,12 +165,46 @@ export async function clearBiometricLogin(): Promise<void> {
  */
 export async function reconcileBiometricLogin(
   user: User,
+  session?: SessionTokens,
 ): Promise<BiometricReconcileAction["kind"]> {
-  const action = reconcileBiometricOwner(parseStoredVault(await getSecureItem(VAULT_KEY)), user);
+  const vault = parseStoredVault(await getSecureItem(VAULT_KEY));
+  const action = reconcileBiometricOwner(vault, user);
   if (action.kind === "none") await deleteSecureItem(ACCOUNT_KEY);
-  else if (action.kind === "keep") await setSecureItem(ACCOUNT_KEY, serializeBiometricAccountHint(action.hint));
-  else await clearBiometricLogin();
+  else if (action.kind === "keep") {
+    // Phase 2 Batch 1: the SAME account just authenticated. The remembered
+    // sign-in now points at this fresh session instead of the one it was
+    // enabled in, so it stays usable for as long as this session lives and no
+    // second, unused server session is kept alive for it.
+    if (session && !vaultFollowsSession(vault, session)) await setSecureItem(VAULT_KEY, vaultJson(session, user));
+    await setSecureItem(ACCOUNT_KEY, serializeBiometricAccountHint(action.hint));
+  } else await clearBiometricLogin();
   return action.kind;
+}
+
+/**
+ * After a session renewal: when the remembered sign-in holds the tokens that
+ * were just replaced, give it the new ones (its stored user is kept). A vault of
+ * another account, or of another sign-in, is not touched.
+ */
+export async function followBiometricSession(previous: SessionTokens, next: SessionTokens): Promise<boolean> {
+  const raw = await getSecureItem(VAULT_KEY);
+  const vault = parseStoredVault(raw);
+  if (!vaultFollowsSession(vault, previous) || !vault.present) return false;
+  await setSecureItem(VAULT_KEY, vaultJson(next, vault.user));
+  return true;
+}
+
+/**
+ * After a session ended on the server: a remembered sign-in that holds that
+ * session's tokens can no longer sign anyone in, so it is forgotten (vault and
+ * destination). The user signs in with the password and can enable biometric
+ * sign-in again. Any other remembered account is left as it is.
+ */
+export async function forgetBiometricSession(ended: SessionTokens): Promise<boolean> {
+  const vault = parseStoredVault(await getSecureItem(VAULT_KEY));
+  if (!vaultFollowsSession(vault, ended)) return false;
+  await clearBiometricLogin();
+  return true;
 }
 
 // ---------------------------------------------------------------------------

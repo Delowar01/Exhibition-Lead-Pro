@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -19,6 +20,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import type { Locale } from "@/hooks/useLocale";
 import type { QueueItem } from "@/lib/offline-queue";
+import { syncProblemKey } from "@/lib/offline-sync";
 
 function sourceLabel(t: Locale["t"], source: string): string {
   switch (source) {
@@ -28,8 +30,13 @@ function sourceLabel(t: Locale["t"], source: string): string {
       return t("capture.qrCode");
     case "manual":
       return t("capture.manual");
+    case "nfc":
+      return t("sync.sourceNfc");
+    case "signature":
+      return t("scanReview.sourceSignature");
     default:
-      return source;
+      // Never show a raw internal source name.
+      return t("capture.businessCard");
   }
 }
 
@@ -56,20 +63,45 @@ export default function SyncScreen() {
     queue,
     pendingCount,
     failedCount,
+    conflictCount,
     legacyCount,
     isSyncing,
     lastSyncAt,
+    syncNotice,
+    storageProblem,
+    legacyUnreadable,
+    recoveredCount,
     syncNow,
     retryItem,
     removeItem,
+    resolveConflict,
     discardLegacyItems,
   } = useOffline();
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
-  const failed = queue.filter((it) => it.status === "failed");
-  const pending = queue.filter((it) => it.status !== "failed");
+  // "Needs attention" = what will not go through by itself: a failed item and
+  // a capture that matches an existing contact (the user decides).
+  const failed = queue.filter((it) => it.status === "failed" || it.status === "conflict");
+  const pending = queue.filter((it) => it.status !== "failed" && it.status !== "conflict");
   const canSync = isOnline && queue.length > 0 && !isSyncing;
+  const photos = queue.filter((it) => it.kind === "scan" && typeof it.imageBytes === "number");
+  const photoMb = photos.reduce((sum, it) => sum + (it.imageBytes ?? 0), 0) / (1024 * 1024);
+
+  // Removing a queued capture cannot be undone: ask first.
+  function confirmRemove(item: QueueItem) {
+    Alert.alert(t("sync.removeTitle"), t(item.kind === "scan" ? "sync.removeScanBody" : "sync.removeBody"), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("sync.removeConfirm"), style: "destructive", onPress: () => removeItem(item.id) },
+    ]);
+  }
+
+  function confirmDiscardLegacy() {
+    Alert.alert(t("sync.legacyDiscardTitle"), t("sync.legacyDiscardBody"), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("sync.legacyItemsDiscard"), style: "destructive", onPress: discardLegacyItems },
+    ]);
+  }
 
   function onSyncPress() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -78,10 +110,26 @@ export default function SyncScreen() {
 
   function renderRow(item: QueueItem) {
     const isFailed = item.status === "failed";
+    const isConflict = item.status === "conflict";
     const isSyncingItem = item.status === "syncing";
-    const statusColor = isFailed ? colors.destructive : isSyncingItem ? colors.primary : "#F59E0B";
-    const statusLabel = isFailed ? t("sync.failed") : isSyncingItem ? t("sync.syncing") : t("sync.pending");
+    const statusColor = isFailed ? colors.destructive : isSyncingItem || isConflict ? colors.primary : "#F59E0B";
+    const statusLabel = isFailed
+      ? t("sync.failed")
+      : isConflict
+        ? t("sync.conflict")
+        : isSyncingItem
+          ? t("sync.syncing")
+          : t("sync.pending");
     const icon: keyof typeof Feather.glyphMap = item.kind === "scan" ? "camera" : "user";
+    const title = item.label || (item.recovered ? t("sync.recoveredLabel") : t("contacts.newContact"));
+    // Why it is not through yet — in the user's language, never the raw error text.
+    const problem = isConflict
+      ? t(item.conflict?.afterLostAnswer ? "sync.problem.duplicateMaybeSaved" : "sync.problem.duplicateNamed", {
+          name: item.conflict?.name ?? t("sync.problem.duplicateUnnamed"),
+        })
+      : isFailed || item.errorKind
+        ? t(syncProblemKey(item.errorKind))
+        : null;
     return (
       <View
         key={item.id}
@@ -92,23 +140,52 @@ export default function SyncScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <Text numberOfLines={1} style={[styles.rowTitle, { color: colors.foreground, textAlign }]}>
-            {item.label}
+            {title}
           </Text>
           <Text numberOfLines={1} style={[styles.rowSub, { color: colors.mutedForeground, textAlign }]}>
             {sourceLabel(t, item.source)} · {timeAgo(t, item.createdAt)}
             {item.kind === "scan" ? t("sync.needsOcr") : ""}
           </Text>
-          {isFailed && item.lastError ? (
-            <Text numberOfLines={1} style={[styles.rowError, { color: colors.destructive }]}>
-              {item.lastError}
+          {problem ? (
+            <Text numberOfLines={3} style={[styles.rowError, { color: isFailed ? colors.destructive : colors.mutedForeground, textAlign }]}>
+              {problem}
             </Text>
           ) : null}
+          {isConflict && item.conflict ? (
+            // A matching contact exists and nothing was created. The decision is the user's.
+            <View style={[styles.conflictActions, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              <Pressable
+                onPress={() => router.push(`/contact/${item.conflict!.contactId}`)}
+                hitSlop={6}
+                style={[styles.conflictBtn, { borderColor: colors.border }]}
+                testID={`button-conflict-view-${item.id}`}
+              >
+                <Text style={[styles.conflictBtnText, { color: colors.foreground }]}>{t("sync.conflictView")}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => resolveConflict(item.id, "add_interaction")}
+                hitSlop={6}
+                style={[styles.conflictBtn, { borderColor: colors.primary }]}
+                testID={`button-conflict-add-${item.id}`}
+              >
+                <Text style={[styles.conflictBtnText, { color: colors.primary }]}>{t("sync.conflictAdd")}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => resolveConflict(item.id, "create_separate")}
+                hitSlop={6}
+                style={[styles.conflictBtn, { borderColor: colors.border }]}
+                testID={`button-conflict-separate-${item.id}`}
+              >
+                <Text style={[styles.conflictBtnText, { color: colors.foreground }]}>{t("sync.conflictSeparate")}</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
-        <View style={styles.rowActions}>
+        <View style={[styles.rowActions, { alignItems: isRTL ? "flex-start" : "flex-end" }]}>
           <View style={[styles.statusPill, { backgroundColor: statusColor + "1A" }]}>
             <Text style={[styles.statusPillText, { color: statusColor }]}>{statusLabel}</Text>
           </View>
-          <View style={{ flexDirection: "row", gap: 4 }}>
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", gap: 4 }}>
             {isFailed ? (
               <Pressable
                 onPress={() => {
@@ -120,15 +197,17 @@ export default function SyncScreen() {
                 <Feather name="refresh-cw" size={16} color={colors.primary} />
               </Pressable>
             ) : null}
-            <Pressable
-              onPress={() => {
-                removeItem(item.id);
-              }}
-              hitSlop={8}
-              style={styles.iconBtn}
-            >
-              <Feather name="trash-2" size={16} color={colors.mutedForeground} />
-            </Pressable>
+            {/* While it is being sent it cannot be taken back: removing it would not stop the request. */}
+            {isSyncingItem ? null : (
+              <Pressable
+                onPress={() => confirmRemove(item)}
+                hitSlop={8}
+                style={styles.iconBtn}
+                accessibilityLabel={t("sync.removeConfirm")}
+              >
+                <Feather name="trash-2" size={16} color={colors.mutedForeground} />
+              </Pressable>
+            )}
           </View>
         </View>
       </View>
@@ -202,6 +281,40 @@ export default function SyncScreen() {
           </View>
         </Card>
 
+        {/* What the user should know before syncing: storage trouble, a run that could not finish, recovered photos. */}
+        {storageProblem !== "none" ? (
+          <Card style={{ marginBottom: 12, borderColor: colors.destructive + "60", backgroundColor: colors.destructive + "10" }}>
+            <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "flex-start", gap: 10 }}>
+              <Feather name="alert-triangle" size={18} color={colors.destructive} />
+              <Text style={[styles.noticeText, { color: colors.foreground, textAlign }]} testID="notice-storage-problem">
+                {t(storageProblem === "index-unreadable" ? "sync.storageUnreadableBody" : "sync.storageWriteFailedBody")}
+              </Text>
+            </View>
+          </Card>
+        ) : null}
+        {syncNotice ? (
+          <Card style={{ marginBottom: 12 }}>
+            <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "flex-start", gap: 10 }}>
+              <Feather name="info" size={18} color={colors.primary} />
+              <Text style={[styles.noticeText, { color: colors.foreground, textAlign }]} testID="notice-sync-stopped">
+                {t(syncProblemKey(syncNotice))}
+              </Text>
+            </View>
+          </Card>
+        ) : null}
+        {recoveredCount > 0 ? (
+          <Card style={{ marginBottom: 12 }}>
+            <Text style={[styles.noticeText, { color: colors.foreground, textAlign }]}>
+              {t("sync.recoveredNotice", { count: recoveredCount })}
+            </Text>
+          </Card>
+        ) : null}
+        {legacyUnreadable ? (
+          <Card style={{ marginBottom: 12 }}>
+            <Text style={[styles.noticeText, { color: colors.foreground, textAlign }]}>{t("sync.legacyUnreadableBody")}</Text>
+          </Card>
+        ) : null}
+
         {/* Summary + sync */}
         <View style={[styles.summaryRow, { flexDirection: isRTL ? "row-reverse" : "row", marginBottom: 12 }]}>
           <Card style={{ flex: 1, alignItems: "center", paddingVertical: 16 }}>
@@ -212,12 +325,12 @@ export default function SyncScreen() {
             <Text
               style={[
                 styles.summaryNum,
-                { color: failedCount > 0 ? colors.destructive : colors.foreground },
+                { color: failedCount + conflictCount > 0 ? colors.destructive : colors.foreground },
               ]}
             >
-              {failedCount}
+              {failedCount + conflictCount}
             </Text>
-            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t("sync.failed")}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t("sync.needsAttentionShort")}</Text>
           </Card>
         </View>
 
@@ -233,6 +346,11 @@ export default function SyncScreen() {
             {t("sync.lastSyncedPrefix")}{timeAgo(t, lastSyncAt)}
           </Text>
         ) : null}
+        {photos.length > 0 ? (
+          <Text style={[styles.lastSync, { color: colors.mutedForeground }]}>
+            {t("sync.photosOnDevice", { count: photos.length, size: photoMb < 0.1 ? "0.1" : photoMb.toFixed(1) })}
+          </Text>
+        ) : null}
 
         {/* Items from an older app version carry no account ownership: never shown, never synced; only an explicit discard. */}
         {legacyCount > 0 ? (
@@ -240,7 +358,7 @@ export default function SyncScreen() {
             <Text style={[styles.statusSub, { color: colors.mutedForeground, textAlign }]}>
               {t("sync.legacyItemsWarning", { count: legacyCount })}
             </Text>
-            <Pressable onPress={discardLegacyItems} hitSlop={8} style={{ alignSelf: isRTL ? "flex-end" : "flex-start", marginTop: 8 }}>
+            <Pressable onPress={confirmDiscardLegacy} hitSlop={8} style={{ alignSelf: isRTL ? "flex-end" : "flex-start", marginTop: 8 }}>
               <Text style={[styles.toggleTitle, { color: colors.destructive }]}>{t("sync.legacyItemsDiscard")}</Text>
             </Pressable>
           </Card>
@@ -351,7 +469,11 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 14.5, fontFamily: FONT.semibold },
   rowSub: { fontSize: 12, fontFamily: FONT.regular, marginTop: 1 },
-  rowError: { fontSize: 11.5, fontFamily: FONT.medium, marginTop: 2 },
+  rowError: { fontSize: 11.5, lineHeight: 16, fontFamily: FONT.medium, marginTop: 2 },
+  noticeText: { flex: 1, fontSize: 13, lineHeight: 19, fontFamily: FONT.regular },
+  conflictActions: { flexWrap: "wrap", gap: 6, marginTop: 8 },
+  conflictBtn: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  conflictBtnText: { fontSize: 12, fontFamily: FONT.semibold },
   rowActions: { alignItems: "flex-end", gap: 6 },
   statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   statusPillText: { fontSize: 11, fontFamily: FONT.semibold },

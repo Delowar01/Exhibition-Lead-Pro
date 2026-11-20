@@ -16,6 +16,11 @@ import { initReactI18next } from "react-i18next";
 
 import ar from "./locales/ar.json";
 import en from "./locales/en.json";
+import { ensurePluralRules } from "./plural-rules";
+
+// Arabic has six plural categories. Guarantee they are selected correctly on
+// every JavaScript engine BEFORE the first translation (see ./plural-rules.ts).
+ensurePluralRules();
 
 export const SUPPORTED_LANGUAGES = ["en", "ar"] as const;
 export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];

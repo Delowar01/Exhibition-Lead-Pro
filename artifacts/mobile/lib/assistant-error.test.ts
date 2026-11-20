@@ -13,9 +13,12 @@ describe("classifySendError", () => {
     expect(classifySendError("network error")).toBe("network");
   });
 
-  it("classifies 401/403 as permission", () => {
-    expect(classifySendError({ status: 401, message: "Unauthorized" })).toBe("permission");
+  it("tells an ended session (401) apart from a refusal (403)", () => {
+    // Phase 2 Batch 1: 401 used to read "you don't have permission", which sent
+    // users to their administrator when all they had to do was sign in again.
+    expect(classifySendError({ status: 401, message: "Unauthorized" })).toBe("session_expired");
     expect(classifySendError({ status: 403, message: "Forbidden" })).toBe("permission");
+    expect(classifySendError({ status: 403, data: { code: "FEATURE_NOT_ENTITLED" } })).toBe("not_entitled");
   });
 
   it("classifies other HTTP errors as server", () => {
@@ -43,7 +46,18 @@ describe("classifySendError", () => {
   });
 
   it("maps every kind to an existing assistant i18n key in EN and AR", () => {
-    const kinds = ["network", "permission", "rate_limited", "budget_exceeded", "server"] as const;
+    const kinds = [
+      "network",
+      "session_expired",
+      "permission",
+      "not_entitled",
+      "rate_limited",
+      "budget_exceeded",
+      "ai_unavailable",
+      "ai_not_configured",
+      "ai_disabled",
+      "server",
+    ] as const;
     for (const kind of kinds) {
       const key = sendErrorMessageKey(kind);
       const [section, leaf] = key.split(".");

@@ -117,3 +117,75 @@ uploads HEIC. If you share a HEIC file into the app from another source and it
 reaches the server, the server rejects it with:
 "This HEIC image cannot be processed. Please use or convert it to JPEG."
 (shown localized in EN/AR). No action needed unless you see a different error.
+
+---
+
+# Phase 2 · Batch 1 — reliability checks (NOT yet run on a device)
+
+These behaviours were implemented and tested with the unit suite and against a
+local API only. They need a real Android device and a fresh APK built from the
+branch (the manifest change of row R1 exists only in a new native build). Use
+synthetic test cards and test accounts only.
+
+## A. Arabic and layout direction
+
+| # | Check | Result | Notes |
+| --- | --- | --- | --- |
+| R1 | Phone SYSTEM language Arabic, app language Arabic: rows run right-to-left, text is right-aligned, nothing is mirrored twice | | |
+| R2 | Phone SYSTEM language Arabic, app language English: the interface is NOT mirrored | | |
+| R3 | Phone SYSTEM language English, app language Arabic: same picture as R1 | | |
+| R4 | Switching the app language applies at once, without restart, in all three combinations | | |
+| R5 | Back arrows point right and "more" chevrons point left in Arabic (home, contacts, contact page, settings, events, sync, camera Done) | | |
+| R6 | Arabic counts: 0, 1, 2, 5, 12 and 100 contacts / queued items / unread notifications read as Arabic, never as English | | |
+| R7 | Contact page in Arabic: details, lead section, status options, assignment list, manage rows mirrored; no clipped text | | |
+| R8 | Camera in Arabic: close button, banners and Done mirrored; a long error message wraps inside the screen | | |
+| R9 | Typing Arabic and English into the contact form: cursor, alignment and mixed text behave | | |
+| R10 | Native elements with the manifest change: system alerts, permission dialogs, date/time pickers, keyboard — usable in both languages | | |
+
+## B. Offline scanning
+
+| # | Check | Result | Notes |
+| --- | --- | --- | --- |
+| O1 | Upgrade from the previous APK with scans already queued: all still listed under the right account, and they sync | | |
+| O2 | Airplane mode, rapid capture of 60+ cards: every one listed; force-stop and reopen: all still there | | |
+| O3 | Storage nearly full (under 25 MB free): capture shows "not saved — storage almost full"; nothing is listed as kept | | |
+| O4 | Sync 20 queued scans and switch airplane mode on/off repeatedly: each card ends as one contact; no duplicate contact | | |
+| O5 | Force-stop the app in the middle of a sync, reopen: sync continues; no duplicate contact | | |
+| O6 | Queue a scan of a card whose contact already exists: "Already exists" with the three choices; each choice does what it says | | |
+| O7 | Sign in as another account with scans pending: they are not shown and not sent; sign back in: they are there | | |
+| O8 | Remove a queued capture: confirmation first; cancel keeps it | | |
+| O9 | Online but with a dead connection (router without internet): a capture is kept for later with an explanation, not lost | | |
+| O10 | Batch mode, close review with unsaved cards: confirmation first | | |
+| O11 | Background the app for 10+ minutes with items queued, return: sync runs without opening the Sync Center | | |
+| O12 | Photo size and time per capture are not noticeably worse than before | | |
+| O13 | AI unavailable while online: the capture is kept; with the app left open it is tried again by itself (first after about 30 s, then at growing intervals) | | |
+| O14 | Rapid capture on a slow connection, then sign out and sign in as another account before it finishes: nothing of the first account appears under the second; after signing back in, the first account has it | | |
+| O15 | Fill the storage during a sync: the Sync Center says syncing is paused; after freeing space and "Sync now", every card ends as one contact | | |
+| O16 | Rapid and batch captures made online: each contact shows its card image, and its history shows the scan | | |
+| O17 | Very slow or stalled connection during sync (network throttling): the sync does not hang; items wait and continue later | | |
+| O18 | "Create separately" for an "Already exists" item, switching airplane mode on right after the tap: exactly one new contact results; the item asks again instead of creating a second one | | |
+| O19 | An item being sent has no remove button; double tap on Save (manual entry, scan review) while offline queues one entry | | |
+
+## C. Session
+
+| # | Check | Result | Notes |
+| --- | --- | --- | --- |
+| S1 | Leave the app unused past the access-token lifetime (or use a test server with a short one): reopening works without signing in | | |
+| S2 | End the session from the web portal (terminate session / change password): the app returns to sign-in with the "session has ended" notice; queued captures remain | | |
+| S3 | Sign in again as the same account after S2: queued captures sync | | |
+| S4 | Biometric sign-in after a session renewal: still works | | |
+| S5 | Biometric sign-in after S2: no longer offered; after a password sign-in and re-enabling it, it works | | |
+| S6 | Lose the connection for a minute while using the app: nobody is signed out | | |
+| S7 | Wrong password several times: "too many attempts" message | | |
+| S8 | Settings → change password with a WRONG current password: "incorrect password" is shown, the user stays signed in, biometric sign-in still works afterwards | | |
+| S9 | Change the profile photo, then keep using the app past the access-token lifetime: still signed in | | |
+
+## D. AI messages (needs a test tenant an operator can configure)
+
+| # | Check | Result | Notes |
+| --- | --- | --- | --- |
+| A1 | AI not configured: camera, batch review, scan review reprocess and the Assistant each say so, in EN and AR | | |
+| A2 | AI budget exhausted: the budget message everywhere; a queued scan waits instead of failing | | |
+| A3 | Provider unavailable / platform limit: "temporarily unavailable; manual, QR and NFC still work" | | |
+| A4 | Photo without a card: "no readable card", and the Sync Center does not upload it again by itself | | |
+| A5 | No message shows a provider name, a model name, a status code or raw error text | | |

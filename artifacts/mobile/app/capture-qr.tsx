@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FONT, PrimaryButton } from "@/components/ui";
 import { extractedToContact, parseQrBest } from "@/lib/contact-parse";
+import { enqueueFailureKeys } from "@/lib/offline-queue-store-model";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
@@ -31,7 +32,7 @@ export default function CaptureQrScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { t } = useLocale();
+  const { t, isRTL } = useLocale();
   const [permission, requestPermission] = useCameraPermissions();
   const { isOnline, enqueueContact } = useOffline();
   const { activeEventId } = useSettings();
@@ -62,11 +63,19 @@ export default function CaptureQrScreen() {
         [data.firstName, data.lastName].filter(Boolean).join(" ") ||
         data.company ||
         t("qr.contactFallback");
-      if (!enqueueContact(payload, { label, source: "qr", eventId })) {
-        Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
-        return;
-      }
-      router.replace("/contacts");
+      void (async () => {
+        const kept = await enqueueContact(payload, { label, source: "qr", eventId });
+        if (!kept.ok) {
+          // Not kept (no signed-in tenant account, or the device refused to store it):
+          // say so and let the code be scanned again.
+          const msg = enqueueFailureKeys(kept.reason);
+          Alert.alert(t(msg.title), t(msg.body));
+          scannedRef.current = false;
+          setScanned(false);
+          return;
+        }
+        router.replace("/contacts");
+      })();
       return;
     }
     router.replace({
@@ -131,7 +140,7 @@ export default function CaptureQrScreen() {
         colors={["rgba(0,0,0,0.65)", "transparent"]}
         style={[styles.topOverlay, { paddingTop: topPad + 12 }]}
       >
-        <View style={styles.topRow}>
+        <View style={[styles.topRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeBtn}>
             <Feather name="x" size={22} color="#FFFFFF" />
           </Pressable>

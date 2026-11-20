@@ -1,52 +1,61 @@
-// Classifies a failed AI assistant send so the UI can show a useful, translated
-// error instead of silently dropping the user's message. Kept UI-free so it can
-// be unit-tested in the node vitest environment.
+// Classifies a failed AI Assistant send so the UI can show a useful, translated
+// message instead of silently dropping the user's text. UI-free, unit-tested.
+//
+// Phase 2 Batch 1: the classification is shared with card scanning and the
+// offline sync engine (lib/api-failure.ts), so "AI is not configured", "AI is
+// temporarily unavailable" and "session expired" read the same in the Assistant
+// as on the camera screen. No provider detail ever reaches the message.
+import { assistantCanRetry, assistantFailureKey, classifyApiFailure, type ApiFailureKind } from "./api-failure";
 
-export type SendErrorKind = "network" | "permission" | "rate_limited" | "budget_exceeded" | "server";
+export type SendErrorKind =
+  | "network"
+  | "session_expired"
+  | "permission"
+  | "not_entitled"
+  | "rate_limited"
+  | "budget_exceeded"
+  | "ai_unavailable"
+  | "ai_not_configured"
+  | "ai_disabled"
+  | "server";
 
-// Reads the machine-readable error code the API attaches to AI errors
-// (e.g. AI_RATE_LIMITED vs AI_BUDGET_EXCEEDED — both HTTP 429, very different advice).
-function errorCodeOf(err: object): string {
-  const data = (err as { data?: unknown }).data;
-  if (data && typeof data === "object" && typeof (data as { code?: unknown }).code === "string") {
-    return (data as { code: string }).code;
-  }
-  return "";
-}
+const FROM_FAILURE: Partial<Record<ApiFailureKind, SendErrorKind>> = {
+  network: "network",
+  session_expired: "session_expired",
+  permission: "permission",
+  not_entitled: "not_entitled",
+  rate_limited: "rate_limited",
+  ai_budget: "budget_exceeded",
+  ai_unavailable: "ai_unavailable",
+  ai_platform_limit: "ai_unavailable",
+  upstream: "ai_unavailable",
+  ai_not_configured: "ai_not_configured",
+  ai_disabled: "ai_disabled",
+};
+
+const TO_FAILURE: Record<SendErrorKind, ApiFailureKind> = {
+  network: "network",
+  session_expired: "session_expired",
+  permission: "permission",
+  not_entitled: "not_entitled",
+  rate_limited: "rate_limited",
+  budget_exceeded: "ai_budget",
+  ai_unavailable: "ai_unavailable",
+  ai_not_configured: "ai_not_configured",
+  ai_disabled: "ai_disabled",
+  server: "server",
+};
 
 export function classifySendError(err: unknown): SendErrorKind {
-  // ApiError (and any HTTP-shaped error) carries a numeric status.
-  if (err && typeof err === "object" && "status" in err) {
-    const status = (err as { status: unknown }).status;
-    if (typeof status === "number") {
-      if (status === 401 || status === 403) return "permission";
-      if (status === 429) {
-        const code = errorCodeOf(err);
-        if (code === "AI_BUDGET_EXCEEDED") return "budget_exceeded";
-        return "rate_limited";
-      }
-      return "server";
-    }
-  }
-  // fetch() throws TypeError on connectivity failures (RN: "Network request failed").
-  if (err instanceof TypeError) return "network";
-  const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "";
-  if (/network request failed|failed to fetch|network error|abort/i.test(msg)) return "network";
-  return "server";
+  return FROM_FAILURE[classifyApiFailure(err).kind] ?? "server";
 }
 
 // i18n key for the error message shown under a failed send bubble.
 export function sendErrorMessageKey(kind: SendErrorKind): string {
-  switch (kind) {
-    case "network":
-      return "assistant.sendFailedNetwork";
-    case "permission":
-      return "assistant.sendFailedPermission";
-    case "rate_limited":
-      return "assistant.sendFailedRateLimited";
-    case "budget_exceeded":
-      return "assistant.sendFailedBudget";
-    default:
-      return "assistant.sendFailed";
-  }
+  return assistantFailureKey(TO_FAILURE[kind] ?? "server");
+}
+
+/** Whether "Retry" can help. It cannot while AI is switched off, unconfigured or over budget, or after the session ended. */
+export function canRetrySend(kind: SendErrorKind): boolean {
+  return assistantCanRetry(TO_FAILURE[kind] ?? "server");
 }

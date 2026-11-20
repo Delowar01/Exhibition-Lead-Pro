@@ -14,7 +14,7 @@ import {
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
-import { Platform, Pressable } from "react-native";
+import { I18nManager, Platform, Pressable } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -33,9 +33,22 @@ import { OfflineProvider } from "@/contexts/OfflineContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { resolveApiUrl } from "@/lib/api-url";
 import { getCachedToken } from "@/lib/auth-storage";
+import { claimLayoutDirection } from "@/lib/layout-direction";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+// The app mirrors its own layout for Arabic (hooks/useLocale.ts). Native
+// mirroring by the phone's SYSTEM language must stay off, or everything is
+// mirrored twice on an Arabic-language phone (lib/layout-direction.ts).
+const layoutDirection = claimLayoutDirection(I18nManager);
+if (__DEV__ && layoutDirection.nativeMirroringActive) {
+  console.warn(
+    "[CSP] Native right-to-left mirroring is active in this run (system language is RTL and this build's " +
+      "manifest still allows it). It is switched off from the next start; a build made with " +
+      "plugins/withNativeLtr.js never enables it.",
+  );
+}
 
 // Wire the API client once, at module load, before any request fires.
 // Resolution order (lib/api-url.ts):
@@ -105,7 +118,7 @@ function WebHeaderBack({ canGoBack }: { canGoBack?: boolean }) {
       hitSlop={12}
       style={{ paddingHorizontal: 4, paddingVertical: 4 }}
     >
-      <Feather name="arrow-left" size={22} />
+      <Feather name="arrow-left" directional size={22} />
     </Pressable>
   );
 }
