@@ -17,6 +17,7 @@ import platformRouter from "./platform.js";
 import platformBillingRouter from "./platform-billing.js";
 import platformPlansRouter from "./platform-plans.js";
 import platformAnalyticsRouter from "./platform-analytics.js";
+import platformAiRouter from "./platform-ai.js";
 import reportsRouter from "./reports.js";
 import analyticsRouter from "./analytics.js";
 import pushRouter from "./push.js";
@@ -93,6 +94,8 @@ router.use(platformBillingRouter);
 router.use(platformPlansRouter);
 // G-7: platform-owner analytics (read-only aggregates; counts only, never tenant records).
 router.use(platformAnalyticsRouter);
+// Platform Owner → Settings → AI Providers (policy, readiness, usage; never a credential).
+router.use(platformAiRouter);
 router.use(reportsRouter);
 router.use(analyticsRouter);
 router.use(pushRouter);

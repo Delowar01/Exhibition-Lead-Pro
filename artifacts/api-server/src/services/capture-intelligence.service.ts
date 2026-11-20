@@ -15,8 +15,8 @@ import * as eventsRepo from "../repositories/events.repository.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
 import { normalizeName } from "./organizations.service.js";
-import { enrichContact, logAiError } from "../lib/ai.js";
-import { resolveSettings } from "./ai.service.js";
+import { enrichContact, logAiError, type AiContext } from "../lib/ai.js";
+import { resolveRuntime } from "./ai.service.js";
 import { PROMPTS } from "../ai/prompts.js";
 
 export interface OrganizationMatch {
@@ -168,6 +168,7 @@ async function aiIndustrySuggestion(
     return { suggestion: null, degraded: false };
   }
   try {
+    const aiCtx: AiContext = { companyId: user.companyId ?? undefined, userId: user.id };
     const result = await enrichContact(
       {
         firstName: fields.firstName ?? null,
@@ -179,18 +180,19 @@ async function aiIndustrySuggestion(
         linkedin: fields.linkedin ?? null,
         country: fields.country ?? null,
       },
-      { companyId: user.companyId ?? undefined, userId: user.id },
+      aiCtx,
     );
     if (!result.industry) return { suggestion: null, degraded: false };
-    // Stamp the REAL runtime provider/model (the effective tenant ai_settings, i.e. what
-    // GET /ai/settings reports) rather than a hardcoded placeholder, so provenance is honest.
-    let provider: string | null = null;
-    let model: string | null = null;
-    if (user.companyId != null) {
+    // Stamp the provider and model that actually served the call (the fallback provider
+    // when it answered); where the call left no record, what the platform policy would
+    // use — the same pair GET /ai/settings reports. Never a hardcoded placeholder.
+    let provider: string | null = aiCtx.served?.provider ?? null;
+    let model: string | null = aiCtx.served?.model ?? null;
+    if (provider === null && user.companyId != null) {
       try {
-        const settings = await resolveSettings(user.companyId);
-        provider = settings.provider;
-        model = settings.model;
+        const runtime = await resolveRuntime(user.companyId);
+        provider = runtime.provider;
+        model = runtime.model;
       } catch {
         /* provenance best-effort; suggestion still valid */
       }

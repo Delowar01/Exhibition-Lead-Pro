@@ -9,9 +9,9 @@ import * as subsRepo from "../repositories/subscriptions.repository.js";
 import { allowancesOf } from "../lib/billing/plan-versions.js";
 import { getCachedAiSettings, setCachedAiSettings, invalidateAiSettingsCache } from "../lib/ai-settings-cache.js";
 import { AI_FEATURES, type AiFeature, type AiUsage } from "../ai/types.js";
-import { availableProviders } from "../ai/providers/index.js";
-import { geminiProvider } from "../ai/providers/gemini.js";
-import { hasPricing, estimateCostMicroUsd, pricingVersion } from "../ai/pricing.js";
+import { isRealProvider, stubRegistered } from "../ai/providers/index.js";
+import { hasPricing, estimateCostMicroUsd, ceilingCostMicroUsd, pricingVersion } from "../ai/pricing.js";
+import * as platformAi from "./platform-ai.service.js";
 import {
   normalizeWorkflowRules,
   WORKFLOW_RULE_BOUNDS,
@@ -40,6 +40,10 @@ import {
 
 export interface EffectiveAiSettings {
   companyId: number;
+  // The tenant's STORED provider and model (ai_settings). Which provider actually serves
+  // the tenant is decided by the Platform Owner's AI provider policy — see
+  // effectiveProviderOf below and src/ai/policy.ts. The stored value selects a provider
+  // only for the deterministic test provider, outside production.
   provider: string;
   model: string;
   enabled: boolean;
@@ -212,8 +216,9 @@ export async function reserveBudgetIfConfigured(
 
   const reserveTokens = config.ai.budget.reserveTokens;
   // Cost reservation prices the reserved tokens half as input / half as output — a
-  // deliberate middle estimate (actual usage replaces it at finalize).
-  const reserveCost = estimateCostMicroUsd(model, reserveTokens / 2, reserveTokens / 2);
+  // deliberate middle estimate (actual usage replaces it at finalize) — at the model's
+  // dearest tier where it has one, so a reservation never under-reserves.
+  const reserveCost = ceilingCostMicroUsd(model, reserveTokens / 2, reserveTokens / 2);
   const check = await repo.reserveBudget({
     companyId,
     requestId,
@@ -402,18 +407,42 @@ function effectiveFlags(s: EffectiveAiSettings): Record<AiFeature, boolean> {
   return out;
 }
 
-function formatSettings(s: EffectiveAiSettings) {
+// The provider and model that serve this tenant NOW under the platform policy (or, when
+// nothing can serve, the ones to report). This is what GET /ai/settings and GET
+// /ai/health show, so they always agree with what a request would actually use.
+async function effectiveProviderOf(s: EffectiveAiSettings) {
+  return platformAi.resolveChainFor({ companyId: s.companyId, tenant: { provider: s.provider, model: s.model } });
+}
+
+// The provider and model that serve this tenant now under the platform policy. Features
+// stamp an AI-sourced row with who actually served its call (lib/ai.ts servedBy); this is
+// the value used where a call left no such record.
+export async function resolveRuntime(companyId: number): Promise<{ provider: string; model: string }> {
+  return (await effectiveProviderOf(await resolveSettings(companyId))).display;
+}
+
+// Providers a tenant setting may name: the ones the Platform Owner has enabled, plus
+// the test provider where it is registered. (Naming a real provider is accepted for
+// compatibility and stored, but it does not select the vendor — the platform does.)
+async function selectableProviders(): Promise<string[]> {
+  const { policy } = await platformAi.getPolicyState();
+  const real = (["gemini", "anthropic"] as const).filter((p) => policy.providers[p].enabled);
+  return stubRegistered() ? [...real, "stub"] : [...real];
+}
+
+async function formatSettings(s: EffectiveAiSettings) {
+  const chain = await effectiveProviderOf(s);
   return {
     companyId: s.companyId,
-    provider: s.provider,
-    model: s.model,
+    provider: chain.display.provider,
+    model: chain.display.model,
     enabled: s.enabled,
     featureFlags: effectiveFlags(s),
     monthlyTokenBudget: s.monthlyTokenBudget,
     monthlyCostBudgetUsd: s.monthlyCostBudgetMicroUsd == null ? null : microToUsd(s.monthlyCostBudgetMicroUsd),
     workflowRules: s.workflowRules,
     hasCustomSettings: s.hasCustomSettings,
-    availableProviders: availableProviders(),
+    availableProviders: await selectableProviders(),
     updatedAt: s.updatedAt ? s.updatedAt.toISOString() : null,
     // Batch 41: provenance of the effective budgets (tenant override > plan allowance > none).
     budgetSource: s.budgetSource,
@@ -466,8 +495,10 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
     values.enabled = body.enabled;
   }
   if (body.provider !== undefined) {
-    if (typeof body.provider !== "string" || !availableProviders().includes(body.provider)) {
-      throw new AppError(400, `provider must be one of: ${availableProviders().join(", ")}`);
+    // Only a provider the Platform Owner has enabled (or the test provider) may be named.
+    const allowed = await selectableProviders();
+    if (typeof body.provider !== "string" || !allowed.includes(body.provider)) {
+      throw new AppError(400, `provider must be one of: ${allowed.join(", ")}`);
     }
     values.provider = body.provider;
   }
@@ -525,11 +556,24 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
   // plan's cost allowance included — unenforceable. A real provider therefore
   // only accepts a priced model. The deterministic stub provider (registered
   // outside production only) keeps its test models.
+  // Only a model was sent — a client echoing what GET /ai/settings showed, which is the
+  // pair that SERVES the tenant, not necessarily the stored one: store the model with
+  // the enabled provider it belongs to, instead of refusing it against a stored
+  // provider it never belonged to. (Neither selects the vendor; the platform does.)
+  if (values.model !== undefined && values.provider === undefined && current.provider !== "stub") {
+    const sent = values.model;
+    const owner = (await selectableProviders()).find((p) => isRealProvider(p) && platformAi.catalog.modelsFor(p).includes(sent));
+    const storedOk = isRealProvider(current.provider) && platformAi.catalog.modelsFor(current.provider).includes(sent);
+    if (owner && !storedOk) values.provider = owner;
+  }
   if (values.model !== undefined || values.provider !== undefined) {
     const provider = values.provider ?? current.provider;
     const model = values.model ?? current.model;
-    if (provider !== "stub" && !hasPricing(model)) {
-      throw new AppError(400, `model must be one of: ${Object.keys(config.ai.pricing).filter((m) => !m.startsWith("stub-")).join(", ")}`, { code: AI_MODEL_NOT_SUPPORTED, details: { provider, model } });
+    // A real provider takes only its own selectable models (each has a price).
+    const selectable = isRealProvider(provider) ? platformAi.catalog.modelsFor(provider) : null;
+    if (provider !== "stub" && (!hasPricing(model) || (selectable !== null && !selectable.includes(model)))) {
+      const list = selectable ? selectable.filter((m) => !m.startsWith("stub-")) : Object.keys(config.ai.pricing).filter((m) => !m.startsWith("stub-"));
+      throw new AppError(400, `model must be one of: ${list.join(", ")}`, { code: AI_MODEL_NOT_SUPPORTED, details: { provider, model } });
     }
   }
 
@@ -733,13 +777,16 @@ export async function getHealth(user: AuthUser) {
   const to = new Date();
   const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
   const last24h = await repo.usageTotals(user, from, to, false);
-  const configured = settings.provider === "gemini" ? geminiProvider.isConfigured() : false;
+  // Ready when some enabled provider can serve this tenant now (a credential is
+  // present) — the same resolution a request goes through, without calling a provider.
+  const chain = await effectiveProviderOf(settings);
+  const configured = chain.candidates.length > 0;
   return {
-    provider: settings.provider,
-    model: settings.model,
+    provider: chain.display.provider,
+    model: chain.display.model,
     configured,
     status: configured ? "ok" : "unconfigured",
-    pricingAvailable: hasPricing(settings.model),
+    pricingAvailable: hasPricing(chain.display.model),
     last24h: {
       requests: last24h.requests,
       errors: last24h.errors,

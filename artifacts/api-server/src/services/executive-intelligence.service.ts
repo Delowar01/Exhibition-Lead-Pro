@@ -6,7 +6,7 @@ import * as repo from "../repositories/analytics.repository.js";
 import * as execRepo from "../repositories/executive.repository.js";
 import * as core from "../lib/executive-intelligence.js";
 import * as ai from "../lib/ai.js";
-import { resolveSettings } from "./ai.service.js";
+import { resolveRuntime as resolveEffectiveRuntime } from "./ai.service.js";
 import { PROMPTS } from "../ai/prompts.js";
 import type { AppLanguage } from "../lib/ai.js";
 import { getQueue } from "../lib/jobs/queue.js";
@@ -307,8 +307,7 @@ function mapByUser(rows: repo.UserCountRow[]): Map<number, number> {
 async function resolveRuntime(companyId: number | null | undefined): Promise<{ provider?: string; model?: string }> {
   if (companyId == null) return {};
   try {
-    const s = await resolveSettings(companyId);
-    return { provider: s.provider, model: s.model };
+    return await resolveEffectiveRuntime(companyId);
   } catch {
     return {};
   }
@@ -392,12 +391,10 @@ export async function generateSummary(user: AuthUser, opts: GenerateSummaryOpts 
   let promptVersion: number | null = null;
 
   // Best-effort AI phrasing (soft-degrade: the deterministic core survives any failure).
-  const runtime = await resolveRuntime(user.companyId);
+  const aiCtx: ai.AiContext = { companyId: user.companyId ?? null, userId: user.id };
+  const runtime = ai.servedBy(aiCtx, await resolveRuntime(user.companyId)); // who actually served the call
   try {
-    const phrased = await ai.phraseExecutiveSummary(summaryContext(signals, resolved.scope.name), opts.appLanguage ?? "en", {
-      companyId: user.companyId ?? null,
-      userId: user.id,
-    });
+    const phrased = await ai.phraseExecutiveSummary(summaryContext(signals, resolved.scope.name), opts.appLanguage ?? "en", aiCtx);
     data = {
       ...deterministic,
       headline: phrased.headline ?? deterministic.headline,
@@ -565,8 +562,9 @@ export async function generateForecast(user: AuthUser, opts: GenerateForecastOpt
       `Assumptions: ${f.assumptions.join("; ")}`,
       `Recent ${series.label} series (${series.unit}): ${series.values.join(", ")}`,
     ].join("\n");
-    const runtime = await resolveRuntime(user.companyId);
-    const phrased = await ai.phraseExecutiveForecast(ctx, opts.appLanguage ?? "en", { companyId: user.companyId ?? null, userId: user.id });
+    const aiCtx: ai.AiContext = { companyId: user.companyId ?? null, userId: user.id };
+    const runtime = ai.servedBy(aiCtx, await resolveRuntime(user.companyId)); // who actually served the call
+    const phrased = await ai.phraseExecutiveForecast(ctx, opts.appLanguage ?? "en", aiCtx);
     data = {
       ...deterministic,
       narrative: phrased.narrative ?? deterministic.narrative,

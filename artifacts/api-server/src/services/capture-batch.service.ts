@@ -5,7 +5,7 @@ import { logger } from "../lib/logger.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { analyzeCapture, type CaptureAnalysis } from "./capture-intelligence.service.js";
 import type { CaptureFields } from "../lib/capture-validation.js";
-import { extractCardData } from "../lib/ai.js";
+import { extractCardData, aiUnavailableError, withCaptureHint } from "../lib/ai.js";
 import { validateScanImage } from "../lib/image-validation.js";
 import { reserveScans, consumeReservation, releaseReservation } from "./entitlements.service.js";
 import { assertTenantWritable } from "../lib/company-access.js";
@@ -185,7 +185,7 @@ export async function runCaptureAnalyzeJob(payload: CaptureAnalyzeJobPayload): P
     job.failed += 1;
     if (payload.reservationId != null) await releaseReservation(payload.reservationId);
     if (job.errors.length < MAX_ERRORS) {
-      job.errors.push({ key: payload.key, message: err instanceof AppError ? err.message : "Analysis failed" });
+      job.errors.push({ key: payload.key, message: err instanceof AppError ? withCaptureHint(err).message : (aiUnavailableError(err)?.message ?? "Analysis failed") });
     }
   } finally {
     job.processed += 1;

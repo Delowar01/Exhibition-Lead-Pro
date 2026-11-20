@@ -1246,6 +1246,63 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # PLATFORM AI PROVIDERS (platform owner only)
+  /platform/ai/providers:
+    get:
+      operationId: getPlatformAiProviders
+      tags: [platform]
+      summary: The AI provider policy with each provider's readiness, month-to-date usage and spending limit
+      description: >
+        Platform owner only. Never returns a credential, a part of one or its length — only whether
+        a key is present on the server and what the provider last said about it.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAiProviders"
+    put:
+      operationId: updatePlatformAiProviders
+      tags: [platform]
+      summary: Replace the AI provider policy (audited; takes effect without a deployment)
+      description: >
+        Platform owner only. The body carries the COMPLETE policy and the version it was read at.
+        A change that reduces AI availability is refused with 409 AI_POLICY_CONFIRMATION_REQUIRED
+        (the reasons are in `context.warnings`) until it is sent again with `confirm: true`. A
+        stale `expectedVersion` is refused with 409 AI_POLICY_VERSION_CONFLICT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlatformAiProviders"
+      responses:
+        "200":
+          description: The policy as stored, with fresh status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformAiProviders"
+        "400":
+          description: Invalid policy (AI_POLICY_INVALID; per-field issues in `context.issues`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Confirmation required (AI_POLICY_CONFIRMATION_REQUIRED) or version conflict (AI_POLICY_VERSION_CONFLICT)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The settings storage is not available in this database yet (AI_POLICY_STORAGE_UNAVAILABLE)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PLATFORM BILLING (Batch 20 — platform owner only)
   /platform/subscriptions:
     get:
@@ -9253,7 +9310,7 @@ components:
           description: Correlates this response with server logs (also returned as the X-Request-Id header).
         code:
           type: string
-          description: Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when the AI provider holds no credential; no provider call is made; METRICS_UNAVAILABLE — 503 when GET /metrics cannot read the job-queue state).
+          description: Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when no enabled AI provider holds a credential; no provider call is made; AI_PROVIDER_UNAVAILABLE — 503 when no AI provider could serve a card-reading request; AI_PLATFORM_LIMIT_REACHED — 503 when the platform's monthly AI spending limit for the provider is reached; METRICS_UNAVAILABLE — 503 when GET /metrics cannot read the job-queue state).
         retryAfterSeconds:
           type: integer
           description: Present on rate-limit responses; mirrors the Retry-After header.
@@ -16636,6 +16693,297 @@ components:
           type: boolean
         assignee_recommendation:
           type: boolean
+
+    PlatformAiProviderName:
+      type: string
+      enum: [anthropic, gemini]
+      description: anthropic = Claude, gemini = Gemini
+
+    PlatformAiProviderPolicy:
+      type: object
+      required: [enabled, model, monthlyLimitMicroUsd]
+      properties:
+        enabled:
+          type: boolean
+          description: A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant
+        model:
+          type: string
+          description: One of the provider's selectable models (see `providers[].models`)
+        monthlyLimitMicroUsd:
+          type: ["integer", "null"]
+          minimum: 0
+          description: Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit
+
+    PlatformAiTenantOverride:
+      type: object
+      required: [companyId, provider, model]
+      properties:
+        companyId:
+          type: integer
+          minimum: 1
+        provider:
+          $ref: "#/components/schemas/PlatformAiProviderName"
+        model:
+          type: ["string", "null"]
+          description: null = the provider's selected model
+
+    PlatformAiPolicy:
+      type: object
+      required: [providers, primary, fallbackEnabled, alertThresholdPct, tenantOverrides]
+      properties:
+        providers:
+          type: object
+          required: [anthropic, gemini]
+          properties:
+            anthropic:
+              $ref: "#/components/schemas/PlatformAiProviderPolicy"
+            gemini:
+              $ref: "#/components/schemas/PlatformAiProviderPolicy"
+        primary:
+          $ref: "#/components/schemas/PlatformAiProviderName"
+        fallbackEnabled:
+          type: boolean
+          description: Try the other enabled, configured provider once when the first cannot serve a request
+        alertThresholdPct:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Alert the platform owners when a provider's month-to-date spend reaches this share of its limit
+        tenantOverrides:
+          type: array
+          maxItems: 200
+          description: Companies the platform owner has pinned to one provider
+          items:
+            $ref: "#/components/schemas/PlatformAiTenantOverride"
+
+    UpdatePlatformAiProviders:
+      type: object
+      required: [policy, expectedVersion]
+      properties:
+        policy:
+          $ref: "#/components/schemas/PlatformAiPolicy"
+        expectedVersion:
+          type: integer
+          minimum: 0
+          description: The `version` the policy was read at (0 while nothing has been saved)
+        confirm:
+          type: boolean
+          description: Send true to apply a change the server reported as affecting AI availability
+
+    PlatformAiModelUsage:
+      type: object
+      required: [model, providerCalls, succeeded, failed, inputTokens, outputTokens, costMicroUsd, priced]
+      properties:
+        model:
+          type: string
+        providerCalls:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        costMicroUsd:
+          type: integer
+        priced:
+          type: boolean
+          description: false = no price is configured for this model, so its cost is recorded as 0
+
+    PlatformAiProviderStatus:
+      type: object
+      required: [provider, label, enabled, model, credentials, models, month, limit]
+      properties:
+        provider:
+          $ref: "#/components/schemas/PlatformAiProviderName"
+        label:
+          type: string
+        enabled:
+          type: boolean
+        model:
+          type: string
+        credentials:
+          type: object
+          required: [configured, state, checkedAt, envVar]
+          properties:
+            configured:
+              type: boolean
+              description: A key is present on the server (presence only)
+            state:
+              type: string
+              enum: [missing, present_unverified, verified, rejected, account_stopped]
+              description: >
+                missing = no key on the server; present_unverified = a key is present and no call
+                has been made with it since the server started; verified = the provider accepted
+                it on the most recent call; rejected = the provider rejected it; account_stopped =
+                the provider reported a billing problem or that the account's spend limit is
+                reached.
+            checkedAt:
+              type: ["string", "null"]
+              format: date-time
+            envVar:
+              type: string
+              description: The NAME of the server environment variable that holds the key (never its value)
+        models:
+          type: array
+          items:
+            type: object
+            required: [id, simulated, priced, inputMicroUsdPerMTok, outputMicroUsdPerMTok, longContext]
+            properties:
+              id:
+                type: string
+              simulated:
+                type: boolean
+                description: true = a deterministic test model (never offered in production)
+              priced:
+                type: boolean
+              inputMicroUsdPerMTok:
+                type: ["integer", "null"]
+                description: Price of one million input tokens, in micro-USD
+              outputMicroUsdPerMTok:
+                type: ["integer", "null"]
+                description: Price of one million output tokens, in micro-USD
+              longContext:
+                type: ["object", "null"]
+                required: [aboveInputTokens, inputMicroUsdPerMTok, outputMicroUsdPerMTok]
+                description: A dearer tier that applies to a request whose input is larger than `aboveInputTokens`
+                properties:
+                  aboveInputTokens:
+                    type: integer
+                  inputMicroUsdPerMTok:
+                    type: integer
+                  outputMicroUsdPerMTok:
+                    type: integer
+        month:
+          type: object
+          required: [providerCalls, succeeded, failed, servedAsFallback, inputTokens, outputTokens, costMicroUsd, byModel]
+          description: Month to date, all tenants and system calls, from the AI invocation ledger
+          properties:
+            providerCalls:
+              type: integer
+              description: Calls that reached the provider
+            succeeded:
+              type: integer
+            failed:
+              type: integer
+            servedAsFallback:
+              type: integer
+              description: Successful calls this provider served after the other provider could not
+            inputTokens:
+              type: integer
+            outputTokens:
+              type: integer
+            costMicroUsd:
+              type: integer
+              description: Estimated cost in micro-USD
+            byModel:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlatformAiModelUsage"
+        limit:
+          type: object
+          required: [monthlyLimitMicroUsd, usedPct, state]
+          properties:
+            monthlyLimitMicroUsd:
+              type: ["integer", "null"]
+            usedPct:
+              type: ["integer", "null"]
+            state:
+              type: string
+              enum: [none, ok, approaching, reached]
+
+    PlatformAiProviders:
+      type: object
+      required:
+        [policy, version, persisted, storage, updatedAt, updatedByName, simulationAvailable, providers, effective, period, pricingVersion]
+      properties:
+        policy:
+          type: object
+          required: [providers, primary, fallbackEnabled, alertThresholdPct, tenantOverrides]
+          properties:
+            providers:
+              type: object
+              required: [anthropic, gemini]
+              properties:
+                anthropic:
+                  $ref: "#/components/schemas/PlatformAiProviderPolicy"
+                gemini:
+                  $ref: "#/components/schemas/PlatformAiProviderPolicy"
+            primary:
+              $ref: "#/components/schemas/PlatformAiProviderName"
+            fallbackEnabled:
+              type: boolean
+            alertThresholdPct:
+              type: integer
+            tenantOverrides:
+              type: array
+              items:
+                type: object
+                required: [companyId, companyName, provider, model]
+                properties:
+                  companyId:
+                    type: integer
+                  companyName:
+                    type: ["string", "null"]
+                  provider:
+                    $ref: "#/components/schemas/PlatformAiProviderName"
+                  model:
+                    type: ["string", "null"]
+        version:
+          type: integer
+          description: 0 while nothing has been saved (the defaults are in effect)
+        persisted:
+          type: boolean
+        storage:
+          type: string
+          enum: [ok, unavailable]
+          description: unavailable = the settings table has not been added to this database; the defaults apply and cannot be changed
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+        updatedByName:
+          type: ["string", "null"]
+        simulationAvailable:
+          type: boolean
+          description: true outside production only — deterministic test models may be selected
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformAiProviderStatus"
+        effective:
+          type: object
+          required: [provider, model, fallbackProvider, fallbackModel, unavailable, notes]
+          description: What serves a tenant without an override right now
+          properties:
+            provider:
+              type: ["string", "null"]
+            model:
+              type: ["string", "null"]
+            fallbackProvider:
+              type: ["string", "null"]
+            fallbackModel:
+              type: ["string", "null"]
+            unavailable:
+              type: ["string", "null"]
+              enum: [none_enabled, none_configured, null]
+            notes:
+              type: array
+              items:
+                type: string
+        period:
+          type: object
+          required: [from, resetAt]
+          properties:
+            from:
+              type: string
+              format: date-time
+            resetAt:
+              type: string
+              format: date-time
+        pricingVersion:
+          type: string
 
     AiSettingsResponse:
       type: object

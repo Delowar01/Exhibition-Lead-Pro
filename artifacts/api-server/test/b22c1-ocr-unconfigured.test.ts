@@ -178,12 +178,23 @@ describe("B22 Correction 1 — genuine failures and the success path keep their 
     await waitFor(async () => (await ledgerRows()).filter((r) => r.status === "error").length === before + 1, "error ledger row");
   });
 
-  it("genuine provider timeout → 502, timeout ledger row (unchanged)", async () => {
+  // Platform AI provider management: a provider that does not ANSWER (timeout, outage,
+  // rate limit, rejected key) is not a problem with the photo. Where no provider could
+  // serve the request the scan now answers 503 AI_PROVIDER_UNAVAILABLE and says that
+  // manual, QR and NFC capture still work — it no longer tells the user to retake the
+  // photo. The ledger row is unchanged. (A provider that answers badly keeps the 502
+  // above.)
+  it("genuine provider timeout → 503 AI_PROVIDER_UNAVAILABLE with the capture-still-works message, timeout ledger row", async () => {
     await settings({ provider: "stub", model: "stub-timeout" });
     const before = (await ledgerRows()).filter((r) => r.status === "timeout").length;
     const res = await postScan(img.c);
-    expect(res.status).toBe(502);
-    expect((await res.json()).error).toMatch(/could not read the card/i);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.code).toBe("AI_PROVIDER_UNAVAILABLE");
+    expect(body.error).toMatch(/temporarily unavailable/i);
+    expect(body.error).toMatch(/manually/i);
+    expect(body.error).not.toMatch(/retake/i);
+    expect(body.status).toBe("failed");
     await waitFor(async () => (await ledgerRows()).filter((r) => r.status === "timeout").length === before + 1, "timeout ledger row");
   });
 

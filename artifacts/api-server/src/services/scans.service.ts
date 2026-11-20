@@ -2,7 +2,7 @@ import { AppError } from "../middlewares/errorHandler.js";
 import { assertFeatureEntitled } from "../lib/feature-entitlements.js";
 import { type AuthUser } from "../middlewares/requireAuth.js";
 import { refInCompany } from "../lib/tenant.js";
-import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "../lib/ai.js";
+import { extractCardData, scoreLead, logAiError, aiUnavailableError, withCaptureHint, AI_PROVIDER_UNAVAILABLE, type ExtractedCardData } from "../lib/ai.js";
 import { validateScanImage, hasReadableCard } from "../lib/image-validation.js";
 import { streamScanImage, loadScanImageBase64, uploadScanImage, deleteScanImage } from "../lib/imageStorage.js";
 import { logger } from "../lib/logger.js";
@@ -139,22 +139,27 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
     if (ocrErr instanceof AppError) {
       await scansRepo.update(scan.id, { status: "failed" });
       if (!reservation.alreadyConsumed) await releaseReservation(reservation.reservationId);
-      throw ocrErr;
+      throw withCaptureHint(ocrErr);
     }
     if (!reservation.alreadyConsumed) await releaseReservation(reservation.reservationId);
     logAiError("scan-ocr", ocrErr);
     const failed = await scansRepo.update(scan.id, { status: "failed" });
+    // No AI provider could serve the request (an outage, not the photo): say so, and
+    // that manual, QR and NFC capture still work. The scan and its image are kept, so
+    // Reprocess OCR recovers it once a provider is back.
+    const unavailable = aiUnavailableError(ocrErr);
     return {
       scanId: scan.id,
       companyId,
       imageData: image.dataUrl,
-      status: 502,
+      status: unavailable ? 503 : 502,
       body: {
         ...failed,
         extractedData: null,
         ...parsedScanMeta(failed),
         imageUrl: scanImageApiUrl(scan.id, true),
-        error: "Could not read the card. Please retake the photo.",
+        error: unavailable ? unavailable.message : "Could not read the card. Please retake the photo.",
+        ...(unavailable ? { code: AI_PROVIDER_UNAVAILABLE } : {}),
       },
     };
   }
@@ -286,10 +291,10 @@ export async function reprocessScan(user: AuthUser, id: number, body: { appLangu
   try {
     ocr = await extractCardData(base64, lang, { companyId: user.companyId, userId: user.id });
   } catch (err) {
-    if (err instanceof AppError) throw err;
+    if (err instanceof AppError) throw withCaptureHint(err);
     logAiError("scan-reprocess", err);
     await scansRepo.update(id, { status: "failed" });
-    throw new AppError(502, "Could not re-read the card. Please try again or replace the image.");
+    throw aiUnavailableError(err) ?? new AppError(502, "Could not re-read the card. Please try again or replace the image.");
   }
 
   if (!hasReadableCard(ocr.fields)) {
@@ -344,11 +349,11 @@ export async function replaceScanImage(user: AuthUser, id: number, body: { image
       // matches the stored image — mark the scan failed (Reprocess OCR recovers it)
       // before surfacing the real denial status.
       await scansRepo.update(id, { status: "failed" });
-      throw err;
+      throw withCaptureHint(err);
     }
     logAiError("scan-replace-ocr", err);
     await scansRepo.update(id, { status: "failed" });
-    throw new AppError(502, "Image replaced, but the card could not be read. Try Reprocess OCR.");
+    throw aiUnavailableError(err) ?? new AppError(502, "Image replaced, but the card could not be read. Try Reprocess OCR.");
   }
 
   if (!hasReadableCard(ocr.fields)) {

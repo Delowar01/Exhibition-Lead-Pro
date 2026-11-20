@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { AiProvider, AiRequest, AiResult, AiUsage } from "../types.js";
+import { AiProviderError, type AiProvider, type AiRequest, type AiResult, type AiUsage } from "../types.js";
+import { config } from "../../config.js";
 
 // Batch 6 — deterministic stub provider for automated tests. NEVER registered in
 // production (see providers/index.ts + config.ai.enableStubProvider). It performs no
@@ -16,6 +17,23 @@ import type { AiProvider, AiRequest, AiResult, AiUsage } from "../types.js";
 //                    is deterministic per request regardless of process history)
 //   stub-timeout   → throws a timeout-shaped error
 //   stub-slow      → resolves after 1500ms (for concurrency/dedup-in-flight tests)
+//
+// Typed provider failures (platform AI provider management), so primary / fallback
+// behaviour can be exercised without any provider:
+//   stub-unavailable → the provider is down (5xx-shaped)
+//   stub-ratelimit   → the provider rate-limits the request (429-shaped)
+//   stub-auth        → the provider rejects the credentials (401-shaped)
+//   stub-quota       → the provider account's own spend cap is reached
+//   stub-refusal     → the provider declines the content (tokens are reported)
+//   stub-rejected    → the provider rejects the request itself (400-shaped)
+//   stub-unsupported → the provider cannot take this input (an image it does not accept)
+//   stub-unpriced    → success, on a model that has NO price configured
+//   stub-null        → the provider answers with the JSON literal null (valid JSON, not
+//                      an answer any feature can read) and reports usage
+//
+// The same engine also stands in for a NAMED provider ("anthropic", "gemini") when that
+// provider's selected model is a stub model — see simulatedProvider below. Like the stub
+// provider itself this exists outside production only.
 
 function promptChars(req: AiRequest): number {
   let chars = 0;
@@ -124,14 +142,62 @@ function failOnceKey(req: AiRequest): string {
   return h.digest("hex");
 }
 
-export const stubProvider: AiProvider = {
-  name: "stub",
+/** True for a model the deterministic engine serves — never in production. */
+export function isSimulatedModel(model: string): boolean {
+  return config.ai.enableStubProvider && model.startsWith("stub-");
+}
+
+/** Stub models a named provider may be given outside production (never selectable in production). */
+export const SIMULATED_MODELS = [
+  "stub-model",
+  "stub-nousage",
+  "stub-fail",
+  "stub-fail-once",
+  "stub-timeout",
+  "stub-slow",
+  "stub-unavailable",
+  "stub-ratelimit",
+  "stub-auth",
+  "stub-quota",
+  "stub-refusal",
+  "stub-rejected",
+  "stub-unsupported",
+  "stub-unpriced",
+  "stub-null",
+] as const;
+
+function typedFailure(provider: string, req: AiRequest): AiProviderError | null {
+  switch (req.model) {
+    case "stub-unavailable":
+      return new AiProviderError(provider, "unavailable", `${provider} 503 overloaded_error: simulated outage`, { status: 503 });
+    case "stub-ratelimit":
+      return new AiProviderError(provider, "rate_limited", `${provider} 429 rate_limit_error: simulated rate limit`, { status: 429 });
+    case "stub-auth":
+      return new AiProviderError(provider, "auth", `${provider} 401 authentication_error: the provider rejected the configured credentials`, { status: 401 });
+    case "stub-quota":
+      return new AiProviderError(provider, "quota", `${provider} 429 rate_limit_error: the provider account's spend limit is reached`, { status: 429 });
+    case "stub-refusal":
+      return new AiProviderError(provider, "refusal", `${provider} declined the request (simulated)`, { status: 200, usage: usageFor(req) });
+    case "stub-rejected":
+      return new AiProviderError(provider, "invalid_request", `${provider} 400 invalid_request_error: simulated rejection`, { status: 400 });
+    case "stub-unsupported":
+      return new AiProviderError(provider, "unsupported_input", `${provider} does not accept an image larger than 10 MB (simulated)`);
+    default:
+      return null;
+  }
+}
+
+function engine(name: string): AiProvider {
+  return {
+  name,
 
   isConfigured(): boolean {
     return true;
   },
 
   async generate(req: AiRequest): Promise<AiResult> {
+    const typed = typedFailure(name, req);
+    if (typed) throw typed;
     if (req.model === "stub-fail") {
       throw new Error("stub provider simulated failure");
     }
@@ -154,6 +220,7 @@ export const stubProvider: AiProvider = {
     const body =
       req.model === "stub-nocard" ? STUB_NOCARD_BODY :
       req.model === "stub-injection" ? STUB_INJECTION_BODY :
+      req.model === "stub-null" ? "null" :
       STUB_BODY;
     return {
       text: body,
@@ -163,4 +230,20 @@ export const stubProvider: AiProvider = {
       model: req.model,
     };
   },
-};
+  };
+}
+
+export const stubProvider: AiProvider = engine("stub");
+
+// A named provider served by the deterministic engine: same behaviours, selected by the
+// model name, but attributed to that provider in results, errors and the ledger — so the
+// platform's primary / fallback rules can be tested end to end with no provider at all.
+const simulated = new Map<string, AiProvider>();
+export function simulatedProvider(name: string): AiProvider {
+  let p = simulated.get(name);
+  if (!p) {
+    p = engine(name);
+    simulated.set(name, p);
+  }
+  return p;
+}
