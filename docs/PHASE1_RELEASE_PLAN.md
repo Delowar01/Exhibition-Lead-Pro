@@ -1,7 +1,9 @@
 # Phase 1 integrated release — rehearsal results and execution plan
 
 Prepared 2026-11-20 on `claude/phase1-release-rehearsal`, created from the head of the
-AI provider management branch (`9ba7ebb6b8a80afb892bee88cc411584aa8ca9e7`).
+AI provider management branch (`9ba7ebb6b8a80afb892bee88cc411584aa8ca9e7`). The branch
+adds this preparation record and **one correction to the application** (§3.1); the
+"integrated head" below is the head of this branch.
 
 **This is a local preparation record. Nothing was merged, deployed, dispatched or applied
 to any hosted system; no provider was called; no mobile build was triggered.** The exact
@@ -27,7 +29,7 @@ unchanged) to the whole Phase 1 stack. Where the two differ, §2.5 says so.
   deployed commit is exactly the reviewed and tested one.
 - #6 is seven documentation files on an older base. A trial merge into `develop` and into
   the integrated head is conflict-free. It is not part of the product stack; its place in
-  the sequence is in §4.4 and its stale statements are listed in §8.
+  the sequence is in §4.4 and its stale statements are listed in §9.
 - Deployment-relevant files changed by the stack: `docker/docker-compose.yml` (passes an
   optional `ANTHROPIC_API_KEY` through, empty by default) and the two environment
   examples. No workflow, deploy script or backup script changed.
@@ -45,19 +47,24 @@ mode, limits, usage limits, AI budgets and the status of eight plan-gated routes
 field by field with the reference capture. Two of the synthetic tenants (a suspended
 company and an expired subscription) are refused at sign-in by every version, identically.
 
+Every application log was read for error-level lines, at every stage. Each one is a
+refusal the rehearsal provoked on purpose — the two refused sign-ins per capture (the
+deployed baseline logs them the same way) and the refused or stale policy saves of stage 7
+and of the alternative order. No fatal line and no unhandled exception in any log.
+
 ### 2.1 Results
 
 | # | Stage | Result |
 | --- | --- | --- |
 | 1 | Deployed schema and application (`6a8dad1`) | fingerprint `30c4ecbd867cd2cd59abcb58581ecb04`; reference capture taken |
 | 2 | `0040` (SHA-256 `8f931afc…149d89`, identical in every tree of the stack) | `COMMIT`; fingerprint `c36a8a2d9c7e502a2ce31ff5f3f412d9`; second application changes nothing; row counts and row contents of plans, subscriptions and prices unchanged; no version, nothing pinned |
-| 3 | Deployed application on the `0040` schema | healthy; 0 differences; 0 error-level log lines |
+| 3 | Deployed application on the `0040` schema | healthy; 0 differences; no error-level log line other than the two refused sign-ins |
 | 4 | Plan Builder candidate (`d1e884b`), every reference still empty | `push` reports no change; healthy; 0 differences in the fields the baseline also reports; every tenant on `legacy` enforcement; none of the release failure markers in the log |
 | 5 | Version-1 backfill | dry run `DRY_RUN_OK`, nothing written; apply `APPLIED` — 5 versions, 13 of 13 subscriptions pinned; entitlements before and after: 0 differences; second apply writes nothing; integrity queries 0; fingerprint unchanged |
 | 5r | Deployed baseline on that data (rollback after the backfill) | healthy; 0 differences from stage 1 |
 | W2 | Analytics + pricing (`740f581`) on the pinned data | `push` reports no change; healthy; 0 differences; analytics, plans and subscriptions endpoints answer 200 |
 | 6 | `0042` (SHA-256 `7daee629…fe032e`), applied while `740f581` is connected | `COMMIT`; fingerprint `fae275efc409c5020a792a7fb0d59689`; second application changes nothing; counts, row contents and pins unchanged; table empty; the running application unaffected (0 differences) |
-| 7 | Integrated application (`9ba7ebb`) on the final schema | `push` reports no change; healthy; 0 differences; AI policy readable with the shipped defaults; a save answers 200 with one audit row; a stale save answers 409; a tenant is refused on the platform route (403); the saved policy survives a restart |
+| 7 | Integrated application (the head of this branch) on the final schema | `push` reports no change; healthy; 0 differences; AI policy readable with the shipped defaults; a save answers 200 with one audit row; a stale save answers 409; a tenant is refused on the platform route (403); the saved policy survives a restart |
 | 8 | Rollback shapes from the final state | `740f581`, `d1e884b` and the deployed baseline each run on the final schema and data with 0 differences; the saved AI policy is intact when the integrated application returns |
 | alt | Integrated application **before** `0042` | healthy; policy served read-only with defaults; a save answers `503 AI_POLICY_STORAGE_UNAVAILABLE`; 0 differences; after `0042` is applied the running process accepts saves without a restart |
 
@@ -74,6 +81,7 @@ company and an expired subscription) are refused at sign-in by every version, id
 | Schema `push` from `740f581` on a database holding a saved AI policy | refuses to proceed (data-loss prompt, no terminal): table and row intact — but exit code 0 |
 | The same with the table still empty | **the table is dropped silently, exit code 0** |
 | Schema `push` from the deployed baseline on the final database | refuses to proceed: every new object intact |
+| `0042` applied by a database role other than the application's | the table exists but the application may not read it: the AI Providers page and **every AI request answer `503 AI_POLICY_UNREADABLE`**. The fingerprint computed as the application's role differs (`d5697bf0…`); computed as a superuser it equals the expected value and hides the problem |
 
 ### 2.3 Fingerprints of record
 
@@ -116,7 +124,7 @@ schema step is its reviewed SQL file.**
 | `6a8dad1` (deployed) | runs | runs | runs | runs |
 | `d1e884b` (#5) | **sign-ins fail** | runs (legacy) | runs | runs |
 | `740f581` (#8, #9) | **sign-ins fail** | runs (legacy) | runs | runs |
-| `9ba7ebb` (#10) | **sign-ins fail** | runs (legacy); AI policy read-only | runs; AI policy read-only | runs |
+| integrated head (#10 + §3.1) | **sign-ins fail** | runs (legacy); AI policy read-only | runs; AI policy read-only | runs |
 
 An older application always runs on a newer schema; a newer application never runs on a
 schema that lacks `0040`. `0042` is optional for every application version.
@@ -128,10 +136,21 @@ for `d1e884b` in the Plan Builder procedure — `740f581` contains the same code
 later heads on unpinned data are not a state of the planned sequence; they are exercised
 by each head's own full regression, whose fixture tenants are unpinned.
 
-One data hazard exists for a rollback **from** the integrated application: its tenant AI
-settings endpoint can store a provider name that older code does not know, and older code
-fails every AI call of such a tenant. The tenant page does not send it; an API caller
-can. The rollback procedure therefore checks
+### 3.1 The one correction made on this branch
+
+At `9ba7ebb` the tenant AI settings endpoint stored a Claude provider and model on the
+tenant's row when a client sent them. That pair selects nothing there — the platform
+policy chooses the provider — but every earlier release resolves the stored provider
+directly. Reproduced locally: a row written that way, then `740f581` started on the same
+data — the tenant's card scans answered `502 Could not read the card` and its AI health
+read `unconfigured`, until the row was repaired. A page of an earlier release still open
+in a browser echoes the served pair back on every save, so no one has to choose Claude
+for the row to be written.
+
+Corrected in `artifacts/api-server/src/services/ai.service.ts`: such a pair is validated
+as before and not stored; the rest of the request is stored; responses are unchanged.
+With the corrected build the same sequence writes no row and `740f581` answers normally.
+The rollback procedure still checks
 `select count(*) from ai_settings where provider <> 'gemini'` (must be 0).
 
 ## 4. Release sequence
@@ -157,12 +176,20 @@ action and live-provider operation keeps its own owner authorization.
 | --- | --- | --- | --- |
 | **1 — Plan Builder** | `0040` → baseline verified on it → deploy → legacy-subscriber check → backfill → verification, freeze released (the ten steps of the Plan Builder procedure) | schema; deployment; backfill | `d1e884b` |
 | **2 — Analytics + pricing** | preconditions → deploy → verification → read-only manual-price check (§6) | deployment | `740f581` |
-| **3 — AI providers** | `0042` → running application verified on it → deploy → verification (no AI call, no policy save) | schema `0042`; deployment | the approved final commit |
+| **3 — AI providers** | `0042`, applied as the application's own database role → ownership check → running application verified on it → deploy → verification (no AI call, no policy save) | schema `0042`; deployment | the approved final commit |
 | after | documentation (#6 and the living documents) as one approved documentation deployment; tooling re-pinned to the final commit and `fae275ef…` | documentation deployment; ops changes | final |
 
 Live provider keys, the first live calls and the Android build come after wave 3, each
 under its own authorization (`docs/AI_PROVIDER_OPERATIONS.md`,
 `docs/reports/ANDROID_RELEASE_READINESS_PHASE1.md`).
+
+**Order for the Claude key.** The shipped defaults are Claude primary on
+`claude-opus-5-5`. The moment a Claude key is present, every tenant without an override
+is served by that model, whose estimated cost for a typical card (1,500 input and 1,200
+output tokens) is about 8.7 times that of Gemini 2.5 Flash; tenant cost budgets and plan
+cost allowances sized for Gemini are reached that much sooner. Therefore: `0042` first,
+then the deployment without a Claude key, then the owner saves an explicit policy
+(model per provider, spending limits), and only then is the key configured.
 
 ### 4.3 Merge and retarget order
 
@@ -172,9 +199,10 @@ nothing is squashed, rebased or force-pushed, so no new SHA appears.
 1. Wave 1: `develop` is fast-forwarded to `d1e884b`. #5 shows as merged.
 2. Before wave 2: #8 and #9 are retargeted to `develop` (their diffs then show only their
    own commits). Wave 2: `develop` is fast-forwarded to `740f581`. #8 and #9 show as merged.
-3. Before wave 3: #10 is retargeted to `develop`; the final commit is decided — `9ba7ebb`,
-   or the head of this rehearsal branch if its commits are approved (then #10's branch is
-   fast-forwarded to it, or a follow-up pull request carries them).
+3. Before wave 3: #10 is retargeted to `develop`; the final commit is decided. The head
+   of this branch is the recommended one, because it carries the correction of §3.1
+   (then #10's branch is fast-forwarded to it, or a follow-up pull request carries the
+   two commits). Deploying `9ba7ebb` itself keeps the rollback hazard of §3.1.
 4. After wave 3: #6, under its own authorization (§4.4).
 
 A merge button that creates a merge commit, a squash or a rebase produces a new SHA that
@@ -195,7 +223,7 @@ documentation deployment.
 | 1 | as in the Plan Builder procedure §6 (R1 before, R2 after the backfill) | redeploy `6a8dad1` under its own authorization; the freeze stays | additive objects stay; never dropped |
 | 2 | failed health check → automatic; green health with a failed sign-in, 5xx or an entitlement difference → manual | redeploy `d1e884b` | none to repair. Manual prices entered in wave 2 in a non-two-decimal currency would be misread by the older editor |
 | `0042` | any error | nothing was applied; stop; a new attempt needs a new authorization | — |
-| 3 | as wave 2 | redeploy `740f581` | `platform_settings` and a saved policy stay, ignored, and are intact on return; run the `ai_settings` check of §3 |
+| 3 | as wave 2 | redeploy `740f581` | `platform_settings` and a saved policy stay, ignored, and are intact on return; run the `ai_settings` check of §3.1 |
 
 ### 4.6 Stop conditions
 
@@ -205,6 +233,8 @@ documentation deployment.
 - Backup health not passing on the day of a hosted change.
 - A2 other than `SET_VERIFIED`; A3 other than `RESTORE VERIFIED`; residue of a rehearsal.
 - A schema file ending in anything but `COMMIT` — nothing was applied, no second attempt.
+- After `0042`: `platform_settings` not owned by the application's database role, or
+  `503 AI_POLICY_UNREADABLE` anywhere.
 - A deployment health failure (automatic rollback), or green health with a failed sign-in,
   5xx responses, or `does not exist`, `plan catalog seed failed` or
   `SUBSCRIPTION_PLAN_VERSION_INVALID` in the API log (manual rollback).
@@ -268,19 +298,42 @@ that there is nothing to check.
 2. Deploy-verifier re-pin or waiver, per wave.
 3. Whether a fresh recovery set is taken before `0042`, or the nightly backup gate is
    enough for waves 2 and 3.
-4. The final commit of wave 3 (`9ba7ebb`, or with this branch's commits).
+4. The final commit of wave 3: the head of this branch (recommended, §4.3), or `9ba7ebb`.
 5. The decisions already listed for the AI providers (`docs/AI_PROVIDER_MANAGEMENT.md`
-   §13): model, spending limits, fallback from a stopped account, circuit breaker.
+   §13): model, spending limits, fallback from a stopped account, circuit breaker. The
+   model decision has to be saved before the Claude key exists (§4.2).
 6. Two mobile behaviours that are already deployed: contacts created directly by rapid
    capture and offline scan sync; workflow recommendations on the lead and company
    screens.
 7. Remote push on Android (no FCM configuration today).
 
-## 8. Documents to update after integration (not changed here)
+## 8. Independent integration review (one, of the whole stack)
+
+Verdict: no blocker — no tenant-isolation hole, no budget or allowance bypass, no data
+loss, no release step that fails as planned. Two rollout hazards, both in the AI provider
+wave: the stored provider on tenant rows (corrected, §3.1) and the cost of the default
+Claude model once a key is present (a sequencing rule, §4.2). The suspected hazard of
+`0042` applied by another database role was provoked and is covered by §2.2 and §4.6.
+
+Left as they are, for a later approved change — none blocks waves 1 and 2:
+
+| # | Finding | Where it shows |
+| --- | --- | --- |
+| 1 | Platform Owner Analytics counts provider attempts: a request served by the fallback shows as two requests, one failed | AI section of `/platform/analytics` |
+| 2 | Refusals by a platform spending limit are counted in no report; a tenant sees them among its recent calls marked as a budget refusal | AI usage pages |
+| 3 | "Tenants near their limit" reads stored tenant budgets only and ignores plan allowances | platform AI usage |
+| 4 | The fixed 2,000-token reservation is smaller than Claude's output ceiling, so concurrent Claude calls can overshoot a cap further than Gemini calls (still bounded by the calls in flight) | budgets |
+| 5 | Mobile: re-reading or replacing a card image, and the Assistant, show their generic failure message for the new outage codes | scan review, Assistant |
+| 6 | A developer shell that holds a Claude key turns an ordinary local test run into live calls; the guard test fails only afterwards | local test instructions |
+| 7 | No test drives a plan cost allowance through the two-provider chain; the analytics fixtures hold no fallback pair | tests |
+| 8 | The specification documents the new 503 on scans only in the error-code description; two labels in the plan version editor still say the tenant budget "always takes precedence" over the plan allowance, which is now a cap | contract, web copy |
+
+## 9. Documents to update after integration (not changed here)
 
 - `CLAUDE.md`: the "only approved AI provider" rule; the hosted host name; the branch and
   batch status; the test baseline.
-- `docs/LOCALHOST_DEVELOPMENT.md` §7: the test totals of the integrated head.
+- `docs/LOCALHOST_DEVELOPMENT.md` §7: the test totals of the integrated head; the
+  instruction to keep provider keys out of the API and test shells.
 - `docs/HOSTINGER_VPS_DEPLOYMENT.md`: the sign-in host.
 - `docs/PLAN_BUILDER_RELEASE_REHEARSAL.md`: the `push` sentence of §2.5; the pins after
   each wave.

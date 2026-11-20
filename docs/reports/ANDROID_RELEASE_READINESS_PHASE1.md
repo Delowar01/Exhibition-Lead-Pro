@@ -4,7 +4,8 @@ Point-in-time report. It supersedes the Batch 38 readiness report for the integr
 Phase 1 application (Batches 37–43, Platform Owner Analytics, pricing corrections,
 Claude + Gemini provider management). **No build was triggered, no device was used and
 no hosted system was contacted for this report.** Everything below was read from the
-repository at `9ba7ebb6b8a80afb892bee88cc411584aa8ca9e7`; the mobile unit suite was run
+repository at `9ba7ebb6b8a80afb892bee88cc411584aa8ca9e7` (the mobile application is
+identical at the head of this branch); the mobile unit suite was run
 locally (26 files, 333 passed, 0 failed) and the mobile typecheck exits 0.
 
 `artifacts/mobile/app.json`, `eas.json` and `package.json` are byte-identical to the
@@ -117,7 +118,11 @@ submission.
   messages. Covered by `lib/scan-error.test.ts`.
 - Locale keys: every English key exists in Arabic (1425 against 1429; the four extra are
   Arabic plural forms).
-- The AI Assistant shows its generic "could not send" message for these codes.
+- The message appears on camera capture and on the batch review. Re-reading or replacing
+  a card image on the scan review screen shows its generic "couldn't re-read this card"
+  message for every failure, these codes included, and the AI Assistant shows its generic
+  "could not send" message. Both are accurate but less specific; routing them through the
+  same mapping is a small follow-up, not done here.
 
 ## 7. Risks to cover in the device pass
 
