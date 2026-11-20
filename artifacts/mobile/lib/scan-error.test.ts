@@ -43,6 +43,26 @@ describe("describeScanError", () => {
     expect(plain.serverMessage).toBe("Upstream unavailable");
   });
 
+  it("maps a provider outage (503 AI_PROVIDER_UNAVAILABLE) and a reached platform limit (503 AI_PLATFORM_LIMIT_REACHED) to the localized AI-unavailable message — never to retake-the-photo", () => {
+    for (const code of ["AI_PROVIDER_UNAVAILABLE", "AI_PLATFORM_LIMIT_REACHED"]) {
+      const d = describeScanError(503, { code, error: "AI card reading is temporarily unavailable. You can still add the contact manually, or capture it by QR code or NFC." });
+      expect(d.key, code).toBe("capture.errAiUnavailable");
+      expect(d.serverMessage, code).toBeNull(); // localized key preferred (Arabic users get Arabic)
+      expect(d.key).not.toBe("capture.errOcr");
+    }
+    // The message tells the user what still works, in both languages.
+    const lookup = (obj: Record<string, unknown>) => (obj.capture as Record<string, string>).errAiUnavailable;
+    expect(lookup(en as Record<string, unknown>)).toMatch(/manually/);
+    expect(lookup(en as Record<string, unknown>)).toMatch(/QR/);
+    expect(lookup(en as Record<string, unknown>)).toMatch(/NFC/);
+    expect(lookup(ar as Record<string, unknown>)).toMatch(/QR/);
+    expect(lookup(ar as Record<string, unknown>)).toMatch(/NFC/);
+    // A client that predates this mapping sees a 503 without a known code: the server's own sentence is shown.
+    const legacy = describeScanError(503, { error: "AI card reading is temporarily unavailable." });
+    expect(legacy.key).toBe("capture.errOcr");
+    expect(legacy.serverMessage).toBe("AI card reading is temporarily unavailable.");
+  });
+
   it("maps size rejections from both transport (413) and validation (400 + code)", () => {
     expect(describeScanError(413, {}).key).toBe("capture.errTooLarge");
     expect(describeScanError(400, { code: "SCAN_IMAGE_TOO_LARGE" }).key).toBe("capture.errTooLarge");
@@ -78,6 +98,7 @@ describe("describeScanError", () => {
       "capture.errNoCard",
       "capture.errAiDisabled",
       "capture.errAiNotConfigured",
+      "capture.errAiUnavailable",
       "capture.errTooLarge",
       "capture.errInvalid",
       "capture.errHeic",

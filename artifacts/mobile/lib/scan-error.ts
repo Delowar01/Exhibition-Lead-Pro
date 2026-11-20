@@ -34,6 +34,13 @@ export function describeScanError(status: number, data: unknown): ScanErrorDescr
   // key is preferred over the server's English text so the user is told to contact an
   // administrator instead of retaking photos (batch review shows the key alone).
   if (code === "AI_NOT_CONFIGURED") return { key: "capture.errAiNotConfigured", serverMessage: null };
+  // No AI provider could serve the request right now (503 AI_PROVIDER_UNAVAILABLE: the
+  // provider — and its fallback, where one is allowed — did not answer), or the platform's
+  // monthly AI spending limit is reached (503 AI_PLATFORM_LIMIT_REACHED). Neither is a
+  // problem with the photo: the localized message says AI is temporarily unavailable and
+  // that manual, QR and NFC capture still work. (A client without this mapping shows the
+  // server's own sentence, which says the same in English.)
+  if (code === "AI_PROVIDER_UNAVAILABLE" || code === "AI_PLATFORM_LIMIT_REACHED") return { key: "capture.errAiUnavailable", serverMessage: null };
   if (code === "SCAN_NO_CARD" || status === 422) return { key: "capture.errNoCard", serverMessage: null };
   if (code === "SCAN_IMAGE_TOO_LARGE" || status === 413) return { key: "capture.errTooLarge", serverMessage: null };
   // Batch 8 — HEIC (HEVC) cannot be decoded server-side; tell the user to use JPEG.
