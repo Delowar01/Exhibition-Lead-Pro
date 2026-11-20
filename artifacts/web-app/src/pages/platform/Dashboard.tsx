@@ -61,23 +61,6 @@ function statusTone(status: string | undefined): "success" | "warning" | "destru
   return "neutral";
 }
 
-/**
- * A money figure sized to its card. Wherever it fits it is set like every other figure; in
- * a narrower card its size follows the card's width, so an amount stays on one line. Only
- * an extraordinarily long one reaches the 1rem floor and then wraps — inside the card, as a
- * last resort, rather than running past its edge. The card must be the size container
- * (`@container`): 100cqi is the width the figure has.
- */
-function Amount({ text }: { text: string }) {
-  // A bold tabular glyph advances about 0.55 em on average; 0.6 keeps a margin.
-  const fit = `calc(100cqi / ${(Math.max(text.length, 1) * 0.6).toFixed(1)})`;
-  return (
-    <span className="inline-block max-w-full align-bottom [overflow-wrap:anywhere]" style={{ fontSize: `clamp(1rem, ${fit}, 1.875rem)` }}>
-      {text}
-    </span>
-  );
-}
-
 export default function PlatformDashboard() {
   const { data: stats, isLoading: statsLoading } = useGetPlatformStats();
   const { data: revenueTrend, isLoading: revenueLoading } = useGetPlatformRevenueTrend();
@@ -100,8 +83,8 @@ export default function PlatformDashboard() {
   const revenue = stats?.revenue;
   const revenueAvailable = !!revenue?.available && revenue.monthlyRecurringMinor != null && !!revenue.currency;
   const unavailable = <span className="text-xl font-semibold text-muted-foreground">Unavailable</span>;
-  const mrrValue = revenueAvailable ? <Amount text={formatMinor(revenue!.monthlyRecurringMinor!, revenue!.currency!)} /> : unavailable;
-  const arrValue = revenueAvailable ? <Amount text={formatMinor(revenue!.monthlyRecurringMinor! * 12, revenue!.currency!)} /> : unavailable;
+  const mrrValue = revenueAvailable ? formatMinor(revenue!.monthlyRecurringMinor!, revenue!.currency!) : unavailable;
+  const arrValue = revenueAvailable ? formatMinor(revenue!.monthlyRecurringMinor! * 12, revenue!.currency!) : unavailable;
   const totalCaptures = stats?.totalCaptures || 0;
   const cardScans = stats?.totalScans || 0;
   const revenueReason = revenueAvailable
@@ -142,10 +125,11 @@ export default function PlatformDashboard() {
           />
         </div>
         <div data-testid="dashboard-mrr">
-          <MetricCard label="MRR" value={mrrValue} icon={DollarSign} footer={revenueReason} className="h-full @container" />
+          {/* `fit`: a long amount is sized to the card so it stays on one line. */}
+          <MetricCard label="MRR" value={mrrValue} icon={DollarSign} footer={revenueReason} fit className="h-full" />
         </div>
         <div data-testid="dashboard-arr">
-          <MetricCard label="ARR" value={arrValue} icon={Activity} footer={revenueAvailable ? "MRR × 12" : revenueReason} className="h-full @container" />
+          <MetricCard label="ARR" value={arrValue} icon={Activity} footer={revenueAvailable ? "MRR × 12" : revenueReason} fit className="h-full" />
         </div>
         <MetricCard
           label="Total Leads"

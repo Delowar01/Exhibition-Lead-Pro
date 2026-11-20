@@ -43,6 +43,35 @@ describe("MetricCard — what a change means", () => {
   });
 });
 
+describe("MetricCard — a figure fitted to its card", () => {
+  it("is opt-in: without `fit` the figure is rendered as it always was", () => {
+    const plain = html(<MetricCard label="MRR" value="SAR 123,456.78" />);
+    expect(plain).not.toContain("@container");
+    expect(plain).not.toContain("cqi");
+    expect(plain).not.toContain("overflow-wrap");
+    expect(plain).toContain(">SAR 123,456.78</p>");
+  });
+
+  it("with `fit`, sizes a text figure by the card's width and the number of its characters", () => {
+    const fitted = html(<MetricCard label="MRR" value="SAR 123,456.78" fit />);
+    expect(fitted).toContain("@container");
+    // 14 characters: the card's width ÷ 14 ÷ 0.6 em, between 1rem and the ordinary figure size.
+    expect(fitted).toContain("font-size:clamp(1rem, calc(100cqi / 14 / 0.6), 1.875rem)");
+    expect(text(fitted)).toBe("MRR SAR 123,456.78");
+    expect(html(<MetricCard label="MRR" value="$1,766.00" fit />)).toContain("calc(100cqi / 9 / 0.6)");
+    // A longer figure asks for a smaller share of the width per character, never a larger one.
+    expect(html(<MetricCard label="ARR" value="SAR 118,518,518,521.44" fit />)).toContain("calc(100cqi / 22 / 0.6)");
+  });
+
+  it("leaves anything that is not text alone, even with `fit`", () => {
+    const node = html(<MetricCard label="MRR" value={<span className="text-xl">Unavailable</span>} fit />);
+    expect(node).not.toContain("@container");
+    expect(node).not.toContain("cqi");
+    expect(text(node)).toBe("MRR Unavailable");
+    expect(html(<MetricCard label="x" value="" fit />)).toContain("calc(100cqi / 1 / 0.6)");
+  });
+});
+
 describe("BreakdownList", () => {
   const items = [
     { key: "a", label: "AI vision", value: 300 },
