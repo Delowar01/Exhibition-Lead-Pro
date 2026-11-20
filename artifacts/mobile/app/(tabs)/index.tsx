@@ -35,6 +35,7 @@ import {
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
+import { incidentNeedsAttention } from "@/lib/offline-queue-store-model";
 import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale, type Locale } from "@/hooks/useLocale";
@@ -118,7 +119,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
-  const { isOnline, queuedCount } = useOffline();
+  const { isOnline, queuedCount, incident } = useOffline();
   const { setContactFilters, country } = useSettings();
   const { t, isRTL, textAlign } = useLocale();
   const currencyCode = getCountry(country).currencyCode;
@@ -414,6 +415,33 @@ export default function HomeScreen() {
               size={18}
               color={isOnline ? colors.primary : colors.destructive}
             />
+          </Pressable>
+        ) : null}
+
+        {/* The list of pending captures was found damaged or lost: stays here until the user has dealt with it in the Sync Center. */}
+        {incidentNeedsAttention(incident) && incident ? (
+          <Pressable
+            onPress={() => {
+              router.push("/sync");
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t(incident.kind === "lost" ? "sync.lostTitle" : "sync.damagedTitle")}
+            testID="home-queue-damaged"
+            style={({ pressed }) => [
+              styles.offlineBanner,
+              {
+                backgroundColor: colors.destructive + "14",
+                borderRadius: colors.radius + 2,
+                opacity: pressed ? 0.8 : 1,
+                flexDirection: isRTL ? "row-reverse" : "row",
+              },
+            ]}
+          >
+            <Feather name="alert-triangle" size={18} color={colors.destructive} />
+            <Text style={[styles.offlineBannerText, { color: colors.destructive, textAlign }]}>
+              {t(incident.kind === "lost" ? "sync.lostTitle" : "sync.damagedTitle")}
+            </Text>
+            <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={18} color={colors.destructive} />
           </Pressable>
         ) : null}
 

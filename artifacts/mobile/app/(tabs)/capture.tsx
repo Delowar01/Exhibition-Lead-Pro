@@ -182,7 +182,7 @@ export default function CaptureScreen() {
               {activeEventId ? t("capture.eventTagged") : noEventAcknowledged ? t("capture.noEventAcknowledgedHint") : t("capture.eventSelectHint")}
             </Text>
           </View>
-          <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+          <Feather name="chevron-right" directional size={20} color={colors.mutedForeground} />
         </Pressable>
 
         {/* MOBILE-R1 — AI readiness notice (server-reported; manual / QR / NFC capture stay available) */}

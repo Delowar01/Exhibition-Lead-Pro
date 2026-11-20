@@ -114,7 +114,7 @@ export function parseBiometricAccountHint(raw: string | null): BiometricAccountH
  */
 export type StoredVault =
   | { present: false }
-  | { present: true; owner: string | null; token: string | null; user: unknown };
+  | { present: true; owner: string | null; token: string | null; user: unknown; refreshToken?: string | null };
 
 export function parseStoredVault(raw: string | null): StoredVault {
   if (!raw) return { present: false };
@@ -125,7 +125,12 @@ export function parseStoredVault(raw: string | null): StoredVault {
     const owner = ownerOfStoredUser(p.user);
     const token = typeof p.token === "string" && p.token.length > 0 ? p.token : null;
     if (!owner || !token) return unidentified;
-    return { present: true, owner, token, user: p.user };
+    // Phase 2 Batch 1: a vault written since session renewal exists also holds
+    // the session's refresh token. Older vaults have none and keep working
+    // until their access token expires.
+    const refresh = (p as { refreshToken?: unknown }).refreshToken;
+    const refreshToken = typeof refresh === "string" && refresh.length > 0 ? refresh : null;
+    return refreshToken ? { present: true, owner, token, user: p.user, refreshToken } : { present: true, owner, token, user: p.user };
   } catch {
     return unidentified;
   }
@@ -153,7 +158,7 @@ export function reconcileBiometricOwner(vault: StoredVault, authenticatedUser: u
 
 export type BiometricSignInTarget =
   /** The vault is the advertised destination: sign in as that account. */
-  | { kind: "login"; owner: string; token: string; user: unknown }
+  | { kind: "login"; owner: string; token: string; user: unknown; refreshToken?: string | null }
   /** No usable vault, or not the advertised destination: clear vault + hint. */
   | { kind: "invalidate" };
 
@@ -161,5 +166,22 @@ export type BiometricSignInTarget =
 export function biometricSignInTarget(vault: StoredVault, destination: BiometricAccountHint | null): BiometricSignInTarget {
   if (!destination || !vault.present || vault.owner === null || vault.token === null) return { kind: "invalidate" };
   if (vault.owner !== destination.owner) return { kind: "invalidate" };
-  return { kind: "login", owner: vault.owner, token: vault.token, user: vault.user };
+  return vault.refreshToken
+    ? { kind: "login", owner: vault.owner, token: vault.token, user: vault.user, refreshToken: vault.refreshToken }
+    : { kind: "login", owner: vault.owner, token: vault.token, user: vault.user };
+}
+
+/**
+ * Phase 2 Batch 1 — does the remembered sign-in hold the tokens of THIS
+ * session? A renewed session replaces its tokens; the vault has to follow, or
+ * the next biometric sign-in would present a refresh token the server has
+ * already replaced (which revokes the whole session). And when that session
+ * ends, a vault that follows it is dead and must not be offered again.
+ * Compared by token value only: a vault of another account or of an earlier
+ * sign-in of the same account never matches and is left alone.
+ */
+export function vaultFollowsSession(vault: StoredVault, session: { token: string | null; refreshToken: string | null }): boolean {
+  if (!vault.present || vault.owner === null || vault.token === null) return false;
+  if (session.token !== null && vault.token === session.token) return true;
+  return !!vault.refreshToken && session.refreshToken !== null && vault.refreshToken === session.refreshToken;
 }

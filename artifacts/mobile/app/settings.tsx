@@ -40,6 +40,7 @@ import {
   savePin,
   saveBiometricLogin,
 } from "@/lib/biometric";
+import { getCachedRefreshToken } from "@/lib/auth-storage";
 import { useAppLock } from "@/contexts/AppLockContext";
 import { PinPad } from "@/components/PinPad";
 
@@ -137,7 +138,8 @@ export default function SettingsScreen() {
         if (!ok) return;
         // Remembers THIS account (vault + non-secret destination), replacing
         // any previously remembered one.
-        await saveBiometricLogin(token, user);
+        // With the session's refresh token, so the remembered sign-in can renew itself like the session does.
+        await saveBiometricLogin(token, user, getCachedRefreshToken());
         settings.setBiometricEnabled(true);
         setPinStep(1);
         setPinFirstPin("");
@@ -291,7 +293,7 @@ export default function SettingsScreen() {
             Platform.OS === "web"
               ? () => (
                   <Pressable onPress={() => router.back()} hitSlop={10}>
-                    <Feather name="arrow-left" size={22} color={colors.foreground} />
+                    <Feather name="arrow-left" directional size={22} color={colors.foreground} />
                   </Pressable>
                 )
               : undefined,

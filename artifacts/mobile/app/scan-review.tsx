@@ -54,7 +54,10 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { answerWasLost, lostConnectionOrSession } from "@/lib/api-failure";
 import { formatGregorian } from "@/lib/date";
+import { enqueueFailureKeys } from "@/lib/offline-queue-store-model";
+import { scanActionFailureKey } from "@/lib/scan-error";
 
 function parseNum(v?: string): number | null {
   if (!v) return null;
@@ -107,7 +110,9 @@ export default function ScanReviewScreen() {
     }
   }, [params.meta]);
   const createContact = useCreateContact();
-  const { isOnline, enqueueContact } = useOffline();
+  const { isOnline, enqueueContact, captureOwner } = useOffline();
+  // One save at a time: a second tap while the first is being stored or sent must not queue the card twice.
+  const savingRef = useRef(false);
   const { activeEventId } = useSettings();
   const eventId = activeEventId ?? null;
   const gps = {
@@ -260,8 +265,9 @@ export default function ScanReviewScreen() {
         setFormValues(buildFormValues(res.extractedData));
         setFormKey((k) => k + 1);
       }
-    } catch {
-      Alert.alert(t("scanReview.reprocessErrorTitle"), t("scanReview.reprocessErrorBody"));
+    } catch (err) {
+      // Same causes, same advice as on the camera screen (AI unavailable, budget, no card, no connection…).
+      Alert.alert(t("scanReview.reprocessErrorTitle"), t(scanActionFailureKey(err, "scanReview.reprocessErrorBody")));
     }
   }
 
@@ -270,8 +276,8 @@ export default function ScanReviewScreen() {
     try {
       const res = await rerunAi.mutateAsync({ id: scanId });
       setScorePreview(res);
-    } catch {
-      Alert.alert(t("scanReview.aiErrorTitle"), t("scanReview.aiErrorBody"));
+    } catch (err) {
+      Alert.alert(t("scanReview.aiErrorTitle"), t(scanActionFailureKey(err, "scanReview.aiErrorBody")));
     }
   }
 
@@ -304,8 +310,8 @@ export default function ScanReviewScreen() {
         setFormValues(buildFormValues(res.extractedData));
         setFormKey((k) => k + 1);
       }
-    } catch {
-      Alert.alert(t("scanReview.replaceErrorTitle"), t("scanReview.replaceErrorBody"));
+    } catch (err) {
+      Alert.alert(t("scanReview.replaceErrorTitle"), t(scanActionFailureKey(err, "scanReview.replaceErrorBody")));
     }
   }
 
@@ -356,6 +362,18 @@ export default function ScanReviewScreen() {
   }, [extracted, t]);
 
   async function handleSave(values: ContactFormValues) {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
+      await saveReviewed(values);
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  async function saveReviewed(values: ContactFormValues) {
+    // The account saving this card (read before anything is sent).
+    const savedBy = captureOwner();
     const payload = {
       ...toContactPayload(values),
       eventId,
@@ -371,30 +389,45 @@ export default function ScanReviewScreen() {
       // records the interaction as NFC. Other modes keep their existing payload.
       ...(params.source === "nfc" ? { source: "nfc" } : {}),
     };
-    if (!isOnline) {
+    // Keep the reviewed contact on the device (it still carries its scan id, so
+    // the sync links it to the card that was read). The form stays open — and
+    // the user is told why — when it could NOT be kept.
+    const keepOffline = async (answerLost = false) => {
       const label =
         [payload.firstName, payload.lastName].filter(Boolean).join(" ") ||
         payload.contactCompany ||
         t("contacts.newContact");
-      const kept = enqueueContact(payload, {
+      const kept = await enqueueContact(payload, {
         label,
         source: params.source ?? "card",
         eventId,
         latitude: gps.latitude,
         longitude: gps.longitude,
         gpsAccuracy: gps.gpsAccuracy,
+        owner: savedBy,
+        answerLost,
       });
-      if (!kept) {
-        Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
+      if (!kept.ok) {
+        const msg = enqueueFailureKeys(kept.reason);
+        Alert.alert(t(msg.title), t(msg.body));
         return;
       }
       router.replace("/contacts");
+    };
+    if (!isOnline) {
+      await keepOffline();
       return;
     }
     try {
       await createContact.mutateAsync({ data: payload });
       router.replace("/contacts");
     } catch (err) {
+      // The connection dropped (or the session ended) while saving: the reviewed
+      // details are kept and sent later instead of being lost with this screen.
+      if (lostConnectionOrSession(err)) {
+        await keepOffline(answerWasLost(err));
+        return;
+      }
       // A high-confidence existing contact was detected. The server does NOT
       // merge — surface the match and let the user resolve it explicitly.
       if (

@@ -440,11 +440,12 @@ describe("wiring: the app drives the stores exactly like the Device above", () =
     const handler = login.slice(handlerStart, login.indexOf("\n  return (", handlerStart));
     expect(handler.indexOf("readBiometricSignIn(bioDestination)")).toBeGreaterThan(handler.indexOf("authenticateBiometric("));
     expect(handler).toContain("clearBiometricLogin()");
-    expect(handler).toContain("await login(target.token, target.user)"); // AuthContext.login, no shortcut
+    // AuthContext.login, no shortcut. Phase 2 Batch 1: the remembered session's refresh token travels with it.
+    expect(handler).toContain("await login(target.token, target.user, target.refreshToken)");
   });
 
   it("the Settings toggle enrols and clears vault + destination together", () => {
-    expect(settings).toContain("await saveBiometricLogin(token, user)");
+    expect(settings).toContain("await saveBiometricLogin(token, user, getCachedRefreshToken())");
     expect(settings).toContain("await clearBiometricLogin()");
     expect(settings).not.toMatch(/saveBiometricVault|clearBiometricVault/);
   });

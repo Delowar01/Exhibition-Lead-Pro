@@ -1,55 +1,52 @@
-// Batch 7 — shared mapping from a failed scan/OCR API response to an i18n key.
-// Pure and framework-free so it is unit-testable. Callers translate the key and
-// prefer `serverMessage` only where the descriptor allows it (the server localizes
-// its scan errors by appLanguage for 400/502 bodies).
+// Mapping from a failed scan/OCR request to an i18n key (camera capture, batch
+// review, scan review / reprocess). Pure and framework-free, unit-tested.
+//
+// Phase 2 Batch 1: the classification itself now lives in lib/api-failure.ts,
+// shared with the AI Assistant and the offline sync engine, so one server
+// answer gives the same advice everywhere. This module keeps the scan-specific
+// shape its callers use.
+import { classifyApiFailure, classifyHttpFailure, mayShowServerMessage, scanFailureKey, type ApiFailure, type ApiFailureKind } from "./api-failure";
 
 export interface ScanErrorDescriptor {
-  /** i18n key under the `capture.` namespace (or `capture.captureFailed`). */
+  /** i18n key under the `capture.` namespace. */
   key: string;
-  /** Server-provided human message, when present AND appropriate to show. */
+  /** The API's own user-facing sentence, when present AND appropriate to show. */
   serverMessage: string | null;
+  /** What went wrong, for callers that decide what to do next (keep for later, retry…). */
+  kind: ApiFailureKind;
 }
 
-function readBody(data: unknown): { error: string | null; code: string | null } {
-  if (!data || typeof data !== "object") return { error: null, code: null };
-  const b = data as Record<string, unknown>;
+function describe(failure: ApiFailure): ScanErrorDescriptor {
   return {
-    error: typeof b.error === "string" && b.error.length > 0 ? b.error : null,
-    code: typeof b.code === "string" ? b.code : null,
+    key: scanFailureKey(failure.kind),
+    serverMessage: mayShowServerMessage(failure.kind) ? failure.serverMessage : null,
+    kind: failure.kind,
   };
 }
 
 /**
- * Map an HTTP failure from POST /scans (or reprocess/replace) to a message key.
+ * Map an HTTP failure from POST /scans (or reprocess / replace) to a message key.
  * `status` is the HTTP status, `data` the parsed error body (may be undefined).
  */
 export function describeScanError(status: number, data: unknown): ScanErrorDescriptor {
-  const { error, code } = readBody(data);
-  // Machine codes take priority over raw status mapping.
-  if (code === "AI_BUDGET_EXCEEDED") return { key: "capture.errBudget", serverMessage: null };
-  if (code === "AI_RATE_LIMITED") return { key: "capture.errRateLimit", serverMessage: null };
-  if (code === "AI_DISABLED") return { key: "capture.errAiDisabled", serverMessage: null };
-  // MOBILE-R1 — the provider has no credential on the server (503 AI_NOT_CONFIGURED from the
-  // readiness gate). A deployment-configuration state, never an image problem: the localized
-  // key is preferred over the server's English text so the user is told to contact an
-  // administrator instead of retaking photos (batch review shows the key alone).
-  if (code === "AI_NOT_CONFIGURED") return { key: "capture.errAiNotConfigured", serverMessage: null };
-  // No AI provider could serve the request right now (503 AI_PROVIDER_UNAVAILABLE: the
-  // provider — and its fallback, where one is allowed — did not answer), or the platform's
-  // monthly AI spending limit is reached (503 AI_PLATFORM_LIMIT_REACHED). Neither is a
-  // problem with the photo: the localized message says AI is temporarily unavailable and
-  // that manual, QR and NFC capture still work. (A client without this mapping shows the
-  // server's own sentence, which says the same in English.)
-  if (code === "AI_PROVIDER_UNAVAILABLE" || code === "AI_PLATFORM_LIMIT_REACHED") return { key: "capture.errAiUnavailable", serverMessage: null };
-  if (code === "SCAN_NO_CARD" || status === 422) return { key: "capture.errNoCard", serverMessage: null };
-  if (code === "SCAN_IMAGE_TOO_LARGE" || status === 413) return { key: "capture.errTooLarge", serverMessage: null };
-  // Batch 8 — HEIC (HEVC) cannot be decoded server-side; tell the user to use JPEG.
-  if (code === "SCAN_IMAGE_HEIC_UNSUPPORTED") return { key: "capture.errHeic", serverMessage: null };
+  return describe(classifyHttpFailure(status, data));
+}
 
-  if (status === 429) return { key: "capture.errRateLimit", serverMessage: null };
-  if (status === 502 || status === 503 || status === 504) return { key: "capture.errOcr", serverMessage: error };
-  if (status === 400) return { key: "capture.errInvalid", serverMessage: error };
-  if (status === 401 || status === 403) return { key: "capture.errAuth", serverMessage: null };
-  if (status >= 500) return { key: "capture.errServer", serverMessage: null };
-  return { key: "capture.captureFailed", serverMessage: error };
+/** The same for anything a scan request can throw — including "no connection". */
+export function describeScanFailure(err: unknown): ScanErrorDescriptor {
+  return describe(classifyApiFailure(err));
+}
+
+const ACTION_SPECIFIC: ReadonlySet<ApiFailureKind> = new Set<ApiFailureKind>(["unknown", "upstream", "server", "invalid", "not_found"]);
+
+/**
+ * Message key for a failed action on an EXISTING scan (reprocess, replace
+ * image, AI re-score). A cause the user can act on — no connection, session
+ * ended, AI off / not configured / unavailable / over budget, no card in the
+ * image, plan limit — gets its own advice; anything else keeps the wording of
+ * the action that failed (`fallbackKey`).
+ */
+export function scanActionFailureKey(err: unknown, fallbackKey: string): string {
+  const failure = classifyApiFailure(err);
+  return ACTION_SPECIFIC.has(failure.kind) ? fallbackKey : scanFailureKey(failure.kind);
 }

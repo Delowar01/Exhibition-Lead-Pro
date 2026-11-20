@@ -33,12 +33,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { assistantAllowed } from "@/lib/entitlements";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
-import { classifySendError, sendErrorMessageKey, type SendErrorKind } from "@/lib/assistant-error";
+import { canRetrySend, classifySendError, sendErrorMessageKey, type SendErrorKind } from "@/lib/assistant-error";
 
 export default function AssistantScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { t, textAlign, language } = useLocale();
+  const { t, textAlign, language, isRTL } = useLocale();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -334,23 +334,27 @@ export default function AssistantScreen() {
                     ]}
                     accessibilityRole="alert"
                   >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 6 }}>
                       <Feather name="alert-circle" size={14} color={colors.destructive} />
                       <Text style={[styles.metaText, { color: colors.destructive, fontSize: 12, flexShrink: 1, textAlign }]}>
                         {t(sendErrorMessageKey(failedSend.kind))}
                       </Text>
                     </View>
-                    <Pressable
-                      onPress={handleRetryFailedSend}
-                      disabled={sendMutation.isPending || createMutation.isPending}
-                      style={[styles.retryBtn, { borderColor: colors.border }]}
-                      accessibilityLabel={t("assistant.retry")}
-                    >
-                      <Feather name="refresh-cw" size={13} color={colors.foreground} />
-                      <Text style={[styles.chipText, { color: colors.foreground }]}>
-                        {t("assistant.retry")}
-                      </Text>
-                    </Pressable>
+                    {/* Retry is offered only where trying again can help — not while AI is
+                        switched off, not configured or over budget, or after the session ended. */}
+                    {canRetrySend(failedSend.kind) ? (
+                      <Pressable
+                        onPress={handleRetryFailedSend}
+                        disabled={sendMutation.isPending || createMutation.isPending}
+                        style={[styles.retryBtn, { borderColor: colors.border, flexDirection: isRTL ? "row-reverse" : "row", alignSelf: isRTL ? "flex-end" : "flex-start" }]}
+                        accessibilityLabel={t("assistant.retry")}
+                      >
+                        <Feather name="refresh-cw" size={13} color={colors.foreground} />
+                        <Text style={[styles.chipText, { color: colors.foreground }]}>
+                          {t("assistant.retry")}
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </>
               ) : null}

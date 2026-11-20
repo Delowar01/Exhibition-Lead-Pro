@@ -21,7 +21,15 @@ type Classification = "DEVICE-WIDE SAFE" | "ACCOUNT-SCOPED" | "AUTH/SECURITY" | 
 const REVIEWED_KEYS: Record<string, { kind: Classification; owner: string; note: string }> = {
   csp_settings: { kind: "ACCOUNT-SCOPED", owner: "contexts/SettingsContext.tsx", note: "device prefs + tenant event state bound to scopeOwner (9306a164)" },
   csp_offline_manual: { kind: "DEVICE-WIDE SAFE", owner: "contexts/OfflineContext.tsx", note: "work-offline toggle, no tenant data" },
-  csp_offline_queue: { kind: "ACCOUNT-SCOPED", owner: "lib/offline-queue.ts", note: "every item stamped with its owner; legacy quarantined (11f14e13)" },
+  csp_offline_queue: { kind: "ACCOUNT-SCOPED", owner: "lib/offline-queue.ts", note: "queue of versions before Phase 2 Batch 1 (images inline): read once and taken over into csp_offline_queue_v2, removed only after that index is stored, left untouched when unreadable" },
+  csp_offline_queue_v2: { kind: "ACCOUNT-SCOPED", owner: "lib/offline-queue.ts", note: "queue index: every item stamped with its owner, legacy quarantined (11f14e13); a scan holds only the NAME of its image file (per-account directory, lib/scan-files.ts)" },
+  csp_offline_queue_migrated: { kind: "DEVICE-WIDE SAFE", owner: "lib/offline-queue.ts", note: "flag: the older queue was taken over (no tenant data)" },
+  csp_offline_done: { kind: "DEVICE-WIDE SAFE", owner: "lib/offline-queue.ts", note: "ids (timestamp-random, no tenant data) of items already uploaded or removed, so a left-over image file is cleaned up and never restored as new work" },
+  csp_offline_queue_damaged: { kind: "ACCOUNT-SCOPED", owner: "lib/offline-queue.ts", note: "the ORIGINAL of a queue index that could not be read as it was, kept untouched before a readable index replaces it; never read back as a queue, never sent; removed only by the user's own confirmed action in the Sync Center" },
+  csp_offline_queue_damaged_2: { kind: "ACCOUNT-SCOPED", owner: "lib/offline-queue.ts", note: "second place for such an original (a later incident never overwrites an earlier original)" },
+  csp_offline_queue_damaged_3: { kind: "ACCOUNT-SCOPED", owner: "lib/offline-queue.ts", note: "third place for such an original; when all three are taken nothing is written until the user frees one" },
+  csp_offline_queue_incident: { kind: "DEVICE-WIDE SAFE", owner: "lib/offline-queue.ts", note: "record of a damaged queue index: when it was found, how many entries were read back / unreadable, which keys hold the originals (no tenant data); decides which unlisted photos wait for the user" },
+  csp_refresh: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "refresh token of the current session (secure store); replaced at every renewal, deleted on logout and when the session ends; only ever used together with csp_token" },
   csp_own_card: { kind: "ACCOUNT-SCOPED", owner: "lib/card-storage.ts", note: "single { owner, card } slot; legacy raw card removed, never attributed" },
   csp_token: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "current session token (secure store); replaced on login, deleted on logout" },
   csp_user: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "current session user (secure store); replaced on login and — for the same session only, never with the token — by the M5 entitlement refresh; deleted on logout" },
@@ -46,7 +54,11 @@ const REVIEWED_STORE_CALLERS = new Set([
 
 /** Modules that write files: all into the OS-managed app cache directory, fresh per request, never reused across accounts. */
 // (lib/documents.ts and lib/export-share.ts download through lib/private-files.ts and are not writers themselves.)
+// Phase 2 Batch 1 — lib/scan-file-driver.ts is the one writer OUTSIDE the cache: offline scan images in the app's
+// private document directory, one sub-directory per account (`<userId>_<companyId>`, derived only from a tenant owner
+// key), read back only for the item's owner, deleted only after a confirmed upload or the user's own removal.
 const REVIEWED_FILE_WRITERS = new Set([
+  "lib/scan-file-driver.ts",
   "lib/private-files.ts",
   "lib/vcard.ts",
   "components/CommunicationHub.tsx",
@@ -120,6 +132,9 @@ describe("mobile persistence inventory", () => {
     expect(read(join(MOBILE_ROOT, "lib", "settings-model.ts"))).toMatch(/scopeOwner/);
     expect(read(join(MOBILE_ROOT, "lib", "offline-queue-model.ts"))).toMatch(/owner: string \| null/);
     expect(read(join(MOBILE_ROOT, "lib", "card-cache-model.ts"))).toMatch(/owner: string;/);
+    // offline scan images live in a directory derived from that same owner key, never from anything else
+    expect(read(join(MOBILE_ROOT, "lib", "scan-files.ts"))).toMatch(/ownerDirName\(owner\)/);
+    expect(read(join(MOBILE_ROOT, "lib", "scan-file-driver.ts"))).toMatch(/FileSystem\.documentDirectory/);
     // and all derive it from the one helper
     for (const m of ["lib/offline-queue-model.ts", "lib/biometric-account-model.ts", "contexts/AuthContext.tsx"]) {
       expect(read(join(MOBILE_ROOT, m))).toMatch(/accountOwnerKey/);

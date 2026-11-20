@@ -194,8 +194,9 @@ export function Badge({
   label: string;
   color: string;
 }) {
+  const { isRTL } = useLocale();
   return (
-    <View style={[styles.badge, { backgroundColor: color + "1A" }]}>
+    <View style={[styles.badge, { backgroundColor: color + "1A", flexDirection: isRTL ? "row-reverse" : "row" }]}>
       <View style={[styles.badgeDot, { backgroundColor: color }]} />
       <Text style={[styles.badgeText, { color }]}>{label}</Text>
     </View>
@@ -222,6 +223,7 @@ export function PrimaryButton({
   style?: StyleProp<ViewStyle>;
 }) {
   const colors = useColors();
+  const { isRTL } = useLocale();
   const isDisabled = disabled || loading;
   return (
     <Pressable
@@ -233,6 +235,8 @@ export function PrimaryButton({
           backgroundColor: colors.primary,
           borderRadius: colors.radius + 4,
           opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
+          // Arabic: the icon leads the label from the right.
+          flexDirection: isRTL ? "row-reverse" : "row",
         },
         style,
       ]}
@@ -385,6 +389,7 @@ export function ListRow({
   style?: StyleProp<ViewStyle>;
 }) {
   const colors = useColors();
+  const { isRTL, textAlign } = useLocale();
   const content = (
     <>
       {icon ? (
@@ -404,14 +409,14 @@ export function ListRow({
       <View style={{ flex: 1, gap: 2 }}>
         <Text
           numberOfLines={1}
-          style={{ fontSize: TYPE.body.fontSize, fontFamily: FONT.medium, color: colors.foreground }}
+          style={{ fontSize: TYPE.body.fontSize, fontFamily: FONT.medium, color: colors.foreground, textAlign }}
         >
           {title}
         </Text>
         {subtitle ? (
           <Text
             numberOfLines={1}
-            style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.regular, color: colors.mutedForeground }}
+            style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.regular, color: colors.mutedForeground, textAlign }}
           >
             {subtitle}
           </Text>
@@ -419,12 +424,12 @@ export function ListRow({
       </View>
       {right}
       {showChevron ? (
-        <Feather name="chevron-right" size={ICON.sm + 2} color={colors.mutedForeground} />
+        <Feather name="chevron-right" directional size={ICON.sm + 2} color={colors.mutedForeground} />
       ) : null}
     </>
   );
   const rowStyle: ViewStyle = {
-    flexDirection: "row",
+    flexDirection: isRTL ? "row-reverse" : "row",
     alignItems: "center",
     gap: SPACING.md,
     minHeight: TOUCH_TARGET,
@@ -462,6 +467,7 @@ export function SecondaryButton({
   style?: StyleProp<ViewStyle>;
 }) {
   const colors = useColors();
+  const { isRTL } = useLocale();
   const isDisabled = disabled || loading;
   const fg = destructive ? colors.destructive : colors.foreground;
   return (
@@ -478,6 +484,7 @@ export function SecondaryButton({
           borderColor: destructive ? colors.destructive : colors.border,
           borderRadius: colors.radius + 4,
           opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
+          flexDirection: isRTL ? "row-reverse" : "row",
         },
         style,
       ]}
@@ -544,10 +551,11 @@ export function Input({
   ...props
 }: TextInputProps & { label?: string; error?: string; style?: TextInputProps["style"] }) {
   const colors = useColors();
+  const { textAlign } = useLocale();
   return (
     <View style={{ gap: SPACING.xs + 2 }}>
       {label ? (
-        <Text style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.medium, color: colors.foreground }}>
+        <Text style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.medium, color: colors.foreground, textAlign }}>
           {label}
         </Text>
       ) : null}
@@ -566,12 +574,13 @@ export function Input({
             fontFamily: FONT.regular,
             color: colors.foreground,
             backgroundColor: colors.card,
+            textAlign,
           },
           style,
         ]}
       />
       {error ? (
-        <Text style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.regular, color: colors.destructive }}>
+        <Text style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.regular, color: colors.destructive, textAlign }}>
           {error}
         </Text>
       ) : null}

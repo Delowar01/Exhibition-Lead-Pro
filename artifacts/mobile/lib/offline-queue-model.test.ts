@@ -148,9 +148,9 @@ describe("5–7. visibility and counters are scoped to the signed-in owner", () 
     expect(visibleQueue(withFailed, undefined)).toEqual([]);
   });
   it("7. B's pending / failed / queued counts exclude A's items; logged out counts nothing", () => {
-    expect(queueCounts(withFailed, B)).toEqual({ pending: 1, failed: 0, queued: 1 });
-    expect(queueCounts(withFailed, A)).toEqual({ pending: 1, failed: 1, queued: 2 });
-    expect(queueCounts(withFailed, null)).toEqual({ pending: 0, failed: 0, queued: 0 });
+    expect(queueCounts(withFailed, B)).toEqual({ pending: 1, failed: 0, conflicts: 0, queued: 1 });
+    expect(queueCounts(withFailed, A)).toEqual({ pending: 1, failed: 1, conflicts: 0, queued: 2 });
+    expect(queueCounts(withFailed, null)).toEqual({ pending: 0, failed: 0, conflicts: 0, queued: 0 });
   });
 });
 
@@ -187,7 +187,7 @@ describe("11. account switch and return: A's work waits, untouched, for A", () =
     q = persistAndReload(q);
     expect(visibleQueue(q, B)).toEqual([]);
     q = add(q, contactDraft("B1"), B);
-    expect(queueCounts(q, B)).toEqual({ pending: 1, failed: 0, queued: 1 });
+    expect(queueCounts(q, B)).toEqual({ pending: 1, failed: 0, conflicts: 0, queued: 1 });
     // B's sync sends only B1 and leaves A's items alone
     return runSync(q, B).then(({ sent, queue }) => {
       expect(sent.map((s) => s.owner)).toEqual([B]);
@@ -195,7 +195,7 @@ describe("11. account switch and return: A's work waits, untouched, for A", () =
       // back to A after a restart
       const again = persistAndReload(queue);
       expect(visibleQueue(again, A).map((it) => it.label).sort()).toEqual(["A1", "A2"]);
-      expect(queueCounts(again, A)).toEqual({ pending: 2, failed: 0, queued: 2 });
+      expect(queueCounts(again, A)).toEqual({ pending: 2, failed: 0, conflicts: 0, queued: 2 });
       expect(syncTargets(again, A)).toHaveLength(2);
     });
   });
@@ -210,7 +210,7 @@ describe("12–13. legacy (ownerless) items are quarantined, never adopted, neve
     for (const owner of [A, B]) {
       expect(visibleQueue(q, owner)).toEqual([]);
       expect(syncTargets(q, owner)).toEqual([]);
-      expect(queueCounts(q, owner)).toEqual({ pending: 0, failed: 0, queued: 0 });
+      expect(queueCounts(q, owner)).toEqual({ pending: 0, failed: 0, conflicts: 0, queued: 0 });
       const { sent, queue } = await runSync(q, owner);
       expect(sent).toEqual([]);
       expect(queue).toHaveLength(3);

@@ -28,7 +28,9 @@ import {
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { describeScanError } from "@/lib/scan-error";
+import { worthKeepingForLater } from "@/lib/api-failure";
+import { enqueueFailureKeys, type EnqueueResult } from "@/lib/offline-queue-store-model";
+import { describeScanFailure } from "@/lib/scan-error";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import {
@@ -140,12 +142,14 @@ export default function CaptureCameraScreen() {
     ? params.mode
     : "single") as CaptureMode;
 
-  const { t } = useLocale();
+  const { t, isRTL } = useLocale();
+  // Phase 2 Batch 1 — Arabic: overlays (close button, banners, Done) follow the reading direction.
+  const rowDir = isRTL ? ("row-reverse" as const) : ("row" as const);
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const createScan = useCreateScan();
   const createContact = useCreateContact();
-  const { isOnline, enqueueScan } = useOffline();
+  const { isOnline, enqueueScan, captureOwner } = useOffline();
   const { activeEventId, activeEventName, language } = useSettings();
   const eventId = activeEventId ?? null;
 
@@ -350,6 +354,40 @@ export default function CaptureCameraScreen() {
     return raw?.base64 ? `data:image/jpeg;base64,${raw.base64}` : "card";
   }, [measureFrame, winW, winH]);
 
+  const queueLabel = useCallback(
+    () => (source === "signature" ? t("scanReview.sourceSignature") : t("scanReview.sourceCard")),
+    [source, t],
+  );
+
+  // Keep a capture on the device: while offline, or when sending it failed for
+  // a reason that is not the photo's fault. `progress` = the server already
+  // read the card (only the contact is missing), so no photo is stored again.
+  const keepForLater = useCallback(
+    (
+      imageData: string | null,
+      gps: Gps,
+      progress?: { scanId: number; extracted: ExtractedCardData },
+      // The account that took the photo (read before anything was sent): a
+      // capture kept after a failed send belongs to it, whoever is signed in by then.
+      capturedBy?: string | null,
+    ): Promise<EnqueueResult> =>
+      enqueueScan(
+        imageData,
+        {
+          label: queueLabel(),
+          source,
+          owner: capturedBy,
+          appLanguage: language === "ar" ? ("ar" as const) : ("en" as const),
+          eventId,
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          gpsAccuracy: gps.gpsAccuracy,
+        },
+        progress,
+      ),
+    [enqueueScan, queueLabel, source, language, eventId],
+  );
+
   // #3 Rapid — OCR + save happen in the background so the camera frees instantly.
   //
   // perfTiming carries the device-side capture metrics captured before the call
@@ -369,8 +407,11 @@ export default function CaptureCameraScreen() {
         tStart: number;
       } | null,
       quality: CaptureQuality | null,
+      capturedBy: string | null,
     ) => {
       const tOcr = Date.now();
+      // What the server already has of this capture, should the second step fail.
+      let scanned: { scanId: number; extracted: ExtractedCardData } | null = null;
       try {
         scanLog("rapid: OCR started", { bytes: imageData.length, language });
         const scan = await createScan.mutateAsync({
@@ -388,9 +429,16 @@ export default function CaptureCameraScreen() {
         });
         const uploadAndOcrMs = Date.now() - tOcr;
         const extracted = scan.extractedData ?? {};
+        scanned = { scanId: scan.id, extracted };
         scanLog("rapid: OCR completed", { confidence: scan.confidence, uploadAndOcrMs });
         const tContact = Date.now();
-        await createContact.mutateAsync({ data: extractedToContact(extracted, gps, eventId) });
+        // The contact names its scan: the server links the two, the contact
+        // carries its card image, and a capture kept after this request failed
+        // can later be checked ("does that scan already have its contact?")
+        // instead of being created a second time.
+        await createContact.mutateAsync({
+          data: { ...extractedToContact(extracted, gps, eventId), scanId: scan.id, cardImageUrl: `/api/scans/${scan.id}/image` },
+        });
         const contactMs = Date.now() - tContact;
         const totalMs = perfTiming ? Date.now() - perfTiming.tStart : uploadAndOcrMs + contactMs;
         scanLog("rapid: contact saved", { contactMs, totalMs });
@@ -419,10 +467,28 @@ export default function CaptureCameraScreen() {
           status: e instanceof ApiError ? e.status : undefined,
           message: e instanceof Error ? e.message : String(e),
         });
+        // Phase 2 Batch 1: a rapid capture is no longer dropped when sending it
+        // failed for a reason that is not the photo's fault (no connection,
+        // session ended, AI unavailable or over budget) or when the contact
+        // already exists. It is kept on the device — with the card reading, if
+        // the server already made one, so it is not read twice — and the user
+        // is told why.
+        const d = describeScanFailure(e);
+        const reason = d.serverMessage || t(d.key);
+        if (worthKeepingForLater(d.kind) || (d.kind === "duplicate" && scanned)) {
+          const kept = await keepForLater(scanned ? null : imageData, gps, scanned ?? undefined, capturedBy);
+          if (kept.ok) {
+            setSavedCount((c) => c + 1);
+            setLastSaved(t("capture.offlineSuffix", { label: queueLabel() }));
+            setErrorMsg(d.kind === "duplicate" ? t("capture.duplicateKept") : `${reason} ${t("capture.keptForLater")}`);
+            return;
+          }
+        }
         setFailedCount((c) => c + 1);
+        setErrorMsg(reason);
       }
     },
-    [createScan, createContact, eventId, language, source, captureSource, t],
+    [createScan, createContact, eventId, language, source, captureSource, t, keepForLater, queueLabel],
   );
 
   // Phase 7: turn raw failures into specific, actionable messages instead of a
@@ -430,19 +496,12 @@ export default function CaptureCameraScreen() {
   // maps by HTTP status, then detects offline/network/timeout faults.
   const captureErrorMessage = useCallback(
     (err: unknown): string => {
-      if (err instanceof ApiError) {
-        // Batch 7: shared mapper — adds AI budget/rate-limit (429), AI-disabled
-        // (403 code) and no-readable-card (422) handling on top of the status map.
-        const d = describeScanError(err.status, err.data);
-        return d.serverMessage || t(d.key);
-      }
-      if (
-        err instanceof TypeError ||
-        (err instanceof Error && /network|fetch|timeout|connection/i.test(err.message))
-      ) {
-        return t("capture.errNetwork");
-      }
-      return t("capture.captureFailed");
+      // Phase 2 Batch 1: one shared classification (lib/api-failure.ts) for the
+      // camera, batch review, scan review and the Assistant — AI budget, rate
+      // limit, AI off / not configured / unavailable, no readable card, image
+      // refused, no connection, session ended.
+      const d = describeScanFailure(err);
+      return d.serverMessage || t(d.key);
     },
     [t],
   );
@@ -453,6 +512,10 @@ export default function CaptureCameraScreen() {
     setErrorMsg(null);
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
+    // The photo taken in this run, so a failed send can still keep it — for the
+    // account that is signed in NOW, not for whoever is signed in when it fails.
+    const capturedBy = captureOwner();
+    let captured: { imageData: string; gps: Gps } | null = null;
     try {
       const tStart = Date.now();
       const imageData = await captureImage();
@@ -461,6 +524,7 @@ export default function CaptureCameraScreen() {
       const payloadKb = Math.round((imageData.length * 0.75) / 1024);
       scanLog("image captured", { mode, source, captureMs, payloadKb, pictureSize });
       const gps = { ...gpsRef.current };
+      captured = { imageData, gps };
 
       // On-device capture quality (advisory). Pixel analysis of the CROPPED
       // card thumbnail (exposure + edge sharpness) — surfaced as a transient
@@ -545,7 +609,10 @@ export default function CaptureCameraScreen() {
               });
             }
           } catch (e) {
-            if (setBatchOcrResult(batchId, { status: "error", extracted: null, scanId: null }, batchSession)) {
+            // The reason travels with the result, so batch review shows the same
+            // specific message the camera would (AI unavailable, budget, no card…).
+            const d = describeScanFailure(e);
+            if (setBatchOcrResult(batchId, { status: "error", extracted: null, scanId: null, errorKey: d.key, errorKind: d.kind }, batchSession)) {
               setPendingOcr(getPendingOcrCount());
             }
             scanLog("batch: OCR error", {
@@ -561,19 +628,12 @@ export default function CaptureCameraScreen() {
       // Offline: the image needs server-side OCR we can't run here, so queue
       // the raw capture — it's OCR'd and turned into a contact on sync.
       if (!isOnline) {
-        const queueLabel = source === "signature" ? t("scanReview.sourceSignature") : t("scanReview.sourceCard");
-        const meta = {
-          label: queueLabel,
-          source,
-          appLanguage: language === "ar" ? ("ar" as const) : ("en" as const),
-          eventId,
-          latitude: gps.latitude,
-          longitude: gps.longitude,
-          gpsAccuracy: gps.gpsAccuracy,
-        };
-        if (!enqueueScan(imageData, meta)) {
-          // No signed-in tenant account: nothing is kept (fail closed).
-          setErrorMsg(t("sync.notSignedInBody"));
+        const kept = await keepForLater(imageData, gps, undefined, capturedBy);
+        if (!kept.ok) {
+          // NOT kept — no signed-in tenant account, the device is out of space
+          // or refused to store it. Say exactly that; never count it as saved.
+          setErrorMsg(t(enqueueFailureKeys(kept.reason).body));
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           return;
         }
         if (mode === "single") {
@@ -586,7 +646,7 @@ export default function CaptureCameraScreen() {
         // rapid: queued; keep the camera open for the next capture.
         setRapidCount((c) => c + 1);
         setSavedCount((c) => c + 1);
-        setLastSaved(t("capture.offlineSuffix", { label: queueLabel }));
+        setLastSaved(t("capture.offlineSuffix", { label: queueLabel() }));
         if (Platform.OS !== "web") Haptics.selectionAsync();
         return;
       }
@@ -672,12 +732,24 @@ export default function CaptureCameraScreen() {
       const rapidPerfTiming = capturePerfRef.current
         ? { ...capturePerfRef.current, payloadKb, tStart }
         : null;
-      void processRapid(imageData, gps, rapidPerfTiming, quality);
+      void processRapid(imageData, gps, rapidPerfTiming, quality, capturedBy);
     } catch (e) {
       scanLog("capture: FAILED", {
         status: e instanceof ApiError ? e.status : undefined,
         message: e instanceof Error ? e.message : String(e),
       });
+      // Sending failed for a reason that is not the photo's fault (connection
+      // lost, session ended, AI unavailable): keep the photo instead of asking
+      // the user to find the card and take it again.
+      const d = describeScanFailure(e);
+      if (captured && mode !== "batch" && worthKeepingForLater(d.kind)) {
+        const kept = await keepForLater(captured.imageData, captured.gps, undefined, capturedBy);
+        if (kept.ok) {
+          setErrorMsg(`${d.serverMessage || t(d.key)} ${t("capture.keptForLater")}`);
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          return;
+        }
+      }
       setErrorMsg(captureErrorMessage(e));
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -785,12 +857,14 @@ export default function CaptureCameraScreen() {
         colors={["rgba(0,0,0,0.8)", "transparent"]}
         style={[styles.topOverlay, { paddingTop: topPad + 12 }]}
       >
-        <View style={styles.topRow}>
+        <View style={[styles.topRow, { flexDirection: rowDir }]}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeBtn}>
             <Feather name="x" size={24} color="#FFFFFF" />
           </Pressable>
           <View style={[styles.modePill, { backgroundColor: colors.primary }]}>
-            <Text style={styles.modePillText}>{mode.toUpperCase()}</Text>
+            <Text style={styles.modePillText}>
+              {t(mode === "rapid" ? "capture.modeRapid" : mode === "batch" ? "capture.modeBatch" : "capture.modeSingle").toUpperCase()}
+            </Text>
           </View>
           <View style={{ width: 44 }} /> {/* Spacer to balance the row */}
         </View>
@@ -802,7 +876,7 @@ export default function CaptureCameraScreen() {
           {/* MOBILE-R2 — the event every capture on this screen is saved with, or an explicit "No Event" badge */}
           <View
             accessibilityLabel={eventId ? (activeEventName ?? "") : t("capture.noEventBadge")}
-            style={[styles.eventChip, { backgroundColor: eventId ? "rgba(255,255,255,0.18)" : "rgba(245,158,11,0.28)", borderColor: eventId ? "rgba(255,255,255,0.35)" : "#F59E0B" }]}
+            style={[styles.eventChip, { flexDirection: rowDir, backgroundColor: eventId ? "rgba(255,255,255,0.18)" : "rgba(245,158,11,0.28)", borderColor: eventId ? "rgba(255,255,255,0.35)" : "#F59E0B" }]}
           >
             <Feather name={eventId ? "map-pin" : "calendar"} size={12} color="#FFFFFF" />
             <Text style={styles.eventChipText} numberOfLines={1}>
@@ -825,7 +899,7 @@ export default function CaptureCameraScreen() {
       <View style={[styles.feedbackContainer, { top: topPad + 120 }]} pointerEvents="none">
         {/* Rapid feedback */}
         {mode === "rapid" && rapidCount > 0 ? (
-          <View style={styles.rapidBanner}>
+          <View style={[styles.rapidBanner, { flexDirection: rowDir }]}>
             <Feather name="check-circle" size={18} color="#FFFFFF" />
             <Text style={styles.rapidBannerText}>
               {t("capture.savedCount", { count: savedCount })}
@@ -837,7 +911,7 @@ export default function CaptureCameraScreen() {
 
         {/* Batch counter */}
         {mode === "batch" && batchCount > 0 ? (
-          <View style={[styles.rapidBanner, { backgroundColor: "#FB923C" }]}>
+          <View style={[styles.rapidBanner, { backgroundColor: "#FB923C", flexDirection: rowDir }]}>
             <Feather name="layers" size={18} color="#FFFFFF" />
             <Text style={styles.rapidBannerText}>
               {pendingOcr > 0
@@ -849,9 +923,9 @@ export default function CaptureCameraScreen() {
 
         {/* Error feedback */}
         {errorMsg ? (
-          <View style={[styles.errorBanner]}>
+          <View style={[styles.errorBanner, { flexDirection: rowDir }]}>
             <Feather name="alert-circle" size={18} color="#FFFFFF" />
-            <Text style={styles.rapidBannerText}>{errorMsg}</Text>
+            <Text style={[styles.rapidBannerText, { textAlign: isRTL ? "right" : "left" }]}>{errorMsg}</Text>
           </View>
         ) : null}
       </View>
@@ -859,7 +933,7 @@ export default function CaptureCameraScreen() {
       {/* Capture-quality indicator (advisory, transient) */}
       {qualityBand ? (
         <View
-          style={[styles.qualityBanner, { bottom: insets.bottom + 160, backgroundColor: qualityBand.color }]}
+          style={[styles.qualityBanner, { bottom: insets.bottom + 160, backgroundColor: qualityBand.color, flexDirection: rowDir }]}
           pointerEvents="none"
         >
           <Feather name={qualityBand.icon} size={16} color="#FFFFFF" />
@@ -906,7 +980,7 @@ export default function CaptureCameraScreen() {
             onPress={finishBatch}
             accessibilityRole="button"
             accessibilityLabel={t("capture.done")}
-            style={({ pressed }) => [styles.doneBtn, { backgroundColor: "rgba(255,255,255,0.2)", opacity: pressed ? 0.7 : 1 }]}
+            style={({ pressed }) => [styles.doneBtn, { backgroundColor: "rgba(255,255,255,0.2)", opacity: pressed ? 0.7 : 1, flexDirection: rowDir }]}
           >
             <Text style={styles.doneBtnText}>
               {batchCount > 0
@@ -915,7 +989,7 @@ export default function CaptureCameraScreen() {
                   : t("capture.doneReview", { count: batchCount })
                 : t("capture.done")}
             </Text>
-            <Feather name="chevron-right" size={20} color="#FFFFFF" />
+            <Feather name="chevron-right" directional size={20} color="#FFFFFF" />
           </Pressable>
         ) : null}
       </View>
@@ -992,6 +1066,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     zIndex: 20,
+    // Phase 2 Batch 1: a long message (an AI or storage explanation, Arabic
+    // text) wraps inside the screen instead of running off both edges.
+    paddingHorizontal: 16,
   },
   rapidBanner: {
     flexDirection: "row",
@@ -1001,13 +1078,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 999,
+    maxWidth: "100%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
-  rapidBannerText: { color: "#FFFFFF", fontSize: 15, fontFamily: FONT.semibold },
+  rapidBannerText: { color: "#FFFFFF", fontSize: 15, lineHeight: 21, fontFamily: FONT.semibold, flexShrink: 1 },
   qualityBanner: {
     position: "absolute",
     alignSelf: "center",
@@ -1026,7 +1104,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#EF4444",
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 999,
+    // rounded, not a pill: its text may run over several lines
+    borderRadius: 20,
+    maxWidth: "100%",
   },
   bottomBar: {
     position: "absolute",

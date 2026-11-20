@@ -109,7 +109,7 @@ export default function EventsScreen() {
           hitSlop={10}
           style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
         >
-          <Feather name="chevron-left" size={20} color={colors.foreground} />
+          <Feather name="chevron-left" directional size={20} color={colors.foreground} />
         </Pressable>
         <Text style={[styles.heading, { color: colors.foreground }]}>{t("events.title")}</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground }]}>

@@ -147,7 +147,7 @@ const ContactRow = React.memo(function ContactRow({
           ) : null}
         </View>
       </View>
-      <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+      <Feather name="chevron-right" directional size={20} color={colors.mutedForeground} />
     </Pressable>
   );
 });

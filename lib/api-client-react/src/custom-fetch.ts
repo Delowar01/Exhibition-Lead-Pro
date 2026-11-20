@@ -5,11 +5,24 @@ export type CustomFetchOptions = RequestInit & {
 };
 
 /**
- * Handler invoked when a request returns 401. Should attempt to obtain a fresh
- * access token (e.g. by calling the refresh endpoint). Returns the new token on
- * success, or null when the session can no longer be refreshed.
+ * What the rejected request looked like. `failedToken` is the bearer token it
+ * was sent with (null when it carried none), so a handler can tell a request of
+ * the CURRENT session from one that was sent before the session changed (a
+ * sign-out or another account signing in while it was in flight) and refuse to
+ * have it retried under the new session. `url` is where it was sent, so a
+ * handler can leave alone a 401 that is not about the session at all (the API
+ * answers 401 for a wrong current password, for example).
  */
-export type UnauthorizedHandler = () => Promise<string | null>;
+export type UnauthorizedContext = { failedToken: string | null; url: string };
+
+/**
+ * Handler invoked when a request returns 401. Should attempt to obtain a fresh
+ * access token (e.g. by calling the refresh endpoint). Returns the token the
+ * rejected request may be retried with, or null when it must not be retried
+ * (the session can no longer be refreshed, or the request belongs to another
+ * session). The retry is sent with exactly the returned token.
+ */
+export type UnauthorizedHandler = (context: UnauthorizedContext) => Promise<string | null>;
 
 /**
  * Observer invoked when a response is a 403 whose body code is
@@ -36,8 +49,17 @@ let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _onUnauthorized: UnauthorizedHandler | null = null;
 let _onFeatureDenied: FeatureDeniedHandler | null = null;
-// Shared in-flight refresh promise so concurrent 401s trigger only one refresh.
-let _refreshInFlight: Promise<string | null> | null = null;
+// In-flight refreshes, one per rejected token: concurrent 401s of the same
+// session share a single refresh, while a request rejected with ANOTHER token
+// (sent under a session that has since changed) gets its own answer and never
+// borrows the first one's result.
+const _refreshInFlight = new Map<string, Promise<string | null>>();
+// Handler runs never overlap. A refresh token is single-use and presenting a
+// replaced one makes the API revoke the session, so two handler runs must not
+// read the same stored refresh token at the same moment — exactly as before,
+// when all concurrent 401s shared one run. A second run starts only after the
+// first has finished (and stored what it obtained).
+let _handlerChain: Promise<unknown> = Promise.resolve();
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -408,6 +430,10 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
+  // A caller that sets its own Authorization header speaks for an identity of
+  // its own choosing: that header is never replaced (see the 401 retry below).
+  const callerSetAuthorization = headers.has("authorization");
+
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
   if (_authTokenGetter && !headers.has("authorization")) {
@@ -417,28 +443,53 @@ export async function customFetch<T = unknown>(
     }
   }
 
+  // The bearer token this request is actually sent with (see UnauthorizedContext).
+  const sentAuthorization = headers.get("authorization");
+  const sentToken =
+    sentAuthorization && /^bearer /i.test(sentAuthorization) ? sentAuthorization.slice(7).trim() || null : null;
+
   const requestInfo = { method, url: resolveUrl(input) };
 
   const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
     // Attempt a one-shot token refresh on 401, then retry the original request.
+    // A request its caller has already given up on (aborted signal — a timeout,
+    // a cancelled query) starts no refresh and is never sent again: a response
+    // that arrives late must not turn into a second, unobserved request.
+    const givenUp = (): boolean => init.signal?.aborted === true;
     if (
       response.status === 401 &&
       _onUnauthorized &&
       !__isRetry &&
-      !isAuthFlowEndpoint(requestInfo.url)
+      !isAuthFlowEndpoint(requestInfo.url) &&
+      !givenUp()
     ) {
-      if (!_refreshInFlight) {
-        _refreshInFlight = Promise.resolve()
-          .then(() => _onUnauthorized!())
+      const refreshKey = sentToken ?? "";
+      let refresh = _refreshInFlight.get(refreshKey);
+      if (!refresh) {
+        const handler = _onUnauthorized;
+        refresh = _handlerChain
+          .then(() => handler({ failedToken: sentToken, url: requestInfo.url }))
+          // A handler that throws means "no retry", never a different error for the caller.
+          .catch(() => null)
           .finally(() => {
-            _refreshInFlight = null;
+            _refreshInFlight.delete(refreshKey);
           });
+        _refreshInFlight.set(refreshKey, refresh);
+        _handlerChain = refresh;
       }
-      const newToken = await _refreshInFlight;
-      if (newToken) {
-        return customFetch<T>(originalInput, { ...options, __isRetry: true });
+      const newToken = await refresh;
+      if (newToken && !givenUp()) {
+        // The caller chose its own Authorization header: the retry keeps it,
+        // as it always did. Otherwise the retry carries exactly the token the
+        // handler returned for THIS rejected request — not whatever the token
+        // getter yields by then (another account may have signed in meanwhile).
+        return customFetch<T>(originalInput, {
+          ...options,
+          ...(callerSetAuthorization ? {} : { headers: mergeHeaders(headersInit, { authorization: `Bearer ${newToken}` }) }),
+          __isRetry: true,
+        });
       }
     }
 

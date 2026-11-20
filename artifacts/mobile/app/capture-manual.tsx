@@ -1,7 +1,7 @@
 import { Feather } from "@/components/icons";
 import { useRouter } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import React from "react";
+import React, { useRef } from "react";
 import { Alert, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -18,6 +18,8 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { answerWasLost, lostConnectionOrSession } from "@/lib/api-failure";
+import { enqueueFailureKeys } from "@/lib/offline-queue-store-model";
 import { withCaptureEvent } from "@/lib/settings-model";
 
 function payloadLabel(
@@ -37,26 +39,58 @@ export default function CaptureManualScreen() {
   const router = useRouter();
   const { t, textAlign, isRTL } = useLocale();
   const createContact = useCreateContact();
-  const { isOnline, enqueueContact } = useOffline();
+  const { isOnline, enqueueContact, captureOwner } = useOffline();
   const settings = useSettings();
+  // One save at a time: a second tap while the first is being stored or sent must not queue the contact twice.
+  const savingRef = useRef(false);
 
   async function handleSave(values: ContactFormValues) {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
+      await saveContact(values);
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  async function saveContact(values: ContactFormValues) {
+    // The account saving this contact (read before anything is sent).
+    const savedBy = captureOwner();
     const payload = withCaptureEvent(toContactPayload(values), settings);
     const { eventId } = payload;
-    if (!isOnline) {
-      // Fails closed without a signed-in tenant account: nothing is kept, the form stays.
-      if (!enqueueContact(payload, { label: payloadLabel(payload, t("contacts.newContact")), source: "manual", eventId })) {
-        Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
+    // Keep the contact on the device. The form stays open — and the user is
+    // told why — when it could NOT be kept (no signed-in tenant account, or the
+    // device refused to store it).
+    const keepOffline = async (answerLost = false) => {
+      const kept = await enqueueContact(payload, {
+        label: payloadLabel(payload, t("contacts.newContact")),
+        source: "manual",
+        eventId,
+        owner: savedBy,
+        // No scan stands behind a typed contact: if the request went out and
+        // its answer was lost, a matching contact found at sync time may be this one.
+        answerLost,
+      });
+      if (!kept.ok) {
+        const msg = enqueueFailureKeys(kept.reason);
+        Alert.alert(t(msg.title), t(msg.body));
         return;
       }
       router.replace("/contacts");
+    };
+    if (!isOnline) {
+      await keepOffline();
       return;
     }
     try {
       await createContact.mutateAsync({ data: payload });
       router.replace("/contacts");
-    } catch {
-      // error surfaced below
+    } catch (err) {
+      // The connection dropped (or the session ended) while saving: what was
+      // typed is kept and sent later instead of being lost with this screen.
+      if (lostConnectionOrSession(err)) await keepOffline(answerWasLost(err));
+      // any other error is surfaced below
     }
   }
 

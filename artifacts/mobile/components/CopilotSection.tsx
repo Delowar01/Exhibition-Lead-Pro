@@ -403,7 +403,7 @@ export function CopilotSection({ entityType, id }: Props) {
                   onPress={() => handleGenerate(type)}
                 >
                   <Text style={[styles.typeItemText, { color: colors.foreground }]}>{typeLabel(type)}</Text>
-                  <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                  <Feather name="chevron-right" directional size={16} color={colors.mutedForeground} />
                 </Pressable>
               ))}
             </ScrollView>

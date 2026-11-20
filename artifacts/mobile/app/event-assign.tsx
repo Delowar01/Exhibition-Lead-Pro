@@ -68,7 +68,7 @@ export default function EventAssignScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20 }}>
         <Pressable onPress={() => router.back()} hitSlop={10} style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Feather name="chevron-left" size={20} color={colors.foreground} />
+          <Feather name="chevron-left" directional size={20} color={colors.foreground} />
         </Pressable>
         <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("contacts.eventAssignTitle")}</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
@@ -132,7 +132,7 @@ export default function EventAssignScreen() {
                       </Text>
                     ) : null}
                   </View>
-                  {active ? <Feather name="check-circle" size={20} color={colors.primary} /> : <Feather name="chevron-right" size={20} color={colors.mutedForeground} />}
+                  {active ? <Feather name="check-circle" size={20} color={colors.primary} /> : <Feather name="chevron-right" directional size={20} color={colors.mutedForeground} />}
                 </Pressable>
               );
             })

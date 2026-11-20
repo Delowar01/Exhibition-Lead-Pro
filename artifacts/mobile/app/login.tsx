@@ -21,6 +21,7 @@ import { FONT, PrimaryButton } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { sessionEndNoticeKey } from "@/lib/auth-session-model";
 import {
   type BiometricAccountHint,
   authenticateBiometric,
@@ -42,7 +43,7 @@ export default function LoginScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, sessionNotice } = useAuth();
   const loginMutation = useLogin();
   const mfaMutation = useMfaVerifyLogin();
   const { t, isRTL, textAlign } = useLocale();
@@ -132,7 +133,7 @@ export default function LoginScreen() {
         return;
       }
       await persistRemember(emailValue);
-      await login(res.token, res.user);
+      await login(res.token, res.user, res.refreshToken ?? null);
     } catch (err) {
       let message: string;
       if (err instanceof ApiError) {
@@ -140,6 +141,9 @@ export default function LoginScreen() {
           message = t("auth.invalidCredentials");
         } else if (err.status === 403) {
           message = t("auth.contactAdmin");
+        } else if (err.status === 429) {
+          // Sign-in is temporarily locked after repeated attempts: say so instead of "sign-in failed".
+          message = t("auth.tooManyAttempts");
         } else if (err.status >= 500) {
           message = t("errors.generic");
         } else {
@@ -170,12 +174,14 @@ export default function LoginScreen() {
         return;
       }
       await persistRemember(pendingEmail);
-      await login(res.token, res.user);
+      await login(res.token, res.user, res.refreshToken ?? null);
     } catch (err) {
       let message: string;
       if (err instanceof ApiError) {
         if (err.status === 401) {
           message = t("auth.mfaInvalidOrExpired");
+        } else if (err.status === 429) {
+          message = t("auth.tooManyAttempts");
         } else if (err.status >= 500) {
           message = t("errors.generic");
         } else {
@@ -215,7 +221,7 @@ export default function LoginScreen() {
       }
       // Same path as a password/MFA login: session, biometric reconciliation,
       // account binding of settings / offline queue / own card.
-      await login(target.token, target.user);
+      await login(target.token, target.user, target.refreshToken);
     } catch {
       setError(t("auth.signInFailed"));
     } finally {
@@ -268,6 +274,21 @@ export default function LoginScreen() {
             { backgroundColor: colors.card, borderRadius: colors.radius + 8 },
           ]}
         >
+          {sessionNotice && !error ? (
+            // The previous session ended by itself: say why before asking for the password again.
+            <View
+              style={[
+                styles.noticeRow,
+                { flexDirection: isRTL ? "row-reverse" : "row", backgroundColor: colors.primary + "14", borderColor: colors.primary + "40" },
+              ]}
+              testID="notice-session-ended"
+            >
+              <Feather name="info" size={16} color={colors.primary} />
+              <Text style={[styles.noticeText, { color: colors.foreground, textAlign }]}>
+                {t(sessionEndNoticeKey(sessionNotice))}
+              </Text>
+            </View>
+          ) : null}
           {mfaToken ? (
             <>
               <View style={{ alignItems: "center", marginBottom: 14 }}>
@@ -452,7 +473,7 @@ export default function LoginScreen() {
 
           <PrimaryButton
             label={t("auth.signIn")}
-            icon="arrow-right"
+            icon={isRTL ? "arrow-left" : "arrow-right"}
             onPress={() => handleLogin(email, password)}
             loading={loginMutation.isPending}
             style={{ marginTop: 20 }}
@@ -601,6 +622,16 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontFamily: FONT.semibold,
   },
+  noticeRow: {
+    alignItems: "flex-start",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  noticeText: { flex: 1, fontSize: 13, lineHeight: 19, fontFamily: FONT.medium },
   errorRow: {
     flexDirection: "row",
     alignItems: "center",

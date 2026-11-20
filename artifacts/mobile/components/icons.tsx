@@ -1,7 +1,10 @@
 import { Feather as ExpoFeather } from "@expo/vector-icons";
 import type { ComponentType } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
+import { useTranslation } from "react-i18next";
 import * as FeatherIcons from "react-native-feather";
+
+import { isRTLLanguage } from "@/lib/i18n";
 
 // Feather icons rendered as SVG (react-native-feather) instead of an icon FONT.
 //
@@ -45,9 +48,29 @@ type FeatherProps = {
   color?: string;
   strokeWidth?: number;
   style?: StyleProp<ViewStyle>;
+  /**
+   * The glyph points in a READING direction (a back arrow, a "more" chevron):
+   * it is mirrored when the app language is right-to-left, so "back" still
+   * points back and "forward" still points forward in Arabic. Leave it off for
+   * icons whose shape is not about direction, and for call sites that already
+   * pick the mirrored glyph themselves.
+   */
+  directional?: boolean;
 };
 
-function FeatherBase({
+const MIRRORED: ViewStyle = { transform: [{ scaleX: -1 }] };
+
+/** A directional glyph: follows the language chosen in the app (re-renders when it changes). */
+function DirectionalFeather({ style, ...rest }: FeatherProps) {
+  const { i18n } = useTranslation();
+  return <PlainFeather {...rest} style={isRTLLanguage(i18n.language) ? [style, MIRRORED] : style} />;
+}
+
+function FeatherBase({ directional, ...rest }: FeatherProps) {
+  return directional ? <DirectionalFeather {...rest} /> : <PlainFeather {...rest} />;
+}
+
+function PlainFeather({
   name,
   size = 24,
   color = "#000000",

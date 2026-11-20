@@ -115,10 +115,13 @@ function digitsOnly(value: string): string {
 }
 
 export default function ContactDetailScreen() {
+  // Phase 2 Batch 1 — Arabic: the contact page's rows, labels and values follow
+  // the reading direction (they were left-to-right only).
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { t } = useLocale();
+  const { t, isRTL, textAlign } = useLocale();
+  const rowDir = isRTL ? ("row-reverse" as const) : ("row" as const);
   const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
   const contactId = Number(id);
 
@@ -609,7 +612,7 @@ export default function ContactDetailScreen() {
                 {/* Lead intelligence */}
                 {contact.leadTemperature || typeof contact.leadScore === "number" ? (
                   <Section title={t("contacts.sectionLeadIntel")}>
-                    <View style={styles.leadRow}>
+                    <View style={[styles.leadRow, { flexDirection: rowDir }]}>
                       {contact.leadTemperature ? (
                         <Badge
                           label={t(`leads.${contact.leadTemperature}`, { defaultValue: prettyLabel(contact.leadTemperature) })}
@@ -624,24 +627,24 @@ export default function ContactDetailScreen() {
                       ) : null}
                     </View>
                     {contact.aiReasoning ? (
-                      <Text style={[styles.leadReason, { color: colors.mutedForeground }]}>
+                      <Text style={[styles.leadReason, { color: colors.mutedForeground, textAlign }]}>
                         {contact.aiReasoning}
                       </Text>
                     ) : null}
                     {contact.leadTemperature && TEMPERATURE_GUIDANCE[contact.leadTemperature] ? (
                       <View style={[styles.recommendBox, { borderTopColor: colors.border }]}>
-                        <View style={styles.recommendRow}>
+                        <View style={[styles.recommendRow, { flexDirection: rowDir }]}>
                           <Feather name="flag" size={13} color={TEMPERATURE_GUIDANCE[contact.leadTemperature].color} />
-                          <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
+                          <Text style={[styles.recommendText, { color: colors.mutedForeground, textAlign }]}>
                             {t("contacts.recommendedPriority")}:{" "}
                             <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
                               {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].priorityKey)}
                             </Text>
                           </Text>
                         </View>
-                        <View style={styles.recommendRow}>
+                        <View style={[styles.recommendRow, { flexDirection: rowDir }]}>
                           <Feather name="clock" size={13} color={colors.mutedForeground} />
-                          <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
+                          <Text style={[styles.recommendText, { color: colors.mutedForeground, textAlign }]}>
                             {t("contacts.recommendedFollowUp")}:{" "}
                             <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
                               {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].windowKey)}
@@ -659,24 +662,24 @@ export default function ContactDetailScreen() {
                   const openLead = allLeads.find(l => l.stage !== "lost");
                   return (
                     <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+                      <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
                         {t("pipeline.title", { defaultValue: "SALES PIPELINE" }).toUpperCase()}
                       </Text>
                       {openLead ? (
                         <Pressable
                           onPress={() => router.push(`/pipeline/${openLead.id}`)}
-                          style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary, opacity: pressed ? 0.75 : 1 }]}
+                          style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary, opacity: pressed ? 0.75 : 1, flexDirection: rowDir }]}
                         >
                           <Feather name="trending-up" size={16} color={colors.primary} />
                           <Text style={[styles.pipelineBtnText, { color: colors.primary }]}>
                             {t("pipeline.viewPipeline")}
                           </Text>
-                          <Feather name="chevron-right" size={16} color={colors.primary} style={{ marginLeft: "auto" }} />
+                          <Feather name="chevron-right" directional size={16} color={colors.primary} style={isRTL ? { marginRight: "auto" } : { marginLeft: "auto" }} />
                         </Pressable>
                       ) : (
                         <Pressable
                           onPress={() => router.push(`/pipeline/form?contactId=${contactId}`)}
-                          style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
+                          style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1, flexDirection: rowDir }]}
                         >
                           <Feather name="plus-circle" size={16} color={colors.mutedForeground} />
                           <Text style={[styles.pipelineBtnText, { color: colors.foreground }]}>
@@ -702,26 +705,26 @@ export default function ContactDetailScreen() {
                     onPress={() => router.push({ pathname: "/event-assign", params: { ids: String(contact.id), current: contact.eventId != null ? String(contact.eventId) : "" } })}
                     accessibilityRole="button"
                     accessibilityLabel={t(eventActionKey(contact.eventId))}
-                    style={({ pressed }) => [styles.detailRow, { opacity: pressed ? 0.7 : 1 }]}
+                    style={({ pressed }) => [styles.detailRow, { opacity: pressed ? 0.7 : 1, flexDirection: rowDir }]}
                   >
                     <Feather name="calendar" size={17} color={colors.mutedForeground} />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>{t("contacts.fields.event")}</Text>
-                      <Text style={[styles.detailValue, { color: contact.eventName ? colors.foreground : colors.mutedForeground }]}>
+                      <Text style={[styles.detailLabel, { color: colors.mutedForeground, textAlign }]}>{t("contacts.fields.event")}</Text>
+                      <Text style={[styles.detailValue, { color: contact.eventName ? colors.foreground : colors.mutedForeground, textAlign }]}>
                         {contact.eventName ?? t("events.noEvent")}
                       </Text>
                     </View>
                     <Text style={[styles.detailAction, { color: colors.primary }]}>{t(eventActionKey(contact.eventId))}</Text>
-                    <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                    <Feather name="chevron-right" directional size={16} color={colors.mutedForeground} />
                   </Pressable>
                   {contact.latitude && contact.longitude ? (
-                    <Pressable onPress={openMaps} style={styles.detailRow}>
+                    <Pressable onPress={openMaps} style={[styles.detailRow, { flexDirection: rowDir }]}>
                       <Feather name="map-pin" size={17} color={colors.primary} />
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>
+                        <Text style={[styles.detailLabel, { color: colors.mutedForeground, textAlign }]}>
                           {t("contacts.captureLocation")}
                         </Text>
-                        <Text style={[styles.detailValue, { color: colors.primary }]}>
+                        <Text style={[styles.detailValue, { color: colors.primary, textAlign }]}>
                           {t("contacts.viewOnMaps")}
                           {typeof contact.gpsAccuracy === "number"
                             ? ` · ±${Math.round(contact.gpsAccuracy)}m`
@@ -735,7 +738,7 @@ export default function ContactDetailScreen() {
 
                 {contact.notes ? (
                   <Section title={t("contacts.notes")}>
-                    <Text style={[styles.notes, { color: colors.foreground }]}>
+                    <Text style={[styles.notes, { color: colors.foreground, textAlign }]}>
                       {contact.notes}
                     </Text>
                   </Section>
@@ -805,7 +808,7 @@ export default function ContactDetailScreen() {
               <>
                 {/* Status pipeline */}
                 <Section title={t("contacts.sectionLeadPipeline")}>
-                  <View style={styles.statusGrid}>
+                  <View style={[styles.statusGrid, { flexDirection: rowDir }]}>
                     {STATUS_OPTIONS.map((status) => {
                       const active = contact.status === status;
                       const color = CONTACT_STATUS_COLORS[status] ?? colors.primary;
@@ -820,6 +823,7 @@ export default function ContactDetailScreen() {
                               backgroundColor: active ? color : colors.card,
                               borderColor: active ? color : colors.border,
                               borderRadius: colors.radius,
+                              flexDirection: rowDir,
                             },
                           ]}
                         >
@@ -964,13 +968,13 @@ export default function ContactDetailScreen() {
                   onPress={() => assignTo(null)}
                   style={({ pressed }) => [
                     styles.assignRow,
-                    { opacity: pressed ? 0.6 : 1 },
+                    { opacity: pressed ? 0.6 : 1, flexDirection: rowDir },
                   ]}
                 >
                   <View style={[styles.assignIcon, { backgroundColor: colors.muted }]}>
                     <Feather name="user-x" size={18} color={colors.mutedForeground} />
                   </View>
-                  <Text style={[styles.assignName, { color: colors.foreground }]}>
+                  <Text style={[styles.assignName, { color: colors.foreground, textAlign }]}>
                     {t("contacts.unassigned")}
                   </Text>
                   {!contact?.assignedToId ? (
@@ -987,15 +991,15 @@ export default function ContactDetailScreen() {
                         onPress={() => assignTo(u.id)}
                         style={({ pressed }) => [
                           styles.assignRow,
-                          { opacity: pressed ? 0.6 : 1 },
+                          { opacity: pressed ? 0.6 : 1, flexDirection: rowDir },
                         ]}
                       >
                         <Avatar name={u.name} size={36} color={colors.primary} />
                         <View style={{ flex: 1 }}>
-                          <Text numberOfLines={1} style={[styles.assignName, { color: colors.foreground }]}>
+                          <Text numberOfLines={1} style={[styles.assignName, { color: colors.foreground, textAlign }]}>
                             {u.name}
                           </Text>
-                          <Text numberOfLines={1} style={[styles.assignRole, { color: colors.mutedForeground }]}>
+                          <Text numberOfLines={1} style={[styles.assignRole, { color: colors.mutedForeground, textAlign }]}>
                             {prettyLabel(u.role)}
                           </Text>
                         </View>
@@ -1138,7 +1142,8 @@ function ScheduleModal({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { t } = useLocale();
+  const { t, isRTL, textAlign } = useLocale();
+  const rowDir = isRTL ? ("row-reverse" as const) : ("row" as const);
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
@@ -1178,8 +1183,8 @@ function ScheduleModal({
           <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
             {isMeeting ? (
               <>
-                <Text style={[styles.scheduleLabel, { color: colors.mutedForeground }]}>{t("contacts.typeLabel")}</Text>
-                <View style={styles.scheduleChips}>
+                <Text style={[styles.scheduleLabel, { color: colors.mutedForeground, textAlign }]}>{t("contacts.typeLabel")}</Text>
+                <View style={[styles.scheduleChips, { flexDirection: rowDir }]}>
                   {MEETING_TYPES.map((mt) => {
                     const active = type === mt;
                     return (
@@ -1188,7 +1193,7 @@ function ScheduleModal({
                         onPress={() => setType(mt)}
                         style={[
                           styles.scheduleChip,
-                          { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border },
+                          { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border, flexDirection: rowDir },
                         ]}
                       >
                         <Feather
@@ -1300,12 +1305,14 @@ function ManageRow({
   loading?: boolean;
 }) {
   const colors = useColors();
+  const { t, isRTL, textAlign } = useLocale();
   const tint = loading ? colors.mutedForeground : destructive ? colors.destructive : colors.foreground;
   return (
     <Pressable
       onPress={loading ? undefined : onPress}
       style={({ pressed }) => [
         styles.manageRow,
+        { flexDirection: isRTL ? "row-reverse" : "row" },
         divider && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
         !loading && pressed && { backgroundColor: colors.muted },
       ]}
@@ -1315,19 +1322,20 @@ function ManageRow({
       ) : (
         <Feather name={icon} size={18} color={destructive ? colors.destructive : colors.primary} />
       )}
-      <Text style={[styles.manageLabel, { color: tint }]}>
-        {loading ? "Downloading…" : label}
+      <Text style={[styles.manageLabel, { color: tint, textAlign }]}>
+        {loading ? t("common.downloading") : label}
       </Text>
-      {!loading && <Feather name="chevron-right" size={18} color={colors.mutedForeground} />}
+      {!loading && <Feather name="chevron-right" directional size={18} color={colors.mutedForeground} />}
     </Pressable>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const colors = useColors();
+  const { textAlign } = useLocale();
   return (
     <View style={{ marginTop: 24 }}>
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
         {title.toUpperCase()}
       </Text>
       <View
@@ -1352,15 +1360,16 @@ function DetailRow({
   value?: string | null;
 }) {
   const colors = useColors();
+  const { isRTL, textAlign } = useLocale();
   if (!value) return null;
   return (
-    <View style={styles.detailRow}>
+    <View style={[styles.detailRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
       <Feather name={icon} size={17} color={colors.mutedForeground} />
       <View style={{ flex: 1 }}>
-        <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>
+        <Text style={[styles.detailLabel, { color: colors.mutedForeground, textAlign }]}>
           {label}
         </Text>
-        <Text style={[styles.detailValue, { color: colors.foreground }]}>
+        <Text style={[styles.detailValue, { color: colors.foreground, textAlign }]}>
           {value}
         </Text>
       </View>

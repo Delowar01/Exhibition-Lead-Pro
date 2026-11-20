@@ -179,10 +179,11 @@ export function CardProvider({ children }: { children: React.ReactNode }) {
         setAndCache(server);
         setPendingSync(false);
         void queryClient.invalidateQueries();
-      } else if (enqueueCard(input, input.fullName || "My business card")) {
+      } else if ((await enqueueCard(input, input.fullName || "My business card")).ok) {
         setPendingSync(true);
       } else {
-        // No signed-in tenant account: nothing is queued; roll back the optimistic edit and surface a save error.
+        // Not kept (no signed-in tenant account, or the device could not store it):
+        // nothing is queued; roll back the optimistic edit and surface a save error.
         setAndCache(previous);
         throw new Error("No signed-in company account");
       }

@@ -544,7 +544,7 @@ export default function EventReportScreen() {
                           {`${t("eventReport.perfLeads", { count: m.leads })} · ${t("eventReport.wonCount", { count: m.won })}`}
                         </Text>
                       </View>
-                      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                      <Feather name="chevron-right" directional size={16} color={colors.mutedForeground} />
                     </Pressable>
                   ))}
               </View>
@@ -589,7 +589,7 @@ export default function EventReportScreen() {
                         {c.leadScore}
                       </Text>
                     ) : null}
-                    <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                    <Feather name="chevron-right" directional size={16} color={colors.mutedForeground} />
                   </Pressable>
                 ))}
               </View>
@@ -653,7 +653,7 @@ function PerformerCard({
             {t("eventReport.topPerformer")}
           </Text>
         </View>
-        <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+        <Feather name="chevron-right" directional size={20} color={colors.mutedForeground} />
       </View>
       <View style={[styles.performerStats, { borderTopColor: colors.border }]}>
         {stats.map((s) => (
