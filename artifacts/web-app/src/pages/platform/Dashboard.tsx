@@ -42,12 +42,13 @@ const REVENUE_REASON: Record<string, string> = {
   NO_REVENUE_HISTORY: "Revenue history is not recorded by this system.",
 };
 
-// Past due wears the warning token, as its status badge does. (It used to share the exact red
-// of Suspended, so the two could not be told apart in the ring or its legend.)
+// Six statuses, six colours of the chart palette. (Past due used to share the exact red of
+// Suspended, so the two could not be told apart in the ring or its legend; it now takes the
+// palette's fifth colour, the one no other status uses.)
 const STATUS_COLORS: Record<string, string> = {
   active: "hsl(var(--primary))",
   trialing: "hsl(var(--chart-2))",
-  past_due: "hsl(var(--warning))",
+  past_due: "hsl(var(--chart-5))",
   cancelled: "hsl(var(--chart-3))",
   expired: "hsl(var(--muted-foreground))",
   suspended: "hsl(var(--destructive))",
@@ -58,6 +59,23 @@ function statusTone(status: string | undefined): "success" | "warning" | "destru
   if (status === "past_due" || status === "cancelled") return "warning";
   if (status === "expired" || status === "suspended") return "destructive";
   return "neutral";
+}
+
+/**
+ * A money figure sized to its card. Wherever it fits it is set like every other figure; in
+ * a narrower card its size follows the card's width, so an amount stays on one line. Only
+ * an extraordinarily long one reaches the 1rem floor and then wraps — inside the card, as a
+ * last resort, rather than running past its edge. The card must be the size container
+ * (`@container`): 100cqi is the width the figure has.
+ */
+function Amount({ text }: { text: string }) {
+  // A bold tabular glyph advances about 0.55 em on average; 0.6 keeps a margin.
+  const fit = `calc(100cqi / ${(Math.max(text.length, 1) * 0.6).toFixed(1)})`;
+  return (
+    <span className="inline-block max-w-full align-bottom [overflow-wrap:anywhere]" style={{ fontSize: `clamp(1rem, ${fit}, 1.875rem)` }}>
+      {text}
+    </span>
+  );
 }
 
 export default function PlatformDashboard() {
@@ -82,8 +100,8 @@ export default function PlatformDashboard() {
   const revenue = stats?.revenue;
   const revenueAvailable = !!revenue?.available && revenue.monthlyRecurringMinor != null && !!revenue.currency;
   const unavailable = <span className="text-xl font-semibold text-muted-foreground">Unavailable</span>;
-  const mrrValue = revenueAvailable ? formatMinor(revenue!.monthlyRecurringMinor!, revenue!.currency!) : unavailable;
-  const arrValue = revenueAvailable ? formatMinor(revenue!.monthlyRecurringMinor! * 12, revenue!.currency!) : unavailable;
+  const mrrValue = revenueAvailable ? <Amount text={formatMinor(revenue!.monthlyRecurringMinor!, revenue!.currency!)} /> : unavailable;
+  const arrValue = revenueAvailable ? <Amount text={formatMinor(revenue!.monthlyRecurringMinor! * 12, revenue!.currency!)} /> : unavailable;
   const totalCaptures = stats?.totalCaptures || 0;
   const cardScans = stats?.totalScans || 0;
   const revenueReason = revenueAvailable
@@ -105,8 +123,8 @@ export default function PlatformDashboard() {
         actions={<StatusBadge tone="success">System Operational</StatusBadge>}
       />
 
-      {/* Two, then three cards to a row — the layout of the Analytics figures. Six to a row left
-          each card too narrow for its label and for a currency amount. */}
+      {/* One, two, then (from 1280 px) three cards to a row. Six to a row left each card too
+          narrow for its label and for a currency amount. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="dashboard-metrics">
         <MetricCard
           label="Total Companies"
@@ -124,10 +142,10 @@ export default function PlatformDashboard() {
           />
         </div>
         <div data-testid="dashboard-mrr">
-          <MetricCard label="MRR" value={mrrValue} icon={DollarSign} footer={revenueReason} className="h-full" />
+          <MetricCard label="MRR" value={mrrValue} icon={DollarSign} footer={revenueReason} className="h-full @container" />
         </div>
         <div data-testid="dashboard-arr">
-          <MetricCard label="ARR" value={arrValue} icon={Activity} footer={revenueAvailable ? "MRR × 12" : revenueReason} className="h-full" />
+          <MetricCard label="ARR" value={arrValue} icon={Activity} footer={revenueAvailable ? "MRR × 12" : revenueReason} className="h-full @container" />
         </div>
         <MetricCard
           label="Total Leads"
@@ -153,8 +171,10 @@ export default function PlatformDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-7">
-        <Card className="md:col-span-5 shadow-sm" data-testid="dashboard-revenue-trend">
+      {/* Side by side only where the status card is wide enough for its ring (1280 px and up);
+          below that the two cards stack, each at full width. */}
+      <div className="grid gap-6 xl:grid-cols-7" data-testid="dashboard-charts">
+        <Card className="xl:col-span-5 shadow-sm" data-testid="dashboard-revenue-trend">
           <CardHeader>
             <CardTitle>Recurring Revenue</CardTitle>
             <CardDescription>Monthly recurring revenue over time</CardDescription>
@@ -193,7 +213,7 @@ export default function PlatformDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-2 shadow-sm flex flex-col" data-testid="dashboard-subscription-status">
+        <Card className="xl:col-span-2 shadow-sm flex flex-col" data-testid="dashboard-subscription-status">
           <CardHeader>
             <CardTitle>Subscription Status</CardTitle>
             <CardDescription>Canonical subscription state per company</CardDescription>

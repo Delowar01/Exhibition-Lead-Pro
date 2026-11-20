@@ -51,8 +51,7 @@ export function MetricCard({
         <p className={cn("text-sm font-medium truncate", quiet)} title={label}>{label}</p>
         {Icon && <Icon className={cn("h-4 w-4 shrink-0", quiet)} aria-hidden="true" />}
       </div>
-      {/* A figure too long for its card wraps instead of running past the edge. */}
-      <p className={cn("mt-2 min-w-0 text-3xl font-bold tracking-tight tabular-nums [overflow-wrap:anywhere]", inverse ? "text-sidebar-foreground" : "text-foreground")}>{value}</p>
+      <p className={cn("mt-2 text-3xl font-bold tracking-tight tabular-nums", inverse ? "text-sidebar-foreground" : "text-foreground")}>{value}</p>
       {(typeof delta === "number" || footer) && (
         <div className="mt-2 flex items-center gap-2 text-xs">
           {typeof delta === "number" && (

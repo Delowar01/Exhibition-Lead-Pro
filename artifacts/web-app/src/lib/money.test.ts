@@ -4,6 +4,7 @@ import {
   amountHint,
   currencyRule,
   decimalToScaled,
+  formatMicroUsd,
   formatMinor,
   isSupportedCurrency,
   minorToAmountText,
@@ -14,6 +15,21 @@ import {
 // The portal's one currency policy. The rules are those of the billing provider's
 // "Supported currencies" documentation (https://docs.stripe.com/currencies, read
 // 2026-11-19); the lists below are written out here independently of the module.
+
+// The presentment currencies as the provider's page prints them for a United States account
+// (134), and the five a United Arab Emirates account adds — transcribed from the page.
+const PRESENTMENT_US = `
+  AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BIF BMD BND BOB BRL BSD BWP
+  BYN BZD CAD CDF CHF CLP CNY COP CRC CVE CZK DJF DKK DOP DZD EGP ETB EUR FJD FKP
+  GBP GEL GIP GMD GNF GTQ GYD HKD HNL HTG HUF IDR ILS INR ISK JMD JPY KES KGS KHR
+  KMF KRW KYD KZT LAK LBP LKR LRD LSL MAD MDL MGA MKD MMK MNT MOP MUR MVR MWK MXN
+  MYR MZN NAD NGN NIO NOK NPR NZD PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF
+  SAR SBD SCR SEK SGD SHP SLE SOS SRD STD SZL THB TJS TOP TRY TTD TWD TZS UAH UGX
+  USD UYU UZS VND VUV WST XAF XCD XCG XOF XPF YER ZAR ZMW
+`
+  .trim()
+  .split(/\s+/);
+const ADDED_FOR_AE = ["BHD", "JOD", "KWD", "OMR", "TND"];
 
 const ZERO_DECIMAL_PER_PROVIDER = ["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"];
 const MAX = 1_000_000_000;
@@ -27,6 +43,11 @@ describe("currency rules", () => {
   it("covers the provider's list: 139 currencies, each with exactly one rule", () => {
     expect(SUPPORTED_CURRENCIES).toHaveLength(139);
     expect(new Set(SUPPORTED_CURRENCIES).size).toBe(139);
+    // Code for code, the list is the page's: nothing missing, nothing added.
+    expect(PRESENTMENT_US).toHaveLength(134);
+    expect([...SUPPORTED_CURRENCIES].sort()).toEqual([...PRESENTMENT_US, ...ADDED_FOR_AE].sort());
+    // Every currency with a special rule is one the provider supports.
+    for (const code of [...ZERO_DECIMAL_PER_PROVIDER, "ISK", "HUF", "TWD", ...ADDED_FOR_AE]) expect(SUPPORTED_CURRENCIES, code).toContain(code);
     for (const code of SUPPORTED_CURRENCIES) {
       expect(code, code).toMatch(/^[A-Z]{3}$/);
       expect(currencyRule(code), code).not.toBeNull();
@@ -329,5 +350,58 @@ describe("form hints", () => {
     expect(amountHint("jpy")).toBe("Whole JPY only — no decimals.");
     expect(amountHint("isk")).toBe("Whole ISK only — no decimals.");
     expect(amountHint("xyz")).toBe("Not a currency the billing provider supports.");
+  });
+});
+
+describe("refusals that could be misread", () => {
+  it("never guesses what a comma or a space means, and says how to write the amount", () => {
+    for (const text of ["1,250.50", "1.250,50", "1250,5", "1 250", "12 50"]) {
+      const r = parseAmountToMinor(text, "usd");
+      expect(r.ok, text).toBe(false);
+      if (!r.ok) {
+        expect(r.error, text).toBe("NOT_A_NUMBER");
+        expect(r.message, text).toBe("Use digits and a point for decimals, without commas or spaces — for example 1250.50.");
+      }
+    }
+    // "1,250" could be 1250 or 1.250 dinars: refused, not read as either.
+    expect(minor("1,250", "kwd")).toBe("NOT_A_NUMBER");
+    const other = parseAmountToMinor("abc", "usd");
+    expect(!other.ok && other.message).toBe("Enter the amount as digits, for example 49 or 49.50.");
+  });
+
+  it("an estimate that rounds to nothing reads as zero, never as minus zero", () => {
+    expect(formatMinor(-0.4, "usd")).toBe("$0.00");
+    expect(formatMinor(-0.4, "jpy")).toBe("¥0");
+    expect(formatMinor(-0.4, "xyz")).toBe("0 XYZ (minor units)");
+    expect(formatMinor(-150, "usd")).toBe("-$1.50");
+  });
+});
+
+describe("US-dollar amounts held in millionths (AI cost figures)", () => {
+  it("reads exactly, with at least two decimals and as many more as the amount has", () => {
+    expect(formatMicroUsd(0)).toBe("$0.00");
+    expect(formatMicroUsd(12_500_000)).toBe("$12.50");
+    expect(formatMicroUsd(2_500_000)).toBe("$2.50");
+    expect(formatMicroUsd(1_000_000)).toBe("$1.00");
+    expect(formatMicroUsd(19_990_000)).toBe("$19.99");
+    expect(formatMicroUsd(1)).toBe("$0.000001");
+    expect(formatMicroUsd(125)).toBe("$0.000125");
+    expect(formatMicroUsd(100)).toBe("$0.0001");
+    expect(formatMicroUsd(999_999)).toBe("$0.999999");
+    expect(formatMicroUsd(1_234_567_890_123)).toBe("$1,234,567.890123");
+  });
+
+  it("agrees with the exact decimal text of the same amount", () => {
+    for (const micro of [0, 1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 12_345_678, 999_999_999_999]) {
+      const shown = formatMicroUsd(micro).replace(/[$,]/g, "");
+      expect(decimalToScaled(shown, 6), String(micro)).toEqual({ ok: true, value: micro });
+      expect(Number(shown), String(micro)).toBeCloseTo(micro / 1_000_000, 6);
+    }
+  });
+
+  it("does not throw on a figure that is not a stored amount", () => {
+    expect(formatMicroUsd(Number.NaN)).toBe("—");
+    expect(formatMicroUsd(1.5)).toMatch(/^\$0\.00/);
+    expect(formatMicroUsd(-5_000_000)).toBe("-$5.00");
   });
 });

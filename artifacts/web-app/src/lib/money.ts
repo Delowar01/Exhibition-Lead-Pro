@@ -21,9 +21,11 @@
  *      two-decimal amounts". This product records prices and never creates payouts, so
  *      both are ordinary two-decimal currencies here.
  *  - Three-decimal currencies (BHD, JOD, KWD, OMR, TND): the page lists them as supported
- *    for some account countries and gives no amount rule for them. ISO 4217 gives each
- *    three decimals, which is what this file applies. Confirm with the provider before one
- *    of them is used for a live price.
+ *    for some account countries and, in its body as read, gives no amount rule for them.
+ *    ISO 4217 gives each three decimals, which is what this file applies. Whether the
+ *    provider restricts the third decimal of a CHARGE in these currencies must be confirmed
+ *    with it before one of them is used for a live provider price; the amounts typed here
+ *    are manual prices, which the product never charges.
  *
  * A currency that is not in the provider's list is UNSUPPORTED: it is never assumed to
  * have two decimals. Its stored amounts are shown as what they are (a number of minor
@@ -39,7 +41,10 @@ const ZERO_DECIMAL = ["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "P
 const WHOLE_UNITS_IN_HUNDREDTHS = ["ISK", "UGX"] as const;
 const THREE_DECIMAL = ["BHD", "JOD", "KWD", "OMR", "TND"] as const;
 
-/** Every presentment currency of the provider (the union of its per-country lists). */
+/**
+ * The provider's presentment currencies as its page lists them: the 134 of a United States
+ * account plus the five a United Arab Emirates account adds (BHD, JOD, KWD, OMR, TND).
+ */
 export const SUPPORTED_CURRENCIES: readonly string[] = [
   "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN", "BAM", "BBD", "BDT", "BHD", "BIF", "BMD", "BND", "BOB", "BRL", "BSD",
   "BWP", "BYN", "BZD", "CAD", "CDF", "CHF", "CLP", "CNY", "COP", "CRC", "CVE", "CZK", "DJF", "DKK", "DOP", "DZD", "EGP", "ETB", "EUR", "FJD",
@@ -166,7 +171,12 @@ export function parseAmountToMinor(text: string, currency: string | null | undef
   const r = decimalToScaled(text, rule.decimals);
   if (!r.ok) {
     if (r.error === "EMPTY") return { ok: false, error: "EMPTY", message: "Enter an amount." };
-    if (r.error === "NOT_A_NUMBER") return { ok: false, error: "NOT_A_NUMBER", message: "Enter the amount as digits, for example 49 or 49.50." };
+    if (r.error === "NOT_A_NUMBER") {
+      // A comma could mean thousands or decimals; it is never guessed.
+      return /[,\s]/.test(text.trim())
+        ? { ok: false, error: "NOT_A_NUMBER", message: "Use digits and a point for decimals, without commas or spaces — for example 1250.50." }
+        : { ok: false, error: "NOT_A_NUMBER", message: "Enter the amount as digits, for example 49 or 49.50." };
+    }
     if (r.error === "TOO_MANY_DECIMALS") {
       return rule.decimals === 0
         ? { ok: false, error: "WHOLE_UNITS_ONLY", message: `${rule.code} has no decimals: enter a whole number.` }
@@ -194,7 +204,7 @@ const GROUPED = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 export function formatMinor(minor: number, currency: string | null | undefined): string {
   const code = codeOf(currency);
   if (!Number.isFinite(minor)) return "—";
-  const rounded = Math.round(minor);
+  const rounded = Math.round(minor) || 0; // never "-0"
   const rule = currencyRule(code);
   if (!rule || !Number.isSafeInteger(rounded)) return `${GROUPED.format(rounded)} ${code || "?"} (minor units)`;
   const negative = rounded < 0;
@@ -210,4 +220,18 @@ export function formatMinor(minor: number, currency: string | null | undefined):
   } catch {
     return `${negative ? "-" : ""}${GROUPED.format(Number(whole))}${shown ? `.${shown}` : ""} ${rule.code}`;
   }
+}
+
+/**
+ * A US-dollar amount held in millionths of a dollar (the AI cost figures), for reading:
+ * "$12.50", "$0.000125". Exact, in the same notation as prices: at least two decimals, and
+ * as many more as the amount has.
+ */
+export function formatMicroUsd(micro: number): string {
+  if (!Number.isFinite(micro)) return "—";
+  if (micro < 0) return `-${formatMicroUsd(-micro)}`;
+  // Not a whole number of millionths (an estimate): rounded for reading, like any other figure.
+  if (!Number.isSafeInteger(micro)) return `$${(micro / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+  const { whole, fraction } = splitScaled(micro, 6);
+  return `$${GROUPED.format(Number(whole))}.${fraction.replace(/0{1,4}$/, "")}`;
 }

@@ -40,8 +40,8 @@ import { useToast } from "@/hooks/use-toast";
 import { LIMIT_RESOURCES, STATUS_LABEL, fmtDateTime, errMessage } from "@/components/platform/SubscriptionManager";
 import { Lock, GitBranch, ShieldCheck, AlertTriangle, Users } from "lucide-react";
 import { MigrateTenantsDialog } from "@/components/platform/MigrateTenantsDialog";
-import { amountHint, decimalToScaled, formatMinor, isSupportedCurrency, scaledToDecimal, type AmountResult } from "@/lib/money";
-import { EMPTY_MANUAL_PRICE, rowFromStoredPrice, rowMinor, rowUntouched, type ManualPriceRow } from "@/lib/manual-prices";
+import { amountHint, decimalToScaled, formatMicroUsd, formatMinor, isSupportedCurrency, scaledToDecimal, type AmountResult } from "@/lib/money";
+import { EMPTY_MANUAL_PRICE, parseManualPricesText, rowFromStoredPrice, rowMinor, rowUntouched, type ManualPriceRow } from "@/lib/manual-prices";
 
 // Batch 40 — Plan Builder PB-2: the platform owner's version workspace for ONE plan.
 //
@@ -100,6 +100,11 @@ function compareValue(group: string, v: unknown, field?: string): string {
   if (typeof v === "boolean") return v ? "on" : "off";
   if (group === "enforcement") return ENFORCEMENT_LABEL[String(v)] ?? String(v);
   if (group === "allowances" && field === "aiCostMicroUsdPerMonth" && typeof v === "number") return microToUsdText(v);
+  if (group === "pricing" && field === "manualPrices") {
+    // The API reports manual prices as one line of raw minor units; show them as amounts.
+    const prices = parseManualPricesText(v);
+    if (prices) return prices.map((p) => `${moneyText(p.unitAmountMinor, p.currency)} ${periodText(p.interval, p.intervalCount)}${p.label ? ` (${p.label})` : ""}`).join("; ");
+  }
   return String(v);
 }
 function issueText(i: PlatformFieldIssue): string {
@@ -146,7 +151,7 @@ export function enforcementTone(mode: string): "success" | "warning" | "neutral"
   return mode === "enforced" ? "info" : mode === "invalid" ? "warning" : "neutral";
 }
 export function microToUsdText(micro: number | null | undefined): string {
-  return micro == null ? "None" : `$${(micro / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 6 })}`;
+  return micro == null ? "None" : formatMicroUsd(micro);
 }
 export function tokensText(n: number | null | undefined): string {
   return n == null ? "None" : n.toLocaleString();
@@ -185,9 +190,15 @@ function num(s: string): number {
 }
 // bodyFrom() is only called once formIssues() is empty; NaN keeps a refused value from ever reading as an amount.
 const minorOrNaN = (r: AmountResult): number => (r.ok ? r.minor : NaN);
-const scaledOrNaN = (r: ReturnType<typeof decimalToScaled>): number => (r.ok ? r.value : NaN);
 const manualPriceUntouched = rowUntouched;
 const manualPriceMinor = rowMinor;
+const COST_ALLOWANCE_MESSAGE = "Enter the AI cost allowance in US dollars as digits with at most 6 decimals, for example 25 or 12.50.";
+/** Blank is "no allowance"; anything else must be an exact number of millionths of a dollar. */
+function costAllowance(text: string): { ok: true; micro: number | null } | { ok: false } {
+  if (text.trim() === "") return { ok: true, micro: null };
+  const r = decimalToScaled(text, 6);
+  return r.ok ? { ok: true, micro: r.value } : { ok: false };
+}
 /** What the editor refuses to send: amounts that cannot be converted exactly. */
 function formIssues(f: DraftForm): PlatformFieldIssue[] {
   const issues: PlatformFieldIssue[] = [];
@@ -195,11 +206,11 @@ function formIssues(f: DraftForm): PlatformFieldIssue[] {
     const r = manualPriceMinor(p);
     if (!r.ok) issues.push({ code: r.error === "UNSUPPORTED_CURRENCY" ? "MANUAL_PRICE_CURRENCY_UNSUPPORTED" : "MANUAL_PRICE_AMOUNT_INVALID", field: `manualPrices.${i}`, message: r.message });
   });
-  const cost = f.allowances.aiCostUsdPerMonth.trim();
-  if (cost !== "" && !decimalToScaled(cost, 6).ok) issues.push({ code: "ALLOWANCE_INVALID", field: "allowances.aiCostMicroUsdPerMonth", message: "Enter the AI cost allowance in US dollars with at most 6 decimals, for example 25 or 12.50." });
+  if (!costAllowance(f.allowances.aiCostUsdPerMonth).ok) issues.push({ code: "ALLOWANCE_INVALID", field: "allowances.aiCostMicroUsdPerMonth", message: COST_ALLOWANCE_MESSAGE });
   return issues;
 }
 function bodyFrom(f: DraftForm): PlatformUpdateDraftInput {
+  const cost = costAllowance(f.allowances.aiCostUsdPerMonth);
   const limits: Record<string, number | null> = {};
   for (const r of LIMIT_RESOURCES) limits[r] = f.limits[r].trim() === "" ? null : num(f.limits[r]);
   return {
@@ -211,7 +222,7 @@ function bodyFrom(f: DraftForm): PlatformUpdateDraftInput {
     featureEnforcement: f.featureEnforcement,
     allowances: {
       aiTokensPerMonth: f.allowances.aiTokensPerMonth.trim() === "" ? null : num(f.allowances.aiTokensPerMonth),
-      aiCostMicroUsdPerMonth: f.allowances.aiCostUsdPerMonth.trim() === "" ? null : scaledOrNaN(decimalToScaled(f.allowances.aiCostUsdPerMonth, 6)),
+      aiCostMicroUsdPerMonth: cost.ok ? cost.micro : NaN,
     },
     trialPolicy: {
       trialDays: num(f.trial.trialDays),
@@ -243,7 +254,7 @@ function ManualPriceHint({ row, index }: { row: ManualPriceForm; index: number }
   }
   if (!r.ok) {
     return (
-      <p id={`manual-price-hint-${index}`} className={`${base} text-destructive`} role="alert" data-testid={`manual-price-hint-${index}`} data-state="invalid">
+      <p id={`manual-price-hint-${index}`} className={`${base} text-destructive`} aria-live="polite" data-testid={`manual-price-hint-${index}`} data-state="invalid">
         {r.message}
       </p>
     );
@@ -637,7 +648,12 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="pv-allow-cost">AI cost / month (USD)</Label>
-                          <Input id="pv-allow-cost" type="number" min={0} step="0.000001" inputMode="decimal" placeholder="No allowance" value={form.allowances.aiCostUsdPerMonth} onChange={(e) => setForm({ ...form, allowances: { ...form.allowances, aiCostUsdPerMonth: e.target.value } })} data-testid="version-allowance-cost" />
+                          {/* Text, not a number field: a number field reports anything it cannot read as empty,
+                              which would silently save "no allowance". */}
+                          <Input id="pv-allow-cost" type="text" autoComplete="off" placeholder="No allowance" value={form.allowances.aiCostUsdPerMonth} aria-invalid={!costAllowance(form.allowances.aiCostUsdPerMonth).ok} aria-describedby={costAllowance(form.allowances.aiCostUsdPerMonth).ok ? undefined : "pv-allow-cost-error"} onChange={(e) => setForm({ ...form, allowances: { ...form.allowances, aiCostUsdPerMonth: e.target.value } })} data-testid="version-allowance-cost" />
+                          {!costAllowance(form.allowances.aiCostUsdPerMonth).ok && (
+                            <p id="pv-allow-cost-error" className="text-xs text-destructive" aria-live="polite" data-testid="version-allowance-cost-error">{COST_ALLOWANCE_MESSAGE}</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -702,20 +718,21 @@ export function PlanVersions({ planId, onChanged, onPlanDeleted }: PlanVersionsP
                               </Select>
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-xs">Every</Label>
-                              <Input type="number" min={1} max={12} value={p.intervalCount} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, intervalCount: e.target.value } : x)) })} data-testid={`manual-price-count-${i}`} />
+                              <Label className="text-xs" htmlFor={`manual-price-count-${i}`}>Every</Label>
+                              <Input id={`manual-price-count-${i}`} type="number" min={1} max={12} value={p.intervalCount} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, intervalCount: e.target.value } : x)) })} data-testid={`manual-price-count-${i}`} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-xs">Currency</Label>
-                              <Input maxLength={3} value={p.currency} aria-invalid={!isSupportedCurrency(p.currency) && !manualPriceUntouched(p)} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, currency: e.target.value.toLowerCase() } : x)) })} data-testid={`manual-price-currency-${i}`} />
+                              <Label className="text-xs" htmlFor={`manual-price-currency-${i}`}>Currency</Label>
+                              <Input id={`manual-price-currency-${i}`} maxLength={3} autoComplete="off" value={p.currency} aria-invalid={!isSupportedCurrency(p.currency) && !manualPriceUntouched(p)} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, currency: e.target.value.toLowerCase() } : x)) })} data-testid={`manual-price-currency-${i}`} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-xs">Amount</Label>
-                              <Input type="text" inputMode="decimal" autoComplete="off" value={p.unitAmount} aria-invalid={!manualPriceMinor(p).ok} aria-describedby={`manual-price-hint-${i}`} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, unitAmount: e.target.value } : x)) })} data-testid={`manual-price-amount-${i}`} />
+                              <Label className="text-xs" htmlFor={`manual-price-amount-${i}`}>Amount</Label>
+                              {/* The ordinary keyboard: a "decimal" keypad offers only a comma in some locales. */}
+                              <Input id={`manual-price-amount-${i}`} type="text" autoComplete="off" value={p.unitAmount} aria-invalid={!manualPriceMinor(p).ok} aria-describedby={`manual-price-hint-${i}`} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, unitAmount: e.target.value } : x)) })} data-testid={`manual-price-amount-${i}`} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-xs">Label</Label>
-                              <Input maxLength={60} placeholder="optional" value={p.label} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} data-testid={`manual-price-label-${i}`} />
+                              <Label className="text-xs" htmlFor={`manual-price-label-${i}`}>Label</Label>
+                              <Input id={`manual-price-label-${i}`} maxLength={60} placeholder="optional" value={p.label} onChange={(e) => setForm({ ...form, manualPrices: form.manualPrices.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} data-testid={`manual-price-label-${i}`} />
                             </div>
                             <div className="flex items-end">
                               <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, manualPrices: form.manualPrices.filter((_, j) => j !== i) })} data-testid={`manual-price-remove-${i}`}>Remove</Button>

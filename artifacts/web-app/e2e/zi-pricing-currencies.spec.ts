@@ -19,10 +19,13 @@ import { API_BASE, RUN_TAG } from "./fixtures/seed-values";
  *     support, are refused in the editor: nothing is sent;
  *   • a stored price in an unsupported currency is never shown as if it had two decimals
  *     and is kept exactly as stored;
+ *   • the AI cost allowance (US dollars) is converted exactly, and a figure that cannot be
+ *     is refused instead of being saved as "no allowance";
  *   • verified provider prices show each currency in its own unit on the platform's
  *     Subscriptions and Plans pages, in the version's price mappings and on the tenant's
- *     Subscription page;
- *   • the pricing screens are the platform owner's: a tenant administrator is refused.
+ *     Subscription page; the version comparison shows amounts, not raw minor units;
+ *   • the pricing screens are the platform owner's: a tenant administrator is refused;
+ *   • the editor and the published view fit a tablet, a phone and the dark theme.
  *
  * Set LP_SHOTS_DIR to an existing directory to also save screenshots (off by default).
  */
@@ -63,6 +66,7 @@ let tenantAdmin: Auth;
 let pg: Client;
 let v1Id = 0;
 let draftId = 0;
+let nextDraftId = 0;
 let companyId = 0;
 const priceRowIds: number[] = [];
 
@@ -179,7 +183,10 @@ async function save(page: Page): Promise<boolean> {
 }
 
 async function purge() {
+  // Prices, then the plan of this spec with its versions (no company subscribes to it).
   await pg.query("delete from plan_prices where plan_id like 'zi-%' or provider_price_id = any($1)", [PROVIDER.map((p) => p.id)]);
+  await pg.query("delete from plan_versions where plan_id like 'zi-%'");
+  await pg.query("delete from plans where id like 'zi-%'");
   const companies = await pg.query("select id from companies where name = $1", [COMPANY_NAME]);
   for (const { id } of companies.rows) {
     await pg.query("delete from audit_logs where company_id = $1", [id]);
@@ -215,7 +222,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // Prices of this spec must not stay behind: other specs list every active price.
+  // Nothing of this spec stays behind: other specs list every active price and every plan.
   await purge();
   await pg.end();
 });
@@ -282,7 +289,8 @@ test("an amount that cannot be stored exactly is refused in the editor — nothi
     ["usd", "abc", /digits/],
     ["usd", "1e3", /digits/],
     ["usd", "-5", /digits/],
-    ["usd", "1,000", /digits/],
+    ["usd", "1,000", /without commas or spaces/],
+    ["usd", "1 000", /without commas or spaces/],
     ["usd", "10000000.01", /too large \(at most \$10,000,000\.00\)/],
     ["jpy", "5000.5", /JPY has no decimals/],
     ["isk", "5.5", /ISK has no decimals/],
@@ -316,6 +324,52 @@ test("an amount that cannot be stored exactly is refused in the editor — nothi
   expect(await save(page)).toBe(true);
   expect(writes.length).toBe(1);
   expect(await storedMinor()).toEqual(expectedMinor);
+});
+
+test("the AI cost allowance is converted exactly; a figure that cannot be is refused, not saved as none", async ({ page }) => {
+  await seedAs(page, platform);
+  const writes: string[] = [];
+  page.on("request", (r) => {
+    if (isDraftWrite(r.method(), r.url())) writes.push(`${r.method()} ${r.url()}`);
+  });
+  await openDraft(page);
+  const cost = page.getByTestId("version-allowance-cost");
+  const error = page.getByTestId("version-allowance-cost-error");
+  const stored = async () => (await api("GET", `/platform/plans/${SLUG}/versions/${draftId}`, undefined, platform.token)).json.allowances.aiCostMicroUsdPerMonth;
+  expect(await stored()).toBeNull();
+
+  // Dollars typed, millionths of a dollar stored — exactly.
+  for (const [typed, micro] of [["12.5", 12_500_000], ["0.000001", 1], ["19.99", 19_990_000], ["0.1", 100_000]] as const) {
+    await cost.fill(typed);
+    await expect(error).toHaveCount(0);
+    await expect(cost).toHaveAttribute("aria-invalid", "false");
+    expect(await save(page), typed).toBe(true);
+    expect(await stored(), typed).toBe(micro);
+  }
+  await page.reload();
+  await expect(page.getByTestId("version-editor")).toBeVisible();
+  await expect(cost).toHaveValue("0.1");
+
+  // What cannot be an exact number of millionths is marked, and the draft is not sent.
+  const sent = writes.length;
+  for (const typed of ["0.0000001", "abc", "1,5", "-3", "1e2", "12 5"]) {
+    await cost.fill(typed);
+    await expect(error, typed).toBeVisible();
+    await expect(cost, typed).toHaveAttribute("aria-invalid", "true");
+    await page.getByTestId("version-save").click();
+    await expect(page.getByTestId("version-save-errors"), typed).toContainText("allowances.aiCostMicroUsdPerMonth");
+  }
+  expect(writes.length, writes.join("\n")).toBe(sent);
+  expect(await stored()).toBe(100_000); // still the last accepted amount — not "no allowance"
+
+  // Blank is the one way to say "no allowance".
+  await cost.fill("");
+  await expect(error).toHaveCount(0);
+  expect(await save(page)).toBe(true);
+  expect(await stored()).toBeNull();
+  await cost.fill("12.5");
+  expect(await save(page)).toBe(true);
+  expect(await stored()).toBe(12_500_000);
 });
 
 test("a stored price in an unsupported currency is kept as stored and never read as two decimals", async ({ page }) => {
@@ -362,10 +416,20 @@ test("the published version shows every price in its own unit", async ({ page })
   const snapshot = page.getByTestId("snapshot-manual-prices");
   await expect(snapshot).toHaveAttribute("data-count", String(MANUAL.length));
   for (const m of MANUAL) await expect(page.getByTestId(m.interval === "Year" ? "manual-prices-annual" : "manual-prices-monthly")).toContainText(m.reads);
-  // What the old ÷ 100 would have shown for yen and dinars is nowhere on the page.
-  await expect(snapshot).not.toContainText("¥50.00");
-  await expect(snapshot).not.toContainText("KWD 105.00");
+  // What amount ÷ 100 showed for these prices ("¥50", "KWD 105.000", "ISK 500.00") is not there.
+  await expect(snapshot).not.toContainText("¥50");
+  await expect(snapshot).not.toContainText("KWD 105");
+  await expect(snapshot).not.toContainText("ISK 500.00");
+  await expect(page.getByTestId("snapshot-allowance-cost")).toHaveText("$12.50");
   if (SHOTS) await snapshot.screenshot({ path: path.join(SHOTS, "manual-prices-published.png") });
+
+  // The comparison with v1 (no manual price) shows the same amounts, not "usd/monthx1=4900".
+  await pickOption(page, "compare-select", /^v1 /);
+  const row = page.getByTestId("compare-row-pricing-manualPrices");
+  await expect(row).toHaveAttribute("data-changed", "true");
+  for (const m of MANUAL) await expect(row).toContainText(m.reads);
+  await expect(row).not.toContainText("x1=");
+  await expect(page.getByTestId("compare-row-allowances-aiCostMicroUsdPerMonth")).toContainText("$12.50");
 });
 
 test("verified provider prices read the same on Subscriptions, Plans and the version's mappings", async ({ page }) => {
@@ -379,8 +443,8 @@ test("verified provider prices read the same on Subscriptions, Plans and the ver
 
   await page.goto("/platform/subscriptions");
   await expect(page.getByTestId("platform-subscriptions")).toBeVisible();
+  // Each of these fails under amount ÷ 100 (5,017 yen read "¥50", 10.517 dinars "KWD 105.170").
   for (const p of PROVIDER) await expect(page.getByTestId("prices-card")).toContainText(p.reads);
-  await expect(page.getByTestId("prices-card")).not.toContainText("¥50.17");
   if (SHOTS) await page.getByTestId("prices-card").screenshot({ path: path.join(SHOTS, "subscriptions-prices.png") });
 
   await page.goto(`/platform/plans?plan=${SLUG}`);
@@ -389,6 +453,8 @@ test("verified provider prices read the same on Subscriptions, Plans and the ver
     await expect(page.getByTestId(`price-row-${priceRowIds[i]}`)).toContainText(p.reads);
     await expect(page.getByTestId(`mapping-row-${priceRowIds[i]}`).first()).toContainText(p.reads);
   }
+  await expect(page.getByTestId(`price-row-${priceRowIds[2]}`)).not.toContainText("¥50");
+  await expect(page.getByTestId(`price-row-${priceRowIds[5]}`)).not.toContainText("KWD 105");
   expect(errors, errors.join("\n")).toEqual([]);
 });
 
@@ -425,30 +491,73 @@ test("the pricing screens are the platform owner's", async ({ page }) => {
   await expect(page.getByTestId("plan-detail-title")).toHaveCount(0);
 });
 
+test("a new draft opens with the published prices, unchanged", async ({ page }) => {
+  const draft = await api("POST", `/platform/plans/${SLUG}/versions`, { sourceVersionId: draftId }, platform.token);
+  expect(draft.status, draft.text).toBe(201);
+  nextDraftId = draft.json.id;
+  await seedAs(page, platform);
+  await openDraft(page);
+  for (const [i, m] of MANUAL.entries()) {
+    await expect(page.getByTestId(`manual-price-currency-${i}`)).toHaveValue(m.currency);
+    await expect(page.getByTestId(`manual-price-amount-${i}`)).toHaveValue(m.reopened);
+  }
+  const written = page.waitForResponse((r) => isDraftWrite(r.request().method(), r.url()));
+  await page.getByTestId("version-save").click();
+  expect((await written).status()).toBe(200);
+  const stored = (await api("GET", `/platform/plans/${SLUG}/versions/${nextDraftId}`, undefined, platform.token)).json.snapshot.manualPrices as StoredPrice[];
+  expect(Object.fromEntries(stored.map((p) => [p.currency, p.unitAmountMinor]))).toEqual(expectedMinor);
+});
+
 for (const view of [
   { name: "tablet-820", width: 820, height: 1180, theme: "light" },
   { name: "mobile-390", width: 390, height: 844, theme: "light" },
   { name: "desktop-1440-dark", width: 1440, height: 900, theme: "dark" },
 ] as const) {
-  test(`the price lists fit ${view.name}`, async ({ page }) => {
+  test(`the price editor and the published prices fit ${view.name}`, async ({ page }) => {
     const errors = trackConsole(page);
     await page.setViewportSize({ width: view.width, height: view.height });
     await seedAs(page, platform, view.theme);
-    await page.goto(`/platform/plans?plan=${SLUG}`);
-    await expect(page.getByTestId("plan-detail-title")).toHaveText(PLAN_NAME);
-    await expect(page.getByTestId("snapshot-manual-prices")).toBeVisible();
-    for (const m of MANUAL) await expect(page.getByTestId("snapshot-manual-prices")).toContainText(m.reads);
-    const overflow = await page.evaluate(() => {
-      const main = document.querySelector("main");
-      return { document: document.documentElement.scrollWidth - document.documentElement.clientWidth, main: main ? main.scrollWidth - main.clientWidth : 0 };
-    });
-    expect(overflow, view.name).toEqual({ document: 0, main: 0 });
-    if (SHOTS) {
+    const overflow = () =>
+      page.evaluate(() => {
+        const main = document.querySelector("main");
+        return { document: document.documentElement.scrollWidth - document.documentElement.clientWidth, main: main ? main.scrollWidth - main.clientWidth : 0 };
+      });
+    const shot = async (name: string) => {
+      if (!SHOTS) return;
       const height = await page.evaluate(() => document.querySelector("main")?.scrollHeight ?? document.body.scrollHeight);
       await page.setViewportSize({ width: view.width, height: Math.min(Math.max(height + 140, view.height), 7800) });
       await page.waitForTimeout(400);
-      await page.screenshot({ path: path.join(SHOTS, `plan-prices-${view.name}.png`) });
+      await page.screenshot({ path: path.join(SHOTS, `${name}-${view.name}.png`) });
+      await page.setViewportSize({ width: view.width, height: view.height });
+    };
+
+    // The editor (the draft): six price rows, each field inside its row, each hint readable.
+    await openDraft(page);
+    for (const [i, m] of MANUAL.entries()) {
+      await expect(page.getByTestId(`manual-price-amount-${i}`)).toHaveValue(m.reopened);
+      await expect(page.getByTestId(`manual-price-hint-${i}`)).toContainText(m.reads);
+      const inside = await page.getByTestId(`manual-price-${i}`).evaluate((row) => {
+        const box = row.getBoundingClientRect();
+        return [...row.querySelectorAll("input, button, p")].every((el) => {
+          const r = el.getBoundingClientRect();
+          return r.left >= box.left - 1 && r.right <= box.right + 1 && r.width > 0;
+        });
+      });
+      expect(inside, `row ${i} at ${view.name}`).toBe(true);
     }
+    // A refused amount shows its reason in the row at this width too.
+    await page.getByTestId("manual-price-amount-2").fill("5000.5");
+    await expect(page.getByTestId("manual-price-hint-2")).toContainText("JPY has no decimals");
+    expect(await overflow(), `${view.name} editor`).toEqual({ document: 0, main: 0 });
+    await shot("plan-editor");
+    await page.getByTestId("manual-price-amount-2").fill("5000");
+
+    // The published version: the same prices, read-only.
+    await page.getByTestId(`version-open-${draftId}`).click();
+    await expect(page.getByTestId("snapshot-manual-prices")).toBeVisible();
+    for (const m of MANUAL) await expect(page.getByTestId("snapshot-manual-prices")).toContainText(m.reads);
+    expect(await overflow(), `${view.name} published`).toEqual({ document: 0, main: 0 });
+    await shot("plan-prices");
     expect(errors, errors.join("\n")).toEqual([]);
   });
 }
