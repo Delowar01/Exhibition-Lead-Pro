@@ -212,8 +212,8 @@ allowance or a platform limit applies.
 | | Before | Now |
 | --- | --- | --- |
 | Who chooses the provider | `ai_settings.provider` of each tenant (default `gemini`), editable by the tenant's primary admin | The Platform Owner's policy. The tenant's stored value **never selects a real provider**. |
-| `ai_settings.provider` / `.model` | Used for the call | Kept as stored (no row is rewritten, no migration of tenant data). Honoured only for the test provider, outside production. |
-| `PATCH /ai/settings {provider, model}` | Any registered provider; a priced model | Still accepted for compatibility: the provider must be one the Platform Owner **enabled** (or the test provider), the model one of that provider's models. It is stored and does not select the vendor. |
+| `ai_settings.provider` / `.model` | Used for the call | Kept as stored (no migration of tenant data). Honoured only for the test provider, outside production. A tenant row never comes to name Claude: such a pair is validated and not stored, because the releases before this one resolve the stored provider directly and could not serve that tenant after an application rollback. |
+| `PATCH /ai/settings {provider, model}` | Any registered provider; a priced model | Still accepted for compatibility: the provider must be one the Platform Owner **enabled** (or the test provider), the model one of that provider's models. It does not select the vendor. A Gemini pair is stored; a Claude pair is accepted and not stored (see the row above). |
 | `GET /ai/settings`, `GET /ai/health` | The stored provider; `configured` = Gemini key present | The provider and model that **serve the tenant now**; `configured` = some enabled provider can serve it. |
 | Tenant controls — master switch, per-feature flags, token / cost budgets, workflow rules | Enforced | Enforced, unchanged, whichever provider is in use. |
 | An explicit, permitted override | — | A **company override** set by the Platform Owner in the policy. |

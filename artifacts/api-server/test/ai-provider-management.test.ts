@@ -512,16 +512,28 @@ describe("C — Claude and Gemini each serve requests, and the Platform Owner sw
     expect((await unpriced.json()).code).toBe("AI_MODEL_NOT_SUPPORTED");
   });
 
-  it("a client that sends back only the model it was shown is accepted: the model is stored with the provider it belongs to", async () => {
+  it("a client that sends back the pair it was shown is accepted, and a tenant row never names a provider earlier releases cannot resolve", async () => {
     await setPolicy(shippedModels({ primary: "anthropic" }));
     // GET shows the pair that would serve (none has a key here, so the pre-policy default is reported).
     const shown = await (await api("GET", "/ai/settings", t.token)).json();
     expect((await api("PATCH", "/ai/settings", t.token, { model: shown.model })).status).toBe(200);
-    // A Claude model sent alone, while the stored provider is still Gemini.
+    const [before] = await db.select().from(aiSettingsTable).where(eq(aiSettingsTable.companyId, t.companyId));
+    expect(before.provider).toBe("gemini");
+    // A Claude model sent alone, while the stored provider is still Gemini: valid, so accepted — and NOT stored.
+    // The stored pair selects nothing for a real provider, and the releases before the platform policy resolve
+    // it directly: a row naming Claude would fail every AI call of that tenant after an application rollback.
     const res = await api("PATCH", "/ai/settings", t.token, { model: "claude-sonnet-5-5" });
     expect(res.status, await res.clone().text()).toBe(200);
+    // The whole pair, as a page of an earlier release echoes it back when Claude serves, together with a real change.
+    const echoed = await api("PATCH", "/ai/settings", t.token, { provider: "anthropic", model: "claude-opus-5-5", monthlyTokenBudget: 123456 });
+    expect(echoed.status, await echoed.clone().text()).toBe(200);
     const [row] = await db.select().from(aiSettingsTable).where(eq(aiSettingsTable.companyId, t.companyId));
-    expect([row.provider, row.model]).toEqual(["anthropic", "claude-sonnet-5-5"]);
+    expect([row.provider, row.model]).toEqual([before.provider, before.model]);
+    expect(row.monthlyTokenBudget).toBe(123456); // the rest of the request is stored
+    expect((await api("PATCH", "/ai/settings", t.token, { monthlyTokenBudget: null })).status).toBe(200);
+    // No tenant row anywhere names a provider other than the earlier one or the test provider.
+    const named = await db.select({ provider: aiSettingsTable.provider }).from(aiSettingsTable);
+    expect(named.filter((r) => r.provider !== "gemini" && r.provider !== "stub")).toEqual([]);
     // A model no enabled provider offers is still refused.
     const bad = await api("PATCH", "/ai/settings", t.token, { model: "claude-unlisted-model" });
     expect(bad.status).toBe(400);

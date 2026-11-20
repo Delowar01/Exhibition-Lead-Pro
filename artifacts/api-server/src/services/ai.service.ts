@@ -18,6 +18,11 @@ import {
   type WorkflowRules,
 } from "../lib/workflow-intelligence.js";
 
+// The only real provider name the releases before the platform AI policy can resolve from a
+// tenant row. Tenant rows are kept within it so that an application rollback finds no row
+// it cannot serve (see updateSettings).
+const ROLLBACK_SAFE_PROVIDER = "gemini" as const;
+
 // Service layer for the AI Platform Foundation: resolves per-tenant settings (with a
 // short in-process cache so the hot scan/score path stays fast), enforces the
 // enabled/feature-flag/budget gates, records the append-only invocation ledger, and
@@ -577,6 +582,27 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
     }
   }
 
+  // Rollback safety: a tenant row must stay readable by the releases that predate the
+  // platform policy. They resolve `ai_settings.provider` directly and fail every AI call
+  // of a tenant whose row names a provider they do not know. Here the stored pair of a
+  // real provider selects nothing (the platform policy does), so a pair other than the
+  // one those releases know is validated above and then NOT stored: a row that already
+  // holds the earlier pair keeps it; any other row (the test provider being left) gets it.
+  let nothingToStore = false;
+  if (values.provider !== undefined || values.model !== undefined) {
+    const resulting = values.provider ?? current.provider;
+    if (isRealProvider(resulting) && resulting !== ROLLBACK_SAFE_PROVIDER) {
+      if (current.provider === ROLLBACK_SAFE_PROVIDER) {
+        delete values.provider;
+        delete values.model;
+        nothingToStore = Object.keys(values).length === 0;
+      } else {
+        values.provider = ROLLBACK_SAFE_PROVIDER;
+        values.model = config.ai.models[ROLLBACK_SAFE_PROVIDER][0];
+      }
+    }
+  }
+
   // Release correction M1: a tenant budget above the plan allowance would be
   // capped at resolution time anyway — refuse it explicitly so the admin gets a
   // clear answer instead of a silently ignored value. null (no tenant budget)
@@ -595,10 +621,13 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
     });
   }
 
-  if (Object.keys(values).length === 0) throw new AppError(400, "No valid fields to update");
+  if (Object.keys(values).length === 0 && !nothingToStore) throw new AppError(400, "No valid fields to update");
 
-  await repo.upsertSettings(companyId, values);
-  invalidateSettingsCache(companyId);
+  // A request that named only a valid provider / model pair which is not stored is still a success.
+  if (!nothingToStore) {
+    await repo.upsertSettings(companyId, values);
+    invalidateSettingsCache(companyId);
+  }
   return formatSettings(await resolveSettings(companyId));
 }
 
