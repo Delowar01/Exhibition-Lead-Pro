@@ -120,3 +120,60 @@ export interface AiProvider {
   // config-presence check — must not make a paid API call. Never throws.
   isConfigured(): boolean;
 }
+
+// ── Provider failures ────────────────────────────────────────────────────────────────────
+//
+// Why a provider call failed, in the few classes the layer acts on. An adapter raises
+// AiProviderError for every failure it can classify; anything else (an untyped Error) is
+// classified from its message by the runner, as it always was.
+//
+//   timeout / network / rate_limited / unavailable — the provider could not serve the
+//       request right now (transient);
+//   auth      — the provider rejected the credentials (a configuration fault);
+//   quota     — the provider account's own spending cap or billing stopped the request;
+//   refusal   — the provider declined the content of the request;
+//   invalid_request  — the provider rejected the request itself (unknown model,
+//       malformed request);
+//   unsupported_input — THIS provider cannot take this input at all (an image larger
+//       than it accepts, an image type it does not read). Raised by the adapter before
+//       any request is made;
+//   invalid_response — the provider answered, but not with something usable.
+//
+// The first group, `auth` and `unsupported_input` let the layer try the other provider
+// (see isFallbackEligible in runner.ts): the provider could not serve the request, and
+// no decision is bypassed by asking the other one. A refusal, a quota stop or a
+// rejected request is final: retrying it elsewhere would bypass a decision, not work
+// around an outage.
+export type AiProviderErrorKind =
+  | "timeout"
+  | "network"
+  | "rate_limited"
+  | "unavailable"
+  | "auth"
+  | "quota"
+  | "refusal"
+  | "invalid_request"
+  | "unsupported_input"
+  | "invalid_response";
+
+export class AiProviderError extends Error {
+  readonly provider: string;
+  readonly kind: AiProviderErrorKind;
+  readonly status: number | null;
+  /** Tokens the provider reports for a call that still failed (a refusal, for one). */
+  readonly usage: AiUsage | null;
+
+  constructor(
+    provider: string,
+    kind: AiProviderErrorKind,
+    message: string,
+    opts: { status?: number | null; usage?: AiUsage | null; cause?: unknown } = {},
+  ) {
+    super(message, opts.cause === undefined ? undefined : { cause: opts.cause });
+    this.name = "AiProviderError";
+    this.provider = provider;
+    this.kind = kind;
+    this.status = opts.status ?? null;
+    this.usage = opts.usage ?? null;
+  }
+}

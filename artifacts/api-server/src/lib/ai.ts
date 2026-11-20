@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { logger } from "./logger.js";
 import { config } from "../config.js";
-import { getProvider } from "../ai/providers/index.js";
-import { assertProviderConfigured } from "../ai/readiness.js";
-import { runAi, extractJson, isTimeoutError, redactError, attemptsOf, categorizeError } from "../ai/runner.js";
+import { providerFor } from "../ai/providers/index.js";
+import { assertProviderConfigured, AI_NOT_CONFIGURED_CODE, AI_NOT_CONFIGURED_MESSAGE } from "../ai/readiness.js";
+import { runAi, extractJson, isTimeoutError, redactError, attemptsOf, categorizeError, isFallbackEligible, isProviderDown, fallbackTimeoutMs } from "../ai/runner.js";
 import { estimateCostMicroUsd } from "../ai/pricing.js";
+import type { ChainCandidate } from "../ai/policy.js";
+import * as platformAi from "../services/platform-ai.service.js";
 import { checkAiRateLimit, aiRateLimitError } from "../ai/rate-limit.js";
 import { dedupEligible, dedupKey, getCompleted, setCompleted, getInFlight, setInFlight, clearInFlight } from "../ai/dedup.js";
 import { AppError } from "../middlewares/errorHandler.js";
@@ -37,7 +39,7 @@ import {
   buildExecutiveForecastPrompt,
   buildAssistantAnswerPrompt,
 } from "../ai/prompts.js";
-import type { AiFeature, AiPart, AiRequest } from "../ai/types.js";
+import { AiProviderError, type AiFeature, type AiPart, type AiRequest } from "../ai/types.js";
 import * as aiService from "../services/ai.service.js";
 
 // Feature-level AI functions (OCR extraction, lead scoring, enrichment, assignee
@@ -66,6 +68,29 @@ export interface AiContext {
   entityType?: string | null;
   entityId?: number | null;
   bypassDedup?: boolean;
+  /**
+   * Written by the execution seam: the provider and model that produced the answer of
+   * the LAST call made with this context — the fallback provider when it was the one
+   * that answered. Cleared when a call starts, so it is never left over from an
+   * earlier one. Read it (servedBy) after the call to stamp provenance on a stored row.
+   */
+  served?: { provider: string; model: string };
+}
+
+/**
+ * Provenance for a row stored after an AI call made with `ctx`: who actually served the
+ * call, or `configured` (what the platform policy would use) where the call left no
+ * record. A live view — read its fields AFTER the call has returned.
+ */
+export function servedBy(ctx: AiContext, configured: { provider?: string; model?: string } = {}): { readonly provider?: string; readonly model?: string } {
+  return {
+    get provider() {
+      return ctx.served?.provider ?? configured.provider;
+    },
+    get model() {
+      return ctx.served?.model ?? configured.model;
+    },
+  };
 }
 
 export interface ExtractedCardOriginal {
@@ -209,12 +234,17 @@ function readOriginal(value: unknown): ExtractedCardOriginal {
 }
 
 // Central execution seam for all JSON-returning AI features (Batch 6 pipeline):
-//   1. AI rate limit (single policy source; denied requests never touch Gemini)
-//   2. Tenant gates (enabled/feature flag) + provider/model resolution
+//   1. AI rate limit (single policy source; denied requests never touch a provider)
+//   2. Tenant gates (enabled/feature flag), then the provider(s) for the request under
+//      the Platform Owner's AI provider policy: one provider, plus the other as the
+//      single fallback when the policy allows it
 //   3. Duplicate protection + short-window safe result reuse (tenant-scoped hash key;
 //      explicit Regenerate bypasses; assistant chats never reused)
-//   4. Atomic budget reservation (advisory-locked; no check-then-write overspend)
-//   5. Provider call through the shared runner (retries accounted)
+//   4. Platform spending limit of the provider, then the atomic tenant budget
+//      reservation (advisory-locked; no check-then-write overspend) — per attempt
+//   5. Provider call through the shared runner (retries accounted); on a failure that
+//      means "this provider cannot serve now", ONE attempt on the fallback provider,
+//      with its own limits, reservation and ledger row
 //   6. Reliable, idempotent ledger write (awaited; queued retry on failure) and
 //      reservation release — in that order, so budget accounting stays consistent.
 // Policy rejections (403 gates) are thrown BEFORE any provider call and are not
@@ -259,6 +289,11 @@ async function callJsonWithMeta(opts: {
 }): Promise<CallJsonMeta> {
   const prompt = PROMPTS[opts.feature];
   const requestId = randomUUID();
+  if (opts.ctx) opts.ctx.served = undefined;
+  const served = <T extends CallJsonMeta>(meta: T): T => {
+    if (opts.ctx) opts.ctx.served = { provider: meta.provider, model: meta.model };
+    return meta;
+  };
 
   // 1. AI-specific rate limit — before any tenant gate or provider work.
   const denial = checkAiRateLimit({
@@ -284,30 +319,37 @@ async function callJsonWithMeta(opts: {
     throw aiRateLimitError(denial);
   }
 
-  // 2. Provider/model resolution: a tenant's effective ai_settings (validated on write to
-  // an available provider + non-empty model) win when there is company context; system
-  // calls with no tenant fall back to the platform default. This keeps runtime execution
-  // consistent with what GET /ai/settings and GET /ai/health report. resolveSettings and
-  // ensureAiAllowed share the same in-process cache, so this is not an extra DB read.
-  let providerName: string = config.ai.provider;
-  let model: string = config.ai.model;
+  // 2. Tenant gates first (a disabled tenant or feature is refused before anything
+  // else), then the provider(s) for this request. The Platform Owner's AI provider
+  // policy decides: a tenant's own stored provider never selects a real provider — it
+  // is honoured only for the deterministic test provider, outside production.
+  let tenant: { provider: string; model: string } | null = null;
+  let tenantCostBudgetMicroUsd: number | null = null;
   if (opts.ctx?.companyId != null) {
     await aiService.ensureAiAllowed(opts.ctx.companyId, opts.feature);
     const settings = await aiService.resolveSettings(opts.ctx.companyId);
-    providerName = settings.provider;
-    model = settings.model;
+    tenant = { provider: settings.provider, model: settings.model };
+    tenantCostBudgetMicroUsd = settings.monthlyCostBudgetMicroUsd;
   }
-  const provider = getProvider(providerName);
+  const chain = await platformAi.resolveChainFor({ companyId: opts.ctx?.companyId ?? null, tenant });
 
   // 2b. Provider readiness gate (B22 Correction 1): refuse BEFORE dedup, budget
-  // reservation and the provider call when the resolved provider holds no credential.
+  // reservation and the provider call when no enabled provider holds a credential.
   // Nothing is reserved or called, so no ledger row is written (same as the
   // AI_DISABLED policy gate above) and the client gets a truthful 503
   // AI_NOT_CONFIGURED instead of a "could not read the card" failure.
-  assertProviderConfigured(provider, opts.feature);
+  if (chain.candidates.length === 0) {
+    if (chain.unavailable === "none_enabled") {
+      logger.warn({ feature: opts.feature }, "AI request refused: both AI providers are disabled by the platform policy");
+      throw new AppError(503, AI_NOT_CONFIGURED_MESSAGE, { code: AI_NOT_CONFIGURED_CODE });
+    }
+    assertProviderConfigured({ name: chain.display.provider, isConfigured: () => false }, opts.feature);
+  }
+  const providerName = chain.candidates[0].provider;
+  const model = chain.candidates[0].model;
+  assertProviderConfigured(providerFor(providerName, model), opts.feature);
 
-  const req: AiRequest = {
-    model,
+  const req: Omit<AiRequest, "model"> = {
     parts: opts.parts,
     responseFormat: "json",
     // Feature-specific output cap (Batch 6): structured outputs get tighter, still
@@ -315,6 +357,7 @@ async function callJsonWithMeta(opts: {
     maxOutputTokens: maxOutputTokensFor(opts.feature),
     // gemini-2.5-flash runs "thinking" ON by default (5-15s latency); 0 disables it —
     // a pure speedup for OCR/structured extraction with no measurable quality loss.
+    // (A Gemini hint: the Claude adapter sets its own reasoning depth.)
     thinkingBudget: config.ai.thinkingBudget,
     timeoutMs: opts.timeoutMs,
   };
@@ -342,7 +385,7 @@ async function callJsonWithMeta(opts: {
         requestId,
         ctx: opts.ctx,
         feature: opts.feature,
-        provider: providerName,
+        provider: cached.provider,
         model: cached.model,
         promptKey: prompt.key,
         promptVersion: prompt.version,
@@ -351,7 +394,7 @@ async function callJsonWithMeta(opts: {
         costMicroUsd: 0,
         latencyMs: 0,
       });
-      return { ...cached, requestId, cacheHit: true };
+      return served({ ...cached, requestId, cacheHit: true });
     }
     const inflight = getInFlight(key);
     if (inflight) {
@@ -361,7 +404,7 @@ async function callJsonWithMeta(opts: {
         requestId,
         ctx: opts.ctx,
         feature: opts.feature,
-        provider: providerName,
+        provider: shared.provider,
         model: shared.model,
         promptKey: prompt.key,
         promptVersion: prompt.version,
@@ -370,70 +413,171 @@ async function callJsonWithMeta(opts: {
         costMicroUsd: 0,
         latencyMs: Date.now() - waitStart,
       });
-      return { ...shared, requestId, dedupReused: true };
+      return served({ ...shared, requestId, dedupReused: true });
     }
   }
 
-  // 4-6. Budget reservation + provider call + reliable accounting, shared with any
+  // 4-6. Limits + reservation + provider call(s) + reliable accounting, shared with any
   // concurrent identical requests that arrive while it runs.
   const exec = executeProviderCall({
     requestId,
     feature: opts.feature,
     promptKey: prompt.key,
     promptVersion: prompt.version,
-    provider,
-    providerName,
-    model,
+    chain: chain.candidates,
     req,
     ctx: opts.ctx,
     confidenceOf: opts.confidenceOf,
+    tenantCostBudgetMicroUsd,
   });
   if (key) setInFlight(key, exec);
   try {
     const meta = await exec;
     if (key) setCompleted(key, meta);
-    return meta;
+    return served(meta);
   } finally {
     if (key) clearInFlight(key);
   }
 }
 
-async function executeProviderCall(args: {
+// Errors that came out of a provider call itself (as opposed to this application's own
+// gates, the database or the answer's parsing). Only these can mean "the provider could
+// not serve the request", so only these may lead to the fallback provider.
+const providerCallFailures = new WeakSet<object>();
+
+function markProviderCallFailure(err: unknown): void {
+  if (err !== null && typeof err === "object") providerCallFailures.add(err);
+}
+
+const fromProviderCall = (err: unknown) => err !== null && typeof err === "object" && providerCallFailures.has(err);
+
+/** The other provider may be tried: this one could not serve the request. */
+function mayFallBack(err: unknown): boolean {
+  return fromProviderCall(err) && isFallbackEligible(err);
+}
+
+export const AI_PROVIDER_UNAVAILABLE = "AI_PROVIDER_UNAVAILABLE";
+export const AI_PROVIDER_UNAVAILABLE_MESSAGE =
+  "AI card reading is temporarily unavailable. You can still add the contact manually, or capture it by QR code or NFC.";
+
+// The answer for a card-reading request when no AI provider served it — the provider
+// (and the fallback, where one is allowed) did not respond, rejected the platform's key,
+// or its account is stopped: a truthful 503 the clients show as it is, instead of
+// "could not read the card — retake the photo". Returns null for every other failure
+// (the provider answered: a refusal, a rejected request, an unusable result), which keeps
+// its existing handling.
+export function aiUnavailableError(err: unknown): AppError | null {
+  if (!fromProviderCall(err) || !isProviderDown(err)) return null;
+  return new AppError(503, AI_PROVIDER_UNAVAILABLE_MESSAGE, { code: AI_PROVIDER_UNAVAILABLE });
+}
+
+/** The capture sentence for an AI refusal that says nothing about capture on its own. */
+export const CAPTURE_STILL_WORKS = "You can still add contacts manually, by QR code or by NFC.";
+
+// A platform-limit refusal reaches every AI feature with a neutral message; on the
+// capture paths the user is also told what still works.
+export function withCaptureHint(err: AppError): AppError {
+  if (err.code !== platformAi.AI_PLATFORM_LIMIT_REACHED || err.message.includes(CAPTURE_STILL_WORKS)) return err;
+  return new AppError(err.statusCode, `${err.message} ${CAPTURE_STILL_WORKS}`, { code: err.code, details: err.details });
+}
+
+interface ProviderCallArgs {
   requestId: string;
   feature: AiFeature;
   promptKey: string;
   promptVersion: number;
-  provider: ReturnType<typeof getProvider>;
-  providerName: string;
-  model: string;
-  req: AiRequest;
+  chain: ChainCandidate[];
+  req: Omit<AiRequest, "model">;
   ctx?: AiContext;
   confidenceOf?: (parsed: Record<string, unknown>) => number | null;
-}): Promise<CallJsonMeta> {
-  const cid = args.ctx?.companyId;
+  tenantCostBudgetMicroUsd: number | null;
+}
 
-  // 4. Atomic budget reservation (no-op when the tenant has no budgets configured).
+// Runs the request on its provider and, when that provider cannot serve it and the
+// platform allows a fallback, ONCE on the other provider.
+//
+//  • The chain holds at most two candidates, so there is at most one fallback and no
+//    loop: the fallback's own failure is final.
+//  • Only a failure that means "this provider cannot serve right now" moves on
+//    (isFallbackEligible): an outage, overload, rate limit, network failure, timeout or
+//    rejected credentials. A policy rejection of this application — tenant budget, plan
+//    allowance, platform spending limit, disabled feature, rate limit — a provider's
+//    refusal of the content, a provider-side spending cap, a rejected request or an
+//    unusable answer is final, on whichever attempt it happens.
+//  • Each attempt is admitted on its own (spending limit and budget of ITS provider and
+//    model), holds its own reservation and writes its own ledger row, so usage and cost
+//    are attributed to the provider that actually ran. The fallback attempt's row is
+//    recorded under "<request id>-fb1".
+//  • Nothing but the provider call is repeated: callers run their side effects once,
+//    after this function returns.
+async function executeProviderCall(args: ProviderCallArgs): Promise<CallJsonMeta> {
+  const started = Date.now();
+  for (let i = 0; ; i++) {
+    const candidate = args.chain[i];
+    const attemptId = i === 0 ? args.requestId : `${args.requestId}-fb${i}`;
+    // The fallback gets what is left of the shared time budget, so a primary that hung
+    // until its own timeout cannot push the whole request past the reverse proxy's.
+    const timeoutMs = i === 0 ? args.req.timeoutMs : fallbackTimeoutMs(args.req.timeoutMs, Date.now() - started, config.ai.fallbackTotalBudgetMs);
+    try {
+      return await attemptProviderCall(args, candidate, attemptId, timeoutMs);
+    } catch (err) {
+      const next = args.chain[i + 1];
+      if (!next || !mayFallBack(err)) throw err;
+      logger.warn(
+        { feature: args.feature, requestId: args.requestId, from: candidate.provider, to: next.provider, category: categorizeError(err) },
+        "AI provider could not serve the request; trying the fallback provider once",
+      );
+    }
+  }
+}
+
+async function attemptProviderCall(args: ProviderCallArgs, candidate: ChainCandidate, attemptId: string, timeoutMs: number): Promise<CallJsonMeta> {
+  const cid = args.ctx?.companyId;
+  const providerName = candidate.provider;
+  const model = candidate.model;
+  const provider = providerFor(providerName, model);
+  const req: AiRequest = { ...args.req, model, timeoutMs };
+  const row = { ctx: args.ctx, feature: args.feature, provider: providerName, model, promptKey: args.promptKey, promptVersion: args.promptVersion };
+
+  // 4a. A model without a price cannot be budgeted: refused wherever a cost is enforced.
+  await platformAi.assertPricedWhereCostIsEnforced(providerName, model, args.tenantCostBudgetMicroUsd);
+
+  // 4b. The platform's monthly spending limit for this provider. Denied before the
+  // provider is contacted: zero tokens, zero cost, visible in analytics.
+  let platformHeld = false;
+  try {
+    platformHeld = await platformAi.admitPlatformSpend(providerName, model, attemptId);
+  } catch (err) {
+    if (err instanceof AppError && err.code === platformAi.AI_PLATFORM_LIMIT_REACHED) {
+      void aiService.recordInvocation({ ...row, requestId: attemptId, status: "budget_denied", usage: ZERO_USAGE, costMicroUsd: 0, latencyMs: 0, errorCategory: "platform_limit" });
+    }
+    throw err;
+  }
+  // The hold taken above is released exactly once, with what the call really cost —
+  // and, by the `finally` below, on every path out of this function.
+  let platformSettled = !platformHeld;
+  const settlePlatform = (costMicroUsd: number) => {
+    if (platformSettled) return;
+    platformSettled = true;
+    platformAi.settlePlatformSpend(providerName, attemptId, costMicroUsd);
+  };
+  try {
+    return await runAttempt();
+  } finally {
+    settlePlatform(0);
+  }
+
+  async function runAttempt(): Promise<CallJsonMeta> {
+  // 4c. Atomic tenant budget reservation (no-op when the tenant has no budgets configured).
   let reserved = false;
   if (cid != null) {
     try {
-      reserved = await aiService.reserveBudgetIfConfigured(cid, args.requestId, args.model);
+      reserved = await aiService.reserveBudgetIfConfigured(cid, attemptId, model);
     } catch (err) {
+      settlePlatform(0);
       if (err instanceof AppError && err.code === "AI_BUDGET_EXCEEDED") {
-        // Denied before contacting Gemini: zero tokens, zero cost, visible in analytics.
-        void aiService.recordInvocation({
-          requestId: args.requestId,
-          ctx: args.ctx,
-          feature: args.feature,
-          provider: args.providerName,
-          model: args.model,
-          promptKey: args.promptKey,
-          promptVersion: args.promptVersion,
-          status: "budget_denied",
-          usage: ZERO_USAGE,
-          costMicroUsd: 0,
-          latencyMs: 0,
-          errorCategory: "budget_denied",
-        });
+        // Denied before contacting the provider: zero tokens, zero cost, visible in analytics.
+        void aiService.recordInvocation({ ...row, requestId: attemptId, status: "budget_denied", usage: ZERO_USAGE, costMicroUsd: 0, latencyMs: 0, errorCategory: "budget_denied" });
       }
       throw err;
     }
@@ -444,49 +588,53 @@ async function executeProviderCall(args: {
   const start = Date.now();
   let result: Awaited<ReturnType<typeof runAi>>;
   try {
-    result = await runAi(args.provider, args.req, {
+    result = await runAi(provider, req, {
       retries: config.ai.maxRetries,
       backoffMs: config.ai.retryBackoffMs,
     });
   } catch (err) {
+    markProviderCallFailure(err);
     const latencyMs = Date.now() - start;
+    const category = categorizeError(err);
+    // A provider may report tokens for a call that still failed (a refusal): they
+    // were consumed, so they are accounted.
+    const usage = err instanceof AiProviderError && err.usage ? err.usage : ZERO_USAGE;
+    const cost = estimateCostMicroUsd(model, usage.inputTokens, usage.outputTokens);
+    if (category === "provider_auth") platformAi.noteProviderOutcome(providerName, model, "auth_rejected");
+    if (category === "provider_quota") platformAi.noteProviderOutcome(providerName, model, "account_stopped");
     const durable = await aiService.recordInvocation({
-      requestId: args.requestId,
-      ctx: args.ctx,
-      feature: args.feature,
-      provider: args.providerName,
-      model: args.model,
-      promptKey: args.promptKey,
-      promptVersion: args.promptVersion,
+      ...row,
+      requestId: attemptId,
       status: isTimeoutError(err) ? "timeout" : "error",
-      usage: ZERO_USAGE,
-      costMicroUsd: 0,
+      usage,
+      costMicroUsd: cost,
       latencyMs,
       attempts: attemptsOf(err),
       errorMessage: redactError(err),
-      errorCategory: categorizeError(err),
+      errorCategory: category,
     });
-    if (reserved && durable) await aiService.releaseBudgetReservation(args.requestId);
+    if (reserved && durable) await aiService.releaseBudgetReservation(attemptId);
+    settlePlatform(cost);
     throw err;
   }
 
   const latencyMs = Date.now() - start;
   const usageCost = estimateCostMicroUsd(result.model, result.usage.inputTokens, result.usage.outputTokens);
+  platformAi.noteProviderOutcome(providerName, model, "success");
 
   // Parse failures still consumed provider tokens — account them as a failed
   // invocation WITH the real usage metadata.
   let parsed: Record<string, unknown>;
   try {
-    parsed = extractJson(result.text) as Record<string, unknown>;
+    const value = extractJson(result.text);
+    // `null`, a number or a string is valid JSON and not an answer any feature can read.
+    if (value === null || typeof value !== "object") throw new Error("AI response was not valid JSON (not an object)");
+    parsed = value as Record<string, unknown>;
   } catch (err) {
     const durable = await aiService.recordInvocation({
-      requestId: args.requestId,
-      ctx: args.ctx,
-      feature: args.feature,
-      provider: args.provider.name,
+      ...row,
+      requestId: attemptId,
       model: result.model,
-      promptKey: args.promptKey,
-      promptVersion: args.promptVersion,
       status: "error",
       usage: result.usage,
       costMicroUsd: usageCost,
@@ -495,8 +643,17 @@ async function executeProviderCall(args: {
       errorMessage: redactError(err),
       errorCategory: "invalid_response",
     });
-    if (reserved && durable) await aiService.releaseBudgetReservation(args.requestId);
+    if (reserved && durable) await aiService.releaseBudgetReservation(attemptId);
+    settlePlatform(usageCost);
     throw err;
+  }
+
+  // A feature's confidence reader must never cost the call its ledger row.
+  let confidence: number | null = null;
+  try {
+    confidence = args.confidenceOf ? args.confidenceOf(parsed) : null;
+  } catch {
+    confidence = null;
   }
 
   // 6. Reliable ledger write first, then reservation release (never the reverse).
@@ -504,23 +661,20 @@ async function executeProviderCall(args: {
   // is intentionally kept until its TTL so the unrecorded spend still counts against
   // budget admission for a while instead of silently reopening headroom.
   const durable = await aiService.recordInvocation({
-    requestId: args.requestId,
-    ctx: args.ctx,
-    feature: args.feature,
-    provider: args.provider.name,
+    ...row,
+    requestId: attemptId,
     model: result.model,
-    promptKey: args.promptKey,
-    promptVersion: args.promptVersion,
     status: "success",
     usage: result.usage,
     costMicroUsd: usageCost,
     latencyMs,
     attempts: result.attempts,
-    confidence: args.confidenceOf ? args.confidenceOf(parsed) : null,
+    confidence,
   });
+  settlePlatform(usageCost);
   if (reserved) {
-    if (durable) await aiService.releaseBudgetReservation(args.requestId);
-    else logger.warn({ requestId: args.requestId }, "Keeping AI budget reservation until TTL: ledger row not durably recorded");
+    if (durable) await aiService.releaseBudgetReservation(attemptId);
+    else logger.warn({ requestId: attemptId }, "Keeping AI budget reservation until TTL: ledger row not durably recorded");
     // Budget-threshold alerts (approaching/reached) — async, deduped per day.
     void checkBudgetThresholds(cid!).catch((err) =>
       logger.warn({ err, companyId: cid }, "AI budget threshold alert check failed"),
@@ -529,12 +683,13 @@ async function executeProviderCall(args: {
 
   return {
     parsed,
-    provider: args.provider.name,
+    provider: providerName,
     model: result.model,
     latencyMs,
     promptVersion: args.promptVersion,
-    requestId: args.requestId,
+    requestId: attemptId,
   };
+  }
 }
 
 export async function extractCardData(

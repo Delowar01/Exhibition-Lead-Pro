@@ -18,6 +18,7 @@ import { PROMPTS, type AppLanguage } from "../ai/prompts.js";
 import type { AiFeature } from "../ai/types.js";
 import {
   logAiError,
+  servedBy,
   phraseWorkflowNextAction,
   phraseWorkflowRouting,
   phraseWorkflowProgression,
@@ -29,7 +30,7 @@ import {
   type WorkflowReminderResult,
   type WorkflowTaskResult,
 } from "../lib/ai.js";
-import { resolveSettings } from "./ai.service.js";
+import { resolveSettings, resolveRuntime } from "./ai.service.js";
 import * as repo from "../repositories/ai_workflow.repository.js";
 import type { EntityType, RecommendationType, UpsertRecommendationInput } from "../repositories/ai_workflow.repository.js";
 import * as analyticsRepo from "../repositories/analytics.repository.js";
@@ -330,11 +331,12 @@ async function loadRoutingCandidates(companyId: number, lead: LeadRow): Promise<
   return { candidates, byId };
 }
 
-async function analyzeLead(user: AuthUser, lead: LeadRow & { companyId: number }, language: AppLanguage, runtime: { provider?: string; model?: string }): Promise<void> {
+async function analyzeLead(user: AuthUser, lead: LeadRow & { companyId: number }, language: AppLanguage, configured: { provider?: string; model?: string }): Promise<void> {
   const cid = lead.companyId;
   const today = localDateStr(new Date());
   const now = new Date();
   const ctx = { companyId: cid, userId: user.id, entityType: "lead", entityId: lead.id };
+  const runtime = servedBy(ctx, configured); // who actually served each call
   const rules = await loadWorkflowRules(cid);
   const lastActivity = await lastActivityForLead(cid, lead.id);
   const lines = leadLines(lead);
@@ -420,11 +422,12 @@ async function analyzeLead(user: AuthUser, lead: LeadRow & { companyId: number }
   for (const r of recs) await repo.upsertRecommendation(r);
 }
 
-async function analyzeContact(user: AuthUser, contact: ContactRow & { companyId: number }, language: AppLanguage, runtime: { provider?: string; model?: string }): Promise<void> {
+async function analyzeContact(user: AuthUser, contact: ContactRow & { companyId: number }, language: AppLanguage, configured: { provider?: string; model?: string }): Promise<void> {
   const cid = contact.companyId;
   const today = localDateStr(new Date());
   const now = new Date();
   const ctx = { companyId: cid, userId: user.id, entityType: "contact", entityId: contact.id };
+  const runtime = servedBy(ctx, configured); // who actually served each call
   const lines = contactLinesText(contact);
   const recs: UpsertRecommendationInput[] = [];
 
@@ -460,9 +463,10 @@ async function analyzeContact(user: AuthUser, contact: ContactRow & { companyId:
   for (const r of recs) await repo.upsertRecommendation(r);
 }
 
-async function analyzeOrganization(user: AuthUser, org: { id: number; companyId: number; industry: string | null }, language: AppLanguage, runtime: { provider?: string; model?: string }): Promise<void> {
+async function analyzeOrganization(user: AuthUser, org: { id: number; companyId: number; industry: string | null }, language: AppLanguage, configured: { provider?: string; model?: string }): Promise<void> {
   const cid = org.companyId;
   const ctx = { companyId: cid, userId: user.id, entityType: "organization", entityId: org.id };
+  const runtime = servedBy(ctx, configured); // who actually served each call
   // Count linked contacts to ground the next action (read-only).
   const linked = await db
     .select({ id: contactsTable.id })
@@ -504,12 +508,12 @@ export async function analyzeEntity(user: AuthUser, entityTypeRaw: string, id: n
     cid = org.companyId;
   }
 
-  // Stamp the ACTUAL runtime provider/model (resolveSettings) on AI rows; guarded so a
+  // AI rows are stamped with the provider and model that actually served them; this is
+  // what the platform policy would use, for a call that left no record. Guarded so a
   // resolve failure never breaks the deterministic cores.
   let runtime: { provider?: string; model?: string } = {};
   try {
-    const s = await resolveSettings(cid);
-    runtime = { provider: s.provider, model: s.model };
+    runtime = await resolveRuntime(cid);
   } catch {
     runtime = {};
   }

@@ -12,10 +12,12 @@ import {
   classifyEntity,
   analyzeOpportunity,
   logAiError,
+  servedBy,
+  type AiContext,
   type IntelligenceMeta,
 } from "../lib/ai.js";
 import type { AiFeature } from "../ai/types.js";
-import { resolveSettings } from "./ai.service.js";
+import { resolveRuntime } from "./ai.service.js";
 import * as insightsRepo from "../repositories/ai_insights.repository.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import type { EntityType, InsightType, UpsertInsightInput } from "../repositories/ai_insights.repository.js";
@@ -359,7 +361,10 @@ export interface AnalyzeResult {
 
 export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: number): Promise<AnalyzeResult> {
   const aiErrors: Array<{ feature: string; message: string }> = [];
-  const ctxOf = (companyId: number) => ({ companyId, userId: user.id, entityType, entityId: id });
+  // The context of the call in progress (the generators run one after another), so the
+  // row it produces can be stamped with the provider that actually served it.
+  let lastCtx: AiContext = {};
+  const ctxOf = (companyId: number): AiContext => (lastCtx = { companyId, userId: user.id, entityType, entityId: id });
 
   // The tenant's effective provider/model at analysis time, stamped onto every AI-sourced
   // insight row so provenance reflects the ACTUAL runtime config (not a hardcoded value)
@@ -370,8 +375,7 @@ export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: 
   let runtime: { provider?: string; model?: string } = {};
   async function loadRuntime(companyId: number): Promise<void> {
     try {
-      const s = await resolveSettings(companyId);
-      runtime = { provider: s.provider, model: s.model };
+      runtime = await resolveRuntime(companyId);
     } catch {
       runtime = {};
     }
@@ -384,7 +388,7 @@ export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: 
   ): Promise<void> {
     try {
       const result = await fn();
-      await insightsRepo.upsertInsight(aiUpsert(companyId, entityType, entityId, insightType, feature, result, runtime));
+      await insightsRepo.upsertInsight(aiUpsert(companyId, entityType, entityId, insightType, feature, result, servedBy(lastCtx, runtime)));
     } catch (err) {
       logAiError(`ai-insights:${feature}`, err);
       aiErrors.push({ feature, message: err instanceof AppError ? err.message : "AI analysis unavailable" });

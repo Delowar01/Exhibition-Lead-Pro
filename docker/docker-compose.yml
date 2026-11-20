@@ -33,8 +33,11 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required (set it in docker/.env)}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required (set it in docker/.env)}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # Optional integrations (left empty by default).
+      # Optional integrations (left empty by default). The AI provider keys stay
+      # in this container only; which provider serves requests is a Platform
+      # Owner setting (docs/AI_PROVIDER_OPERATIONS.md).
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Legacy Google Cloud Storage (Batch 25: TEMPORARY migration source /
       # fallback / mirror only; removed after the owner-approved migration).
       DEFAULT_OBJECT_STORAGE_BUCKET_ID: ${DEFAULT_OBJECT_STORAGE_BUCKET_ID:-}

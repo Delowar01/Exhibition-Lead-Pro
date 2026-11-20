@@ -379,6 +379,7 @@
     "errNoCard": "No readable business card was found. Please retake the photo.",
     "errAiDisabled": "AI features are disabled for your organization.",
     "errAiNotConfigured": "AI card scanning isn't configured for this environment. Contact your administrator. You can still add the contact manually.",
+    "errAiUnavailable": "AI card scanning is temporarily unavailable. Try again shortly. You can still add the contact manually, by QR code or by NFC.",
     "aiNotConfiguredTitle": "AI scanning unavailable",
     "aiNotConfiguredBody": "AI card scanning is not configured for this environment. Ask your administrator to configure it. QR, NFC and manual entry still work.",
     "aiReadinessRetry": "Check again",

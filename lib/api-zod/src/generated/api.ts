@@ -1444,6 +1444,256 @@ export const GetPlatformAnalyticsOperationsResponse = zod.object({
 
 
 /**
+ * Platform owner only. Never returns a credential, a part of one or its length — only whether a key is present on the server and what the provider last said about it.
+
+ * @summary The AI provider policy with each provider's readiness, month-to-date usage and spending limit
+ */
+export const getPlatformAiProvidersResponsePolicyProvidersAnthropicMonthlyLimitMicroUsdMin = 0;
+
+export const getPlatformAiProvidersResponsePolicyProvidersGeminiMonthlyLimitMicroUsdMin = 0;
+
+
+
+export const GetPlatformAiProvidersResponse = zod.object({
+  "policy": zod.object({
+  "providers": zod.object({
+  "anthropic": zod.object({
+  "enabled": zod.boolean().describe('A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant'),
+  "model": zod.string().describe('One of the provider\'s selectable models (see `providers[].models`)'),
+  "monthlyLimitMicroUsd": zod.number().min(getPlatformAiProvidersResponsePolicyProvidersAnthropicMonthlyLimitMicroUsdMin).nullable().describe('Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit')
+}),
+  "gemini": zod.object({
+  "enabled": zod.boolean().describe('A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant'),
+  "model": zod.string().describe('One of the provider\'s selectable models (see `providers[].models`)'),
+  "monthlyLimitMicroUsd": zod.number().min(getPlatformAiProvidersResponsePolicyProvidersGeminiMonthlyLimitMicroUsdMin).nullable().describe('Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit')
+})
+}),
+  "primary": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "fallbackEnabled": zod.boolean(),
+  "alertThresholdPct": zod.number(),
+  "tenantOverrides": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "provider": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "model": zod.string().nullable()
+}))
+}),
+  "version": zod.number().describe('0 while nothing has been saved (the defaults are in effect)'),
+  "persisted": zod.boolean(),
+  "storage": zod.enum(['ok', 'unavailable']).describe('unavailable = the settings table has not been added to this database; the defaults apply and cannot be changed'),
+  "updatedAt": zod.coerce.date().nullable(),
+  "updatedByName": zod.string().nullable(),
+  "simulationAvailable": zod.boolean().describe('true outside production only — deterministic test models may be selected'),
+  "providers": zod.array(zod.object({
+  "provider": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "label": zod.string(),
+  "enabled": zod.boolean(),
+  "model": zod.string(),
+  "credentials": zod.object({
+  "configured": zod.boolean().describe('A key is present on the server (presence only)'),
+  "state": zod.enum(['missing', 'present_unverified', 'verified', 'rejected', 'account_stopped']).describe('missing = no key on the server; present_unverified = a key is present and no call has been made with it since the server started; verified = the provider accepted it on the most recent call; rejected = the provider rejected it; account_stopped = the provider reported a billing problem or that the account\'s spend limit is reached.\n'),
+  "checkedAt": zod.coerce.date().nullable(),
+  "envVar": zod.string().describe('The NAME of the server environment variable that holds the key (never its value)')
+}),
+  "models": zod.array(zod.object({
+  "id": zod.string(),
+  "simulated": zod.boolean().describe('true = a deterministic test model (never offered in production)'),
+  "priced": zod.boolean(),
+  "inputMicroUsdPerMTok": zod.number().nullable().describe('Price of one million input tokens, in micro-USD'),
+  "outputMicroUsdPerMTok": zod.number().nullable().describe('Price of one million output tokens, in micro-USD'),
+  "longContext": zod.object({
+  "aboveInputTokens": zod.number(),
+  "inputMicroUsdPerMTok": zod.number(),
+  "outputMicroUsdPerMTok": zod.number()
+}).nullable().describe('A dearer tier that applies to a request whose input is larger than `aboveInputTokens`')
+})),
+  "month": zod.object({
+  "providerCalls": zod.number().describe('Calls that reached the provider'),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "servedAsFallback": zod.number().describe('Successful calls this provider served after the other provider could not'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "costMicroUsd": zod.number().describe('Estimated cost in micro-USD'),
+  "byModel": zod.array(zod.object({
+  "model": zod.string(),
+  "providerCalls": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "costMicroUsd": zod.number(),
+  "priced": zod.boolean().describe('false = no price is configured for this model, so its cost is recorded as 0')
+}))
+}).describe('Month to date, all tenants and system calls, from the AI invocation ledger'),
+  "limit": zod.object({
+  "monthlyLimitMicroUsd": zod.number().nullable(),
+  "usedPct": zod.number().nullable(),
+  "state": zod.enum(['none', 'ok', 'approaching', 'reached'])
+})
+})),
+  "effective": zod.object({
+  "provider": zod.string().nullable(),
+  "model": zod.string().nullable(),
+  "fallbackProvider": zod.string().nullable(),
+  "fallbackModel": zod.string().nullable(),
+  "unavailable": zod.union([zod.literal('none_enabled'),zod.literal('none_configured'),zod.literal(null)]).nullable(),
+  "notes": zod.array(zod.string())
+}).describe('What serves a tenant without an override right now'),
+  "period": zod.object({
+  "from": zod.coerce.date(),
+  "resetAt": zod.coerce.date()
+}),
+  "pricingVersion": zod.string()
+})
+
+
+/**
+ * Platform owner only. The body carries the COMPLETE policy and the version it was read at. A change that reduces AI availability is refused with 409 AI_POLICY_CONFIRMATION_REQUIRED (the reasons are in `context.warnings`) until it is sent again with `confirm: true`. A stale `expectedVersion` is refused with 409 AI_POLICY_VERSION_CONFLICT.
+
+ * @summary Replace the AI provider policy (audited; takes effect without a deployment)
+ */
+export const updatePlatformAiProvidersBodyPolicyProvidersAnthropicMonthlyLimitMicroUsdMin = 0;
+
+export const updatePlatformAiProvidersBodyPolicyProvidersGeminiMonthlyLimitMicroUsdMin = 0;
+
+export const updatePlatformAiProvidersBodyPolicyAlertThresholdPctMax = 100;
+
+
+export const updatePlatformAiProvidersBodyPolicyTenantOverridesMax = 200;
+
+export const updatePlatformAiProvidersBodyExpectedVersionMin = 0;
+
+
+
+export const UpdatePlatformAiProvidersBody = zod.object({
+  "policy": zod.object({
+  "providers": zod.object({
+  "anthropic": zod.object({
+  "enabled": zod.boolean().describe('A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant'),
+  "model": zod.string().describe('One of the provider\'s selectable models (see `providers[].models`)'),
+  "monthlyLimitMicroUsd": zod.number().min(updatePlatformAiProvidersBodyPolicyProvidersAnthropicMonthlyLimitMicroUsdMin).nullable().describe('Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit')
+}),
+  "gemini": zod.object({
+  "enabled": zod.boolean().describe('A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant'),
+  "model": zod.string().describe('One of the provider\'s selectable models (see `providers[].models`)'),
+  "monthlyLimitMicroUsd": zod.number().min(updatePlatformAiProvidersBodyPolicyProvidersGeminiMonthlyLimitMicroUsdMin).nullable().describe('Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit')
+})
+}),
+  "primary": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "fallbackEnabled": zod.boolean().describe('Try the other enabled, configured provider once when the first cannot serve a request'),
+  "alertThresholdPct": zod.number().min(1).max(updatePlatformAiProvidersBodyPolicyAlertThresholdPctMax).describe('Alert the platform owners when a provider\'s month-to-date spend reaches this share of its limit'),
+  "tenantOverrides": zod.array(zod.object({
+  "companyId": zod.number().min(1),
+  "provider": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "model": zod.string().nullable().describe('null = the provider\'s selected model')
+})).max(updatePlatformAiProvidersBodyPolicyTenantOverridesMax).describe('Companies the platform owner has pinned to one provider')
+}),
+  "expectedVersion": zod.number().min(updatePlatformAiProvidersBodyExpectedVersionMin).describe('The `version` the policy was read at (0 while nothing has been saved)'),
+  "confirm": zod.boolean().optional().describe('Send true to apply a change the server reported as affecting AI availability')
+})
+
+export const updatePlatformAiProvidersResponsePolicyProvidersAnthropicMonthlyLimitMicroUsdMin = 0;
+
+export const updatePlatformAiProvidersResponsePolicyProvidersGeminiMonthlyLimitMicroUsdMin = 0;
+
+
+
+export const UpdatePlatformAiProvidersResponse = zod.object({
+  "policy": zod.object({
+  "providers": zod.object({
+  "anthropic": zod.object({
+  "enabled": zod.boolean().describe('A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant'),
+  "model": zod.string().describe('One of the provider\'s selectable models (see `providers[].models`)'),
+  "monthlyLimitMicroUsd": zod.number().min(updatePlatformAiProvidersResponsePolicyProvidersAnthropicMonthlyLimitMicroUsdMin).nullable().describe('Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit')
+}),
+  "gemini": zod.object({
+  "enabled": zod.boolean().describe('A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant'),
+  "model": zod.string().describe('One of the provider\'s selectable models (see `providers[].models`)'),
+  "monthlyLimitMicroUsd": zod.number().min(updatePlatformAiProvidersResponsePolicyProvidersGeminiMonthlyLimitMicroUsdMin).nullable().describe('Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit')
+})
+}),
+  "primary": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "fallbackEnabled": zod.boolean(),
+  "alertThresholdPct": zod.number(),
+  "tenantOverrides": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "provider": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "model": zod.string().nullable()
+}))
+}),
+  "version": zod.number().describe('0 while nothing has been saved (the defaults are in effect)'),
+  "persisted": zod.boolean(),
+  "storage": zod.enum(['ok', 'unavailable']).describe('unavailable = the settings table has not been added to this database; the defaults apply and cannot be changed'),
+  "updatedAt": zod.coerce.date().nullable(),
+  "updatedByName": zod.string().nullable(),
+  "simulationAvailable": zod.boolean().describe('true outside production only — deterministic test models may be selected'),
+  "providers": zod.array(zod.object({
+  "provider": zod.enum(['anthropic', 'gemini']).describe('anthropic = Claude, gemini = Gemini'),
+  "label": zod.string(),
+  "enabled": zod.boolean(),
+  "model": zod.string(),
+  "credentials": zod.object({
+  "configured": zod.boolean().describe('A key is present on the server (presence only)'),
+  "state": zod.enum(['missing', 'present_unverified', 'verified', 'rejected', 'account_stopped']).describe('missing = no key on the server; present_unverified = a key is present and no call has been made with it since the server started; verified = the provider accepted it on the most recent call; rejected = the provider rejected it; account_stopped = the provider reported a billing problem or that the account\'s spend limit is reached.\n'),
+  "checkedAt": zod.coerce.date().nullable(),
+  "envVar": zod.string().describe('The NAME of the server environment variable that holds the key (never its value)')
+}),
+  "models": zod.array(zod.object({
+  "id": zod.string(),
+  "simulated": zod.boolean().describe('true = a deterministic test model (never offered in production)'),
+  "priced": zod.boolean(),
+  "inputMicroUsdPerMTok": zod.number().nullable().describe('Price of one million input tokens, in micro-USD'),
+  "outputMicroUsdPerMTok": zod.number().nullable().describe('Price of one million output tokens, in micro-USD'),
+  "longContext": zod.object({
+  "aboveInputTokens": zod.number(),
+  "inputMicroUsdPerMTok": zod.number(),
+  "outputMicroUsdPerMTok": zod.number()
+}).nullable().describe('A dearer tier that applies to a request whose input is larger than `aboveInputTokens`')
+})),
+  "month": zod.object({
+  "providerCalls": zod.number().describe('Calls that reached the provider'),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "servedAsFallback": zod.number().describe('Successful calls this provider served after the other provider could not'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "costMicroUsd": zod.number().describe('Estimated cost in micro-USD'),
+  "byModel": zod.array(zod.object({
+  "model": zod.string(),
+  "providerCalls": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "costMicroUsd": zod.number(),
+  "priced": zod.boolean().describe('false = no price is configured for this model, so its cost is recorded as 0')
+}))
+}).describe('Month to date, all tenants and system calls, from the AI invocation ledger'),
+  "limit": zod.object({
+  "monthlyLimitMicroUsd": zod.number().nullable(),
+  "usedPct": zod.number().nullable(),
+  "state": zod.enum(['none', 'ok', 'approaching', 'reached'])
+})
+})),
+  "effective": zod.object({
+  "provider": zod.string().nullable(),
+  "model": zod.string().nullable(),
+  "fallbackProvider": zod.string().nullable(),
+  "fallbackModel": zod.string().nullable(),
+  "unavailable": zod.union([zod.literal('none_enabled'),zod.literal('none_configured'),zod.literal(null)]).nullable(),
+  "notes": zod.array(zod.string())
+}).describe('What serves a tenant without an override right now'),
+  "period": zod.object({
+  "from": zod.coerce.date(),
+  "resetAt": zod.coerce.date()
+}),
+  "pricingVersion": zod.string()
+})
+
+
+/**
  * @summary List canonical subscriptions with real filters and pagination
  */
 export const platformListSubscriptionsQueryPageDefault = 1;

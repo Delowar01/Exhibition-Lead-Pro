@@ -202,12 +202,16 @@ async function sweepCompany(companyId: number): Promise<void> {
     }
   }
 
-  // Failure rate over the last hour.
+  // Failure rate over the last hour — of REQUESTS, not of provider attempts: a first
+  // attempt that failed and whose fallback attempt ("<request id>-fb1") succeeded is a
+  // request that was served, so it counts neither as a request of its own nor as a
+  // failure. Otherwise an outage fully covered by the fallback would read as 50%.
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const recovered = sql`(${aiInvocationsTable.status} in ('error','timeout') and exists (select 1 from ai_invocations fb where fb.request_id = ${aiInvocationsTable.requestId} || '-fb1' and fb.status = 'success'))`;
   const [hour] = await db
     .select({
-      total: sql<number>`count(*)`,
-      failed: sql<number>`count(*) filter (where ${aiInvocationsTable.status} in ('error','timeout'))`,
+      total: sql<number>`count(*) filter (where not ${recovered})`,
+      failed: sql<number>`count(*) filter (where ${aiInvocationsTable.status} in ('error','timeout') and not ${recovered})`,
     })
     .from(aiInvocationsTable)
     .where(and(eq(aiInvocationsTable.companyId, companyId), gte(aiInvocationsTable.createdAt, hourAgo), providerFilter));

@@ -9,7 +9,7 @@ import * as workflow from "./ai-workflow.service.js";
 import * as executive from "./executive-intelligence.service.js";
 import * as copilot from "./ai-copilot.service.js";
 import * as insights from "./ai-insights.service.js";
-import { resolveSettings } from "./ai.service.js";
+import { resolveSettings, resolveRuntime } from "./ai.service.js";
 import { featureAllowedFor } from "../lib/feature-entitlements.js";
 import { FEATURE_LABEL, type PlanFeatureKey } from "../lib/billing/plan-versions.js";
 import { PROMPTS } from "../ai/prompts.js";
@@ -656,8 +656,9 @@ export async function getSuggestions(user: AuthUser, raw: { contextType?: unknow
   }
   if (can(user, "contacts", "view")) prompts.push({ label: "Find contacts", prompt: 'Show contacts from "..."' });
 
-  const [settings, recent] = await Promise.all([
+  const [settings, runtime, recent] = await Promise.all([
     resolveSettings(companyId).catch(() => null),
+    resolveRuntime(companyId).catch(() => null),
     repo.recentAssistantMessages(user, 8),
   ]);
 
@@ -670,7 +671,7 @@ export async function getSuggestions(user: AuthUser, raw: { contextType?: unknow
       executive: canUse(user, "ai_executive", "view"),
       workflow: canUse(user, "ai_workflow", "view"),
     },
-    provider: settings ? { provider: settings.provider, model: settings.model, enabled: settings.enabled } : null,
+    provider: settings && runtime ? { provider: runtime.provider, model: runtime.model, enabled: settings.enabled } : null,
     recentActivity: recent.map((m) => {
       const feature = deniedFeatureOf(user, m);
       return { id: m.id, conversationId: m.conversationId, intent: m.intent, content: (feature ? redactedContent(feature) : m.content).slice(0, 140), source: m.source, createdAt: m.createdAt.toISOString() };

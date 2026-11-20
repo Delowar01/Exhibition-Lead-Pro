@@ -167,7 +167,7 @@ export interface ErrorResponse {
   error: string;
   /** Correlates this response with server logs (also returned as the X-Request-Id header). */
   requestId?: string;
-  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when the AI provider holds no credential; no provider call is made; METRICS_UNAVAILABLE — 503 when GET /metrics cannot read the job-queue state). */
+  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when no enabled AI provider holds a credential; no provider call is made; AI_PROVIDER_UNAVAILABLE — 503 when no AI provider could serve a card-reading request; AI_PLATFORM_LIMIT_REACHED — 503 when the platform's monthly AI spending limit for the provider is reached; METRICS_UNAVAILABLE — 503 when GET /metrics cannot read the job-queue state). */
   code?: string;
   /** Present on rate-limit responses; mirrors the Retry-After header. */
   retryAfterSeconds?: number;
@@ -6422,6 +6422,279 @@ export interface AiFeatureFlags {
   lead_scoring: boolean;
   contact_enrichment: boolean;
   assignee_recommendation: boolean;
+}
+
+/**
+ * anthropic = Claude, gemini = Gemini
+ */
+export type PlatformAiProviderName = typeof PlatformAiProviderName[keyof typeof PlatformAiProviderName];
+
+
+export const PlatformAiProviderName = {
+  anthropic: 'anthropic',
+  gemini: 'gemini',
+} as const;
+
+export interface PlatformAiProviderPolicy {
+  /** A disabled provider serves no request — not as primary, not as fallback, not for a pinned tenant */
+  enabled: boolean;
+  /** One of the provider's selectable models (see `providers[].models`) */
+  model: string;
+  /**
+     * Monthly spending limit in micro-USD (1 USD = 1,000,000); null = no limit
+     * @minimum 0
+     * @nullable
+     */
+  monthlyLimitMicroUsd: number | null;
+}
+
+export interface PlatformAiTenantOverride {
+  /** @minimum 1 */
+  companyId: number;
+  provider: PlatformAiProviderName;
+  /**
+     * null = the provider's selected model
+     * @nullable
+     */
+  model: string | null;
+}
+
+export type PlatformAiPolicyProviders = {
+  anthropic: PlatformAiProviderPolicy;
+  gemini: PlatformAiProviderPolicy;
+};
+
+export interface PlatformAiPolicy {
+  providers: PlatformAiPolicyProviders;
+  primary: PlatformAiProviderName;
+  /** Try the other enabled, configured provider once when the first cannot serve a request */
+  fallbackEnabled: boolean;
+  /**
+     * Alert the platform owners when a provider's month-to-date spend reaches this share of its limit
+     * @minimum 1
+     * @maximum 100
+     */
+  alertThresholdPct: number;
+  /**
+     * Companies the platform owner has pinned to one provider
+     * @maxItems 200
+     */
+  tenantOverrides: PlatformAiTenantOverride[];
+}
+
+export interface UpdatePlatformAiProviders {
+  policy: PlatformAiPolicy;
+  /**
+     * The `version` the policy was read at (0 while nothing has been saved)
+     * @minimum 0
+     */
+  expectedVersion: number;
+  /** Send true to apply a change the server reported as affecting AI availability */
+  confirm?: boolean;
+}
+
+export interface PlatformAiModelUsage {
+  model: string;
+  providerCalls: number;
+  succeeded: number;
+  failed: number;
+  inputTokens: number;
+  outputTokens: number;
+  costMicroUsd: number;
+  /** false = no price is configured for this model, so its cost is recorded as 0 */
+  priced: boolean;
+}
+
+/**
+ * missing = no key on the server; present_unverified = a key is present and no call has been made with it since the server started; verified = the provider accepted it on the most recent call; rejected = the provider rejected it; account_stopped = the provider reported a billing problem or that the account's spend limit is reached.
+
+ */
+export type PlatformAiProviderStatusCredentialsState = typeof PlatformAiProviderStatusCredentialsState[keyof typeof PlatformAiProviderStatusCredentialsState];
+
+
+export const PlatformAiProviderStatusCredentialsState = {
+  missing: 'missing',
+  present_unverified: 'present_unverified',
+  verified: 'verified',
+  rejected: 'rejected',
+  account_stopped: 'account_stopped',
+} as const;
+
+export type PlatformAiProviderStatusCredentials = {
+  /** A key is present on the server (presence only) */
+  configured: boolean;
+  /** missing = no key on the server; present_unverified = a key is present and no call has been made with it since the server started; verified = the provider accepted it on the most recent call; rejected = the provider rejected it; account_stopped = the provider reported a billing problem or that the account's spend limit is reached.
+   */
+  state: PlatformAiProviderStatusCredentialsState;
+  /** @nullable */
+  checkedAt: string | null;
+  /** The NAME of the server environment variable that holds the key (never its value) */
+  envVar: string;
+};
+
+/**
+ * A dearer tier that applies to a request whose input is larger than `aboveInputTokens`
+ * @nullable
+ */
+export type PlatformAiProviderStatusModelsItemLongContext = {
+  aboveInputTokens: number;
+  inputMicroUsdPerMTok: number;
+  outputMicroUsdPerMTok: number;
+} | null;
+
+export type PlatformAiProviderStatusModelsItem = {
+  id: string;
+  /** true = a deterministic test model (never offered in production) */
+  simulated: boolean;
+  priced: boolean;
+  /**
+     * Price of one million input tokens, in micro-USD
+     * @nullable
+     */
+  inputMicroUsdPerMTok: number | null;
+  /**
+     * Price of one million output tokens, in micro-USD
+     * @nullable
+     */
+  outputMicroUsdPerMTok: number | null;
+  /**
+     * A dearer tier that applies to a request whose input is larger than `aboveInputTokens`
+     * @nullable
+     */
+  longContext: PlatformAiProviderStatusModelsItemLongContext;
+};
+
+/**
+ * Month to date, all tenants and system calls, from the AI invocation ledger
+ */
+export type PlatformAiProviderStatusMonth = {
+  /** Calls that reached the provider */
+  providerCalls: number;
+  succeeded: number;
+  failed: number;
+  /** Successful calls this provider served after the other provider could not */
+  servedAsFallback: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Estimated cost in micro-USD */
+  costMicroUsd: number;
+  byModel: PlatformAiModelUsage[];
+};
+
+export type PlatformAiProviderStatusLimitState = typeof PlatformAiProviderStatusLimitState[keyof typeof PlatformAiProviderStatusLimitState];
+
+
+export const PlatformAiProviderStatusLimitState = {
+  none: 'none',
+  ok: 'ok',
+  approaching: 'approaching',
+  reached: 'reached',
+} as const;
+
+export type PlatformAiProviderStatusLimit = {
+  /** @nullable */
+  monthlyLimitMicroUsd: number | null;
+  /** @nullable */
+  usedPct: number | null;
+  state: PlatformAiProviderStatusLimitState;
+};
+
+export interface PlatformAiProviderStatus {
+  provider: PlatformAiProviderName;
+  label: string;
+  enabled: boolean;
+  model: string;
+  credentials: PlatformAiProviderStatusCredentials;
+  models: PlatformAiProviderStatusModelsItem[];
+  /** Month to date, all tenants and system calls, from the AI invocation ledger */
+  month: PlatformAiProviderStatusMonth;
+  limit: PlatformAiProviderStatusLimit;
+}
+
+export type PlatformAiProvidersPolicyProviders = {
+  anthropic: PlatformAiProviderPolicy;
+  gemini: PlatformAiProviderPolicy;
+};
+
+export type PlatformAiProvidersPolicyTenantOverridesItem = {
+  companyId: number;
+  /** @nullable */
+  companyName: string | null;
+  provider: PlatformAiProviderName;
+  /** @nullable */
+  model: string | null;
+};
+
+export type PlatformAiProvidersPolicy = {
+  providers: PlatformAiProvidersPolicyProviders;
+  primary: PlatformAiProviderName;
+  fallbackEnabled: boolean;
+  alertThresholdPct: number;
+  tenantOverrides: PlatformAiProvidersPolicyTenantOverridesItem[];
+};
+
+/**
+ * unavailable = the settings table has not been added to this database; the defaults apply and cannot be changed
+ */
+export type PlatformAiProvidersStorage = typeof PlatformAiProvidersStorage[keyof typeof PlatformAiProvidersStorage];
+
+
+export const PlatformAiProvidersStorage = {
+  ok: 'ok',
+  unavailable: 'unavailable',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PlatformAiProvidersEffectiveUnavailable = typeof PlatformAiProvidersEffectiveUnavailable[keyof typeof PlatformAiProvidersEffectiveUnavailable] | null;
+
+
+export const PlatformAiProvidersEffectiveUnavailable = {
+  none_enabled: 'none_enabled',
+  none_configured: 'none_configured',
+} as const;
+
+/**
+ * What serves a tenant without an override right now
+ */
+export type PlatformAiProvidersEffective = {
+  /** @nullable */
+  provider: string | null;
+  /** @nullable */
+  model: string | null;
+  /** @nullable */
+  fallbackProvider: string | null;
+  /** @nullable */
+  fallbackModel: string | null;
+  /** @nullable */
+  unavailable: PlatformAiProvidersEffectiveUnavailable;
+  notes: string[];
+};
+
+export type PlatformAiProvidersPeriod = {
+  from: string;
+  resetAt: string;
+};
+
+export interface PlatformAiProviders {
+  policy: PlatformAiProvidersPolicy;
+  /** 0 while nothing has been saved (the defaults are in effect) */
+  version: number;
+  persisted: boolean;
+  /** unavailable = the settings table has not been added to this database; the defaults apply and cannot be changed */
+  storage: PlatformAiProvidersStorage;
+  /** @nullable */
+  updatedAt: string | null;
+  /** @nullable */
+  updatedByName: string | null;
+  /** true outside production only — deterministic test models may be selected */
+  simulationAvailable: boolean;
+  providers: PlatformAiProviderStatus[];
+  /** What serves a tenant without an override right now */
+  effective: PlatformAiProvidersEffective;
+  period: PlatformAiProvidersPeriod;
+  pricingVersion: string;
 }
 
 export type AiSettingsResponseBudgetSourceTokens = typeof AiSettingsResponseBudgetSourceTokens[keyof typeof AiSettingsResponseBudgetSourceTokens];

@@ -1,21 +1,13 @@
-import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ds";
+import { AiProvidersSettings } from "@/components/platform/AiProvidersSettings";
 
+// Platform Owner → Settings. Platform-wide configuration that takes effect without a
+// deployment. Each area is its own section; AI Providers is the first.
 export default function PlatformSettings() {
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Platform Configuration</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">Settings configuration area.</p>
-        </CardContent>
-      </Card>
+    <div>
+      <PageHeader title="Settings" description="Platform-wide configuration. Changes here apply to every company." />
+      <AiProvidersSettings />
     </div>
   );
 }

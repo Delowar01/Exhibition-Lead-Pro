@@ -10,9 +10,23 @@ import { config } from "../config.js";
 export function estimateCostMicroUsd(model: string, inputTokens: number, outputTokens: number): number {
   const price = config.ai.pricing[model];
   if (!price) return 0;
-  const cost =
-    (inputTokens / 1000) * price.inputPer1kMicroUsd + (outputTokens / 1000) * price.outputPer1kMicroUsd;
+  // Some models charge a dearer rate for the whole request once the prompt passes a
+  // size (the provider's "long context" tier); the cheaper rate must never be
+  // assumed for such a request.
+  const rate = price.longContext && inputTokens > price.longContext.aboveInputTokens ? price.longContext : price;
+  const cost = (inputTokens / 1000) * rate.inputPer1kMicroUsd + (outputTokens / 1000) * rate.outputPer1kMicroUsd;
   return Math.max(0, Math.round(cost));
+}
+
+/**
+ * The dearest rates a model can charge (its long-context tier where it has one) — for
+ * reserving budget before a call, when the size of the prompt is not yet known.
+ */
+export function ceilingCostMicroUsd(model: string, inputTokens: number, outputTokens: number): number {
+  const price = config.ai.pricing[model];
+  if (!price) return 0;
+  const rate = price.longContext ?? price;
+  return Math.max(0, Math.round((inputTokens / 1000) * rate.inputPer1kMicroUsd + (outputTokens / 1000) * rate.outputPer1kMicroUsd));
 }
 
 // True when we have a published price for the model (so a non-null cost estimate).

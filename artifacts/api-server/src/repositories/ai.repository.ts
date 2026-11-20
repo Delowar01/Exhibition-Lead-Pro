@@ -174,7 +174,10 @@ const AGG = {
   errors: sql<number>`count(*) filter (where ${aiInvocationsTable.status} in ('error','timeout'))`,
   cacheHits: sql<number>`count(*) filter (where ${aiInvocationsTable.status} = 'cache_hit')`,
   dedupReused: sql<number>`count(*) filter (where ${aiInvocationsTable.status} = 'dedup_reused')`,
-  budgetDenied: sql<number>`count(*) filter (where ${aiInvocationsTable.status} = 'budget_denied')`,
+  // A request stopped by the PLATFORM's spending limit for a provider is recorded as
+  // budget_denied / platform_limit: it is not this tenant's budget and is not counted
+  // as one (the Platform Owner sees it on Settings → AI Providers).
+  budgetDenied: sql<number>`count(*) filter (where ${aiInvocationsTable.status} = 'budget_denied' and ${aiInvocationsTable.errorCategory} is distinct from 'platform_limit')`,
   rateLimited: sql<number>`count(*) filter (where ${aiInvocationsTable.status} = 'rate_limited')`,
   estimatedRows: sql<number>`count(*) filter (where ${aiInvocationsTable.estimatedUsage} = true)`,
   inputTokens: sql<number>`coalesce(sum(${aiInvocationsTable.inputTokens}),0)`,

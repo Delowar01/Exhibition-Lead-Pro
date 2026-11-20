@@ -421,7 +421,21 @@ for (const width of [1440, 1280, 1279, 1024, 820, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await seedAs(page, platform);
     await openWithAllStatuses(page);
-    await page.waitForTimeout(300);
+    // The ring animates in: measure it once its box has stopped changing (a fixed pause
+    // measured it mid-animation on a busy machine).
+    const ringWidth = () => page.getByTestId("dashboard-subscription-status").locator(".recharts-pie").evaluate((el) => Math.round(el.getBoundingClientRect().width));
+    let lastWidth = -1;
+    await expect
+      .poll(
+        async () => {
+          const now = await ringWidth();
+          const stable = now === lastWidth;
+          lastWidth = now;
+          return stable;
+        },
+        { timeout: 8000, intervals: [250] },
+      )
+      .toBe(true);
     const m = await page.getByTestId("dashboard-subscription-status").evaluate((root) => {
       const box = (el: Element) => {
         const r = el.getBoundingClientRect();

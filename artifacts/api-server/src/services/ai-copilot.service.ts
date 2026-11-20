@@ -16,10 +16,11 @@ import {
   coachDeal,
   summarizeConversation,
   logAiError,
+  servedBy,
   type AiContext,
 } from "../lib/ai.js";
 import type { AiFeature } from "../ai/types.js";
-import { resolveSettings } from "./ai.service.js";
+import { resolveRuntime } from "./ai.service.js";
 import * as copilotRepo from "../repositories/ai_copilot_outputs.repository.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import type { EntityType, OutputType, UpsertCopilotOutputInput } from "../repositories/ai_copilot_outputs.repository.js";
@@ -432,13 +433,15 @@ export async function generateOutput(
     bypassDedup: opts.regenerate === true,
   };
 
-  let runtime: { provider?: string; model?: string } = {};
+  // Provenance of an AI-sourced output: the provider and model that actually served
+  // the call (the fallback provider when it answered), else what the policy would use.
+  let configured: { provider?: string; model?: string } = {};
   try {
-    const s = await resolveSettings(cid);
-    runtime = { provider: s.provider, model: s.model };
+    configured = await resolveRuntime(cid);
   } catch {
-    runtime = {};
+    configured = {};
   }
+  const runtime = servedBy(ctx, configured);
 
   const hints = buildHints(opts);
   const contextText =

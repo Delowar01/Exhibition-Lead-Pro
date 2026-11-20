@@ -45,6 +45,7 @@ export * from "./assignment_cursors";
 export * from "./saved_searches";
 export * from "./recent_searches";
 export * from "./ai_settings";
+export * from "./platform_settings";
 export * from "./ai_invocations";
 export * from "./ai_insights";
 export * from "./ai_copilot_outputs";

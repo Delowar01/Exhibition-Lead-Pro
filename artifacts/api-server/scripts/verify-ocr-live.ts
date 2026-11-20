@@ -1,13 +1,29 @@
 /**
- * Batch 7 — REAL Gemini Vision OCR verification (NOT part of the automated suite).
+ * Batch 7 — REAL vision OCR verification against a LIVE AI provider (NOT part of the
+ * automated suite; it is BILLABLE and is run only deliberately, by the operator).
  *
  * Sends the 8 generated fixture images (scripts/ocr-fixtures/) through the real
- * POST /api/scans pipeline against live Gemini 2.5 Flash under a throwaway tenant,
- * records per-image acceptance/extraction/field accuracy/token usage from the
- * ai_invocations ledger, prints a report, and writes scripts/ocr-live-report.json.
- * The throwaway tenant is deleted at the end; the report file is the evidence.
+ * POST /api/scans pipeline under a throwaway tenant, records per-image acceptance /
+ * extraction / field accuracy / token usage from the ai_invocations ledger, prints a
+ * report, and writes scripts/ocr-live-report.json. The throwaway tenant is deleted at the
+ * end; the report file is the evidence.
  *
- * Run (dev server must be up): npx tsx scripts/verify-ocr-live.ts
+ * WHICH PROVIDER. Since the platform AI provider policy, a tenant setting no longer
+ * selects the provider — the policy does. This script therefore has to be TOLD which
+ * provider it is verifying, and refuses to make a single provider call otherwise:
+ *
+ *   VERIFY_AI_PROVIDER=anthropic   (Claude)   or   VERIFY_AI_PROVIDER=gemini
+ *
+ * It pins its throwaway company to that provider through a company override in the
+ * policy (removed again at the end), confirms from GET /ai/health that this provider —
+ * with a key on the server — is what will serve the tenant, and only then scans. The
+ * report names the provider and model taken from the ledger rows, never from an
+ * assumption, and says so if any row was served by another provider (a fallback).
+ *
+ * Run (dev server must be up):
+ *   VERIFY_AI_PROVIDER=anthropic npx tsx scripts/verify-ocr-live.ts
+ *
+ * Written with the provider policy and NOT YET EXECUTED against a live provider.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -93,11 +109,54 @@ function inventedFields(extracted: Fields, truthKeys: string[]): string[] {
     .map(([k, v]) => `${k}=${String(v).slice(0, 60)}`);
 }
 
+type Wanted = "anthropic" | "gemini";
+
+interface PolicyStatus {
+  version: number;
+  policy: {
+    primary: string;
+    fallbackEnabled: boolean;
+    alertThresholdPct: number;
+    providers: { anthropic: Record<string, unknown>; gemini: Record<string, unknown> };
+    tenantOverrides: Array<{ companyId: number; provider: string; model: string | null }>;
+  };
+}
+
+/** The policy as the API takes it back: the company names of the status are for reading only. */
+function policyOf(status: PolicyStatus) {
+  const p = status.policy;
+  return {
+    primary: p.primary,
+    fallbackEnabled: p.fallbackEnabled,
+    alertThresholdPct: p.alertThresholdPct,
+    providers: { anthropic: { ...p.providers.anthropic }, gemini: { ...p.providers.gemini } },
+    tenantOverrides: p.tenantOverrides.map((o) => ({ companyId: o.companyId, provider: o.provider, model: o.model })),
+  };
+}
+
+/** Adds (provider given) or removes (null) the throwaway company's override. Throws unless the API accepts it. */
+async function setOverride(platformToken: string, companyId: number, provider: Wanted | null): Promise<void> {
+  const current = await api("GET", "/platform/ai/providers", platformToken);
+  if (current.status !== 200) throw new Error(`could not read the AI provider policy: ${current.status}`);
+  const status = (await current.json()) as PolicyStatus;
+  const policy = policyOf(status);
+  policy.tenantOverrides = policy.tenantOverrides.filter((o) => o.companyId !== companyId);
+  if (provider) policy.tenantOverrides.push({ companyId, provider, model: null });
+  // No `confirm`: if the server holds the change back, this script stops rather than confirm for the operator.
+  const res = await api("PUT", "/platform/ai/providers", platformToken, { policy, expectedVersion: status.version });
+  if (res.status !== 200) throw new Error(`the AI provider policy was not changed: ${res.status} ${(await res.text()).slice(0, 300)}`);
+}
+
 async function main() {
-  console.log("== Batch 7 live OCR verification (real Gemini 2.5 Flash) ==");
+  const wanted = (process.env.VERIFY_AI_PROVIDER ?? "").trim().toLowerCase();
+  if (wanted !== "anthropic" && wanted !== "gemini") {
+    console.error("Set VERIFY_AI_PROVIDER=anthropic or VERIFY_AI_PROVIDER=gemini. Nothing was called.");
+    process.exit(2);
+  }
+  console.log(`== Live OCR verification — provider under test: ${wanted} (billable) ==`);
   const platformToken = await loginToken(PLATFORM);
 
-  // Throwaway tenant with real-Gemini settings and no budget constraints.
+  // Throwaway tenant with no budget constraints.
   const createCo = await api("POST", "/companies", platformToken, { name: `QA OCR Live ${SUFFIX}`, plan: "professional" });
   if (createCo.status !== 201) throw new Error(`company create failed: ${createCo.status}`);
   const companyId = (await createCo.json()).id as number;
@@ -108,10 +167,35 @@ async function main() {
   });
   if (cu.status !== 201) throw new Error(`user create failed: ${cu.status}`);
   const adminToken = await loginToken({ email: adminEmail, password: PW });
-  const st = await api("PATCH", "/ai/settings", adminToken, {
-    enabled: true, provider: "gemini", model: "gemini-2.5-flash", monthlyTokenBudget: null, monthlyCostBudgetUsd: null,
-  });
-  if (st.status !== 200) throw new Error(`ai settings failed: ${st.status} ${await st.text()}`);
+  const cleanup = async () => {
+    await db.delete(aiInvocationsTable).where(eq(aiInvocationsTable.companyId, companyId));
+    await db.delete(aiUsageReservationsTable).where(eq(aiUsageReservationsTable.companyId, companyId));
+    await db.delete(aiSettingsTable).where(eq(aiSettingsTable.companyId, companyId));
+    await db.delete(scansTable).where(eq(scansTable.companyId, companyId));
+    await db.delete(contactsTable).where(eq(contactsTable.companyId, companyId));
+    await db.delete(usersTable).where(eq(usersTable.companyId, companyId));
+    await db.delete(companiesTable).where(eq(companiesTable.id, companyId));
+  };
+
+  // BEFORE any provider call: pin the throwaway company to the provider under test and
+  // confirm that it — with a key on the server — is what will serve it.
+  let pinned = false;
+  try {
+    const st = await api("PATCH", "/ai/settings", adminToken, { enabled: true, monthlyTokenBudget: null, monthlyCostBudgetUsd: null });
+    if (st.status !== 200) throw new Error(`ai settings failed: ${st.status} ${await st.text()}`);
+    await setOverride(platformToken, companyId, wanted);
+    pinned = true;
+    const health = (await (await api("GET", "/ai/health", adminToken)).json()) as { provider?: string; model?: string; configured?: boolean };
+    if (health.provider !== wanted || health.configured !== true) {
+      throw new Error(`the tenant would be served by "${health.provider}" (configured: ${health.configured}), not by "${wanted}" — is ${wanted} enabled in Settings → AI Providers, and is its key on the server?`);
+    }
+    console.log(`Serving provider confirmed: ${health.provider} · ${health.model}`);
+  } catch (err) {
+    console.error(`Aborted before any provider call: ${err instanceof Error ? err.message : String(err)}`);
+    if (pinned) await setOverride(platformToken, companyId, null).catch(() => console.error("WARNING: remove the override of the throwaway company in Settings → AI Providers."));
+    await cleanup();
+    process.exit(2);
+  }
 
   const plan: Array<{ file: string; appLanguage: "en" | "ar"; truth: Record<string, string> | null }> = [
     { file: "english-clean.jpg", appLanguage: "en", truth: ENGLISH_CARD as unknown as Record<string, string> },
@@ -170,7 +254,7 @@ async function main() {
     if (!extracted && res.status >= 400) console.log(`    error: ${String(body.error ?? "").slice(0, 160)}`);
   }
 
-  // Ledger: token usage per invocation (proves REAL Gemini was billed/used).
+  // Ledger: token usage per invocation (proves the REAL provider was used, and which one).
   const rows = await db
     .select()
     .from(aiInvocationsTable)
@@ -183,19 +267,18 @@ async function main() {
   console.log("\n== card_extraction ledger rows ==");
   for (const l of ledger) console.log(JSON.stringify(l));
 
-  const report = { ranAt: new Date().toISOString(), provider: "gemini", model: "gemini-2.5-flash", results, ledger };
+  // The provider and model come from the ledger — what actually ran — never from an assumption.
+  const servedBy = [...new Set(ledger.filter((l) => ["success", "error", "timeout"].includes(l.status)).map((l) => `${l.provider}/${l.model}`))];
+  const otherProviders = [...new Set(ledger.map((l) => l.provider).filter((prov) => prov !== wanted))];
+  if (otherProviders.length > 0) console.log(`\nNOTE: some rows were served by another provider (${otherProviders.join(", ")}) — a fallback happened; this run is not a clean verification of ${wanted}.`);
+  const report = { ranAt: new Date().toISOString(), providerUnderTest: wanted, servedBy, cleanRun: otherProviders.length === 0, results, ledger };
   await fs.writeFile(path.join(__dirname, "ocr-live-report.json"), JSON.stringify(report, null, 2));
   console.log(`\nReport written to scripts/ocr-live-report.json`);
 
-  // Cleanup throwaway tenant (report file is the persistent evidence).
-  await db.delete(aiInvocationsTable).where(eq(aiInvocationsTable.companyId, companyId));
-  await db.delete(aiUsageReservationsTable).where(eq(aiUsageReservationsTable.companyId, companyId));
-  await db.delete(aiSettingsTable).where(eq(aiSettingsTable.companyId, companyId));
-  await db.delete(scansTable).where(eq(scansTable.companyId, companyId));
-  await db.delete(contactsTable).where(eq(contactsTable.companyId, companyId));
-  await db.delete(usersTable).where(eq(usersTable.companyId, companyId));
-  await db.delete(companiesTable).where(eq(companiesTable.id, companyId));
-  console.log("Throwaway tenant cleaned up.");
+  // Remove the override, then the throwaway tenant (the report file is the persistent evidence).
+  await setOverride(platformToken, companyId, null).catch((err) => console.error(`WARNING: the override of company ${companyId} was not removed (${err instanceof Error ? err.message : String(err)}) — remove it in Settings → AI Providers.`));
+  await cleanup();
+  console.log("Override removed; throwaway tenant cleaned up.");
   process.exit(0);
 }
 

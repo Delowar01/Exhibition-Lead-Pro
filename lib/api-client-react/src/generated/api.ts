@@ -272,6 +272,7 @@ import type {
   PipelineStageReorderInput,
   PipelineView,
   Plan,
+  PlatformAiProviders,
   PlatformAnalyticsActivity,
   PlatformAnalyticsAi,
   PlatformAnalyticsGrowth,
@@ -390,6 +391,7 @@ import type {
   UnreadCountResponse,
   UpdateAiSettings,
   UpdateNotificationPreferenceInput,
+  UpdatePlatformAiProviders,
   User,
   UserDetail,
   UserInput,
@@ -4103,6 +4105,158 @@ export function useGetPlatformAnalyticsOperations<TData = Awaited<ReturnType<typ
 
 
 
+
+export const getGetPlatformAiProvidersUrl = () => {
+
+
+
+
+  return `/api/platform/ai/providers`
+}
+
+/**
+ * Platform owner only. Never returns a credential, a part of one or its length — only whether a key is present on the server and what the provider last said about it.
+
+ * @summary The AI provider policy with each provider's readiness, month-to-date usage and spending limit
+ */
+export const getPlatformAiProviders = async ( options?: RequestInit): Promise<PlatformAiProviders> => {
+
+  return customFetch<PlatformAiProviders>(getGetPlatformAiProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformAiProvidersQueryKey = () => {
+    return [
+    `/api/platform/ai/providers`
+    ] as const;
+    }
+
+
+export const getGetPlatformAiProvidersQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformAiProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAiProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformAiProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformAiProviders>>> = ({ signal }) => getPlatformAiProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformAiProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformAiProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformAiProviders>>>
+export type GetPlatformAiProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary The AI provider policy with each provider's readiness, month-to-date usage and spending limit
+ */
+
+export function useGetPlatformAiProviders<TData = Awaited<ReturnType<typeof getPlatformAiProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformAiProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformAiProvidersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdatePlatformAiProvidersUrl = () => {
+
+
+
+
+  return `/api/platform/ai/providers`
+}
+
+/**
+ * Platform owner only. The body carries the COMPLETE policy and the version it was read at. A change that reduces AI availability is refused with 409 AI_POLICY_CONFIRMATION_REQUIRED (the reasons are in `context.warnings`) until it is sent again with `confirm: true`. A stale `expectedVersion` is refused with 409 AI_POLICY_VERSION_CONFLICT.
+
+ * @summary Replace the AI provider policy (audited; takes effect without a deployment)
+ */
+export const updatePlatformAiProviders = async (updatePlatformAiProviders: UpdatePlatformAiProviders, options?: RequestInit): Promise<PlatformAiProviders> => {
+
+  return customFetch<PlatformAiProviders>(getUpdatePlatformAiProvidersUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updatePlatformAiProviders,)
+  }
+);}
+
+
+
+
+export const getUpdatePlatformAiProvidersMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlatformAiProviders>>, TError,{data: BodyType<UpdatePlatformAiProviders>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePlatformAiProviders>>, TError,{data: BodyType<UpdatePlatformAiProviders>}, TContext> => {
+
+const mutationKey = ['updatePlatformAiProviders'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePlatformAiProviders>>, {data: BodyType<UpdatePlatformAiProviders>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updatePlatformAiProviders(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePlatformAiProvidersMutationResult = NonNullable<Awaited<ReturnType<typeof updatePlatformAiProviders>>>
+    export type UpdatePlatformAiProvidersMutationBody = BodyType<UpdatePlatformAiProviders>
+    export type UpdatePlatformAiProvidersMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Replace the AI provider policy (audited; takes effect without a deployment)
+ */
+export const useUpdatePlatformAiProviders = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlatformAiProviders>>, TError,{data: BodyType<UpdatePlatformAiProviders>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePlatformAiProviders>>,
+        TError,
+        {data: BodyType<UpdatePlatformAiProviders>},
+        TContext
+      > => {
+      return useMutation(getUpdatePlatformAiProvidersMutationOptions(options));
+    }
 
 export const getPlatformListSubscriptionsUrl = (params?: PlatformListSubscriptionsParams,) => {
   const normalizedParams = new URLSearchParams();

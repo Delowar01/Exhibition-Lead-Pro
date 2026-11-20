@@ -106,6 +106,8 @@ function StatCard({ title, value, icon: Icon, hint }: { title: string; value: st
   );
 }
 
+const AI_PROVIDER_NAME: Record<string, string> = { anthropic: "Claude (Anthropic)", gemini: "Gemini (Google)", stub: "Test provider" };
+
 interface SettingsFormProps {
   settings: AiSettingsResponse;
   canEdit: boolean;
@@ -117,8 +119,6 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
   const update = useUpdateAiSettings();
 
   const [enabled, setEnabled] = React.useState(settings.enabled);
-  const [provider, setProvider] = React.useState(settings.provider);
-  const [model, setModel] = React.useState(settings.model);
   const [flags, setFlags] = React.useState<Record<FeatureKey, boolean>>({
     card_extraction: settings.featureFlags.card_extraction,
     lead_scoring: settings.featureFlags.lead_scoring,
@@ -166,8 +166,6 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
     const costChanged = costBudget.trim() !== shownBudgets.current.cost.trim();
     const body: UpdateAiSettings = {
       enabled,
-      provider,
-      model: model.trim(),
       featureFlags: flags,
       ...(tokenChanged ? { monthlyTokenBudget: nextTokenBudget } : {}),
       ...(costChanged ? { monthlyCostBudgetUsd: nextCostBudget } : {}),
@@ -218,27 +216,26 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
           <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!canEdit} />
         </div>
 
-        {/* Provider + model */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Provider</Label>
-            <Select value={provider} onValueChange={setProvider} disabled={!canEdit}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {settings.availableProviders.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ai-model">Model</Label>
-            <Input id="ai-model" value={model} onChange={(e) => setModel(e.target.value)} disabled={!canEdit} />
-          </div>
+        {/* Provider + model: chosen by the platform, shown here as they apply now. */}
+        <div className="rounded-lg border p-4" data-testid="ai-provider-readonly">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-sm text-muted-foreground">Provider</dt>
+              <dd className="mt-0.5 font-medium" data-testid="ai-provider-name">
+                {AI_PROVIDER_NAME[settings.provider] ?? settings.provider}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-sm text-muted-foreground">Model</dt>
+              <dd className="mt-0.5 font-medium [overflow-wrap:anywhere]" data-testid="ai-provider-model">
+                {settings.model}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs text-muted-foreground">
+            The AI provider and model are chosen by the platform and apply to every AI feature. Your controls and budgets below apply whichever
+            provider is in use.
+          </p>
         </div>
 
         {/* Feature flags */}
@@ -369,14 +366,14 @@ function HealthCard({ from, to }: { from: string; to: string }) {
           Provider Health
         </CardTitle>
         <CardDescription>
-          {health.provider} · {health.model}
+          {AI_PROVIDER_NAME[health.provider] ?? health.provider} · {health.model}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2">
           <StatusIcon className={`h-5 w-5 ${s.color}`} />
           <span className={`font-medium ${s.color}`}>{s.label}</span>
-          {!health.configured && <Badge variant="destructive">API key missing</Badge>}
+          {!health.configured && <Badge variant="destructive">No provider available</Badge>}
           {!health.pricingAvailable && <Badge variant="secondary">Pricing unavailable</Badge>}
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

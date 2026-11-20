@@ -2,11 +2,12 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// MOBILE-R1 — the AI provider credential MUST stay server-side. Nothing that is
-// compiled into the client bundle or the build profiles may name or carry it:
-// no Gemini key, no AI_INTEGRATIONS_* proxy credential, no EXPO_PUBLIC_* variable
-// that would expose one. The only public build-time variables are the server
-// origin / domain and the EAS project id.
+// MOBILE-R1 — the AI provider credentials MUST stay server-side. Nothing that is
+// compiled into the client bundle or the build profiles may name or carry one:
+// no Gemini key, no Anthropic (Claude) key, no AI_INTEGRATIONS_* proxy credential, no
+// EXPO_PUBLIC_* variable that would expose one. The only public build-time variables
+// are the server origin / domain and the EAS project id. The app never talks to an AI
+// provider: every AI request goes to the API, which holds the keys.
 const ROOT = join(__dirname, "..");
 const SCAN_DIRS = ["app", "components", "constants", "contexts", "hooks", "lib"];
 const SCAN_FILES = ["app.json", "eas.json", "package.json"];
@@ -15,7 +16,10 @@ const FORBIDDEN: { name: string; re: RegExp }[] = [
   { name: "a Gemini key name", re: /GEMINI_API_KEY/ },
   { name: "a Gemini proxy credential name", re: /AI_INTEGRATIONS_GEMINI/ },
   { name: "a Google API key literal", re: /AIza[0-9A-Za-z_-]{30,}/ },
-  { name: "a public env variable carrying a key or secret", re: /EXPO_PUBLIC_[A-Z0-9_]*(KEY|SECRET|TOKEN|GEMINI)/ },
+  { name: "an Anthropic key name", re: /ANTHROPIC_(API_KEY|AUTH_TOKEN)/ },
+  { name: "an Anthropic API key literal", re: /sk-ant-[0-9A-Za-z_-]{16,}/ },
+  { name: "an AI provider SDK or endpoint", re: /@anthropic-ai\/|api\.anthropic\.com|generativelanguage\.googleapis\.com|@google\/genai/ },
+  { name: "a public env variable carrying a key or secret", re: /EXPO_PUBLIC_[A-Z0-9_]*(KEY|SECRET|TOKEN|GEMINI|ANTHROPIC|CLAUDE)/ },
 ];
 
 function walk(dir: string, out: string[]): void {
@@ -28,7 +32,7 @@ function walk(dir: string, out: string[]): void {
 }
 
 describe("no AI credential is bundled into the mobile client", () => {
-  it("no source, locale, config or build-profile file names or carries a Gemini / AI proxy credential", () => {
+  it("no source, locale, config or build-profile file names or carries a Gemini, Anthropic or AI proxy credential — and none talks to an AI provider", () => {
     const files: string[] = [];
     for (const d of SCAN_DIRS) walk(join(ROOT, d), files);
     for (const f of SCAN_FILES) files.push(join(ROOT, f));

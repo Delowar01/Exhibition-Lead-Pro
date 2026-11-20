@@ -244,9 +244,37 @@ export const config = {
   },
 
   ai: {
-    // Active AI provider (Stage 5.0). Gemini is the sole active provider; the
-    // abstraction layer (src/ai/) supports adding more without touching callers.
+    // Legacy system default (Stage 5.0), kept for calls with no tenant context that
+    // are refused before any provider is resolved (ledger attribution only). Which
+    // provider serves a request is decided by the Platform Owner's AI provider policy
+    // (src/ai/policy.ts, stored in platform_settings) — not by this value.
     provider: process.env.AI_PROVIDER ?? "gemini",
+    // The primary provider when NO policy has been saved yet. The owner's preference is
+    // Claude; a provider without credentials is skipped, so an environment that has
+    // only a Gemini key keeps working on Gemini exactly as before. An explicitly set
+    // AI_PROVIDER (the pre-policy variable) is honoured as the default primary.
+    defaultPrimaryProvider: ((): "anthropic" | "gemini" => {
+      const raw = (process.env.AI_DEFAULT_PRIMARY_PROVIDER ?? process.env.AI_PROVIDER ?? "anthropic").trim().toLowerCase();
+      return raw === "gemini" ? "gemini" : "anthropic";
+    })(),
+    // Anthropic (Claude) — the key lives ONLY in the server environment. It is never
+    // stored in the database, never returned by any endpoint and never sent to a
+    // browser or to the mobile app. The base URL is pinned here on purpose: an
+    // ambient ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN of the host is NOT honoured.
+    anthropic: {
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      baseUrl: process.env.AI_ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
+      // Reasoning depth for Claude (output_config.effort). The product's calls are
+      // short, structured extractions and drafts, so the least expensive level is
+      // the default; raise it per environment if quality calls for it.
+      effort: ((): "low" | "medium" | "high" | "xhigh" | "max" => {
+        const raw = (process.env.AI_ANTHROPIC_EFFORT ?? "low").trim().toLowerCase();
+        return raw === "medium" || raw === "high" || raw === "xhigh" || raw === "max" ? raw : "low";
+      })(),
+      // Claude's reasoning is billed as output and counts toward max_tokens, so a
+      // feature's small output cap is raised to at least this much for Claude.
+      minMaxTokens: numEnv("AI_ANTHROPIC_MIN_MAX_TOKENS", 4_096, 256),
+    },
     // Gemini credentials — either the Replit AI integration proxy pair
     // (AI_INTEGRATIONS_GEMINI_API_KEY + AI_INTEGRATIONS_GEMINI_BASE_URL) or a
     // direct Google Gemini API key (GEMINI_API_KEY, portable/self-hosted).
@@ -258,6 +286,15 @@ export const config = {
       baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
     },
     model: "gemini-2.5-flash",
+    // Models a Platform Owner may select, per provider; the first is that provider's
+    // default. Every model listed here has a price in `pricing` below — a model
+    // without a price can never be selected (its cost could not be budgeted).
+    // Identifiers and prices: Anthropic "Models overview" and "Pricing"
+    // (platform.claude.com/docs, read 2026-11-20).
+    models: {
+      anthropic: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+      gemini: ["gemini-2.5-flash"],
+    } as Record<"anthropic" | "gemini", string[]>,
     extractionTimeoutMs: 30_000,
     scoringTimeoutMs: 20_000,
     maxOutputTokens: 8192,
@@ -280,20 +317,71 @@ export const config = {
     // pricingVersion identifies the pricing configuration in effect; it is stamped on
     // every ledger row at invocation time so historical totals never change when
     // prices are updated (bump the version when changing any rate).
-    pricingVersion: process.env.AI_PRICING_VERSION ?? "v1-2025-06-defaults",
+    pricingVersion: process.env.AI_PRICING_VERSION ?? "v2-2026-11-claude-gemini",
     pricing: {
       "gemini-2.5-flash": {
         inputPer1kMicroUsd: numEnv("AI_PRICE_FLASH_INPUT_PER1K_MICROUSD", 300, 0),
         outputPer1kMicroUsd: numEnv("AI_PRICE_FLASH_OUTPUT_PER1K_MICROUSD", 2_500, 0),
+      },
+      // Claude — USD per million tokens on the pricing page, here per 1,000 tokens in
+      // micro-USD ($4 / MTok = 4,000). Opus 5.5: $4 in / $20 out. Sonnet 5.5: $2 / $10.
+      // Haiku 5.5: $0.10 / $0.50 for prompts up to 100,000 tokens, $0.50 / $2.50 above.
+      "claude-opus-5-5": {
+        inputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_OPUS_INPUT_PER1K_MICROUSD", 4_000, 0),
+        outputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_OPUS_OUTPUT_PER1K_MICROUSD", 20_000, 0),
+      },
+      "claude-sonnet-5-5": {
+        inputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_SONNET_INPUT_PER1K_MICROUSD", 2_000, 0),
+        outputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_SONNET_OUTPUT_PER1K_MICROUSD", 10_000, 0),
+      },
+      "claude-haiku-5-5": {
+        inputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_HAIKU_INPUT_PER1K_MICROUSD", 100, 0),
+        outputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_HAIKU_OUTPUT_PER1K_MICROUSD", 500, 0),
+        longContext: {
+          aboveInputTokens: 100_000,
+          inputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_HAIKU_LONG_INPUT_PER1K_MICROUSD", 500, 0),
+          outputPer1kMicroUsd: numEnv("AI_PRICE_CLAUDE_HAIKU_LONG_OUTPUT_PER1K_MICROUSD", 2_500, 0),
+        },
       },
       // Deterministic stub provider models (non-production only; see providers/stub.ts).
       // Priced like flash so cost-estimation paths are testable without live Gemini.
       ...(nodeEnv !== "production"
         ? {
             "stub-model": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            // The typed-failure models are priced too, so a failing provider can be
+            // exercised under an enforced cost budget or spending limit ("stub-unpriced"
+            // stays without a price on purpose).
+            "stub-unavailable": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            "stub-ratelimit": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            "stub-auth": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            "stub-quota": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            "stub-refusal": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            "stub-rejected": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            "stub-unsupported": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+            "stub-null": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
           }
         : {}),
-    } as Record<string, { inputPer1kMicroUsd: number; outputPer1kMicroUsd: number }>,
+    } as Record<
+      string,
+      {
+        inputPer1kMicroUsd: number;
+        outputPer1kMicroUsd: number;
+        /** A dearer rate for the WHOLE request once its prompt exceeds a size. */
+        longContext?: { aboveInputTokens: number; inputPer1kMicroUsd: number; outputPer1kMicroUsd: number };
+      }
+    >,
+    // The primary attempt and the one fallback attempt together must finish inside this
+    // (the fallback's timeout is shortened to what is left). Keep it below the reverse
+    // proxy's read timeout (60 s in docker/nginx), or a primary that hangs until its
+    // own timeout leaves the fallback answering into a closed connection.
+    fallbackTotalBudgetMs: numEnv("AI_FALLBACK_TOTAL_BUDGET_MS", 50_000, 5_000),
+    // Platform spending limits (per provider, per calendar month) are checked against
+    // the ledger; the month total is cached in-process for this long between reads.
+    platformSpendCacheTtlMs: numEnv("AI_PLATFORM_SPEND_CACHE_TTL_MS", 15_000, 0),
+    // The Platform Owner's AI provider policy is cached in-process for this long, so a
+    // change made in Settings reaches every request within this window (and at once
+    // in the process that saved it).
+    policyCacheTtlMs: numEnv("AI_POLICY_CACHE_TTL_MS", 10_000, 0),
     // Batch 6 — deterministic stub provider for automated tests (never in production).
     enableStubProvider: nodeEnv !== "production" && process.env.AI_ENABLE_STUB !== "false",
     // Batch 6 — feature-specific maximum output tokens. Structured JSON outputs
