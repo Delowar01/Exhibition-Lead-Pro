@@ -4,9 +4,24 @@
 # the throwaway object volume to $B31_FAKE_RESTORE_VOL, answers SQL with canned facts, runs the REAL
 # read-back helper locally, and returns a canned verify summary (vf_source=canned). It never touches
 # anything outside the test directories.
+# Modelled on the REAL tools since the set run of 2026-11-22 (verified against a real client and PostgreSQL 16 by
+# b30-runner.integration.test.sh):
+#   - `docker compose exec` keeps standard input attached, also with -T, and takes what it can read from it: the stub
+#     reads standard input to its end before it answers. B31_DRAIN_ALL=1 makes EVERY client call do that (worst case).
+#   - psql prints the command tag of every -c statement ("SET") unless -q is given: the stub prints it for each
+#     `-c "set …"` of a non-quiet call. B31_PSQL_TAG=1 prints it even for a quiet call (a contaminated answer).
 set -u
 printf '%s\n' "${*//$'\n'/ }" >> "$B31_STUB_LOG"   # one line per invocation (embedded newlines folded)
+[ "${B31_DRAIN_ALL:-0}" = 1 ] && cat >/dev/null
 FAKEVOL="${B31_FAKE_VOLUME:-}"; RESTVOL="${B31_FAKE_RESTORE_VOL:-}"
+stub_psql() {  # <shell script that runs psql> <sql> → command tags as psql would print them, then the canned answer
+  local n
+  if [ "${B31_PSQL_TAG:-0}" = 1 ] || ! printf '%s' "$1" | grep -qE '(^| )-q( |$)'; then
+    n="$(printf '%s' "$1" | grep -oE -- '-c "set ' | wc -l | tr -d ' ')"; [ "${B31_PSQL_TAG:-0}" = 1 ] && [ "$n" = 0 ] && n=1
+    while [ "$n" -gt 0 ]; do echo "SET"; n=$((n - 1)); done
+  fi
+  stub_sql "$2"
+}
 stub_sql() {   # <sql> → canned answer
   case "$1" in
     *"md5(string_agg"*) echo "$B31_FP" ;;
@@ -30,10 +45,11 @@ case "$1" in
     shift; while [ "${1:-}" = "-f" ]; do shift 2; done
     case "${1:-}" in
       ps) if printf '%s ' "$@" | grep -q -- ' -q postgres'; then echo "pgcid"; else echo "svc"; fi; exit 0 ;;
-      exec) shift; [ "${1:-}" = "-T" ] && shift; shift   # postgres
+      exec) [ "${B31_DRAIN_ALL:-0}" = 1 ] || cat >/dev/null   # standard input stays attached, as with the real client
+            shift; [ "${1:-}" = "-T" ] && shift; shift   # postgres
             script="${3:-}"; sql="${5:-}"
             if printf '%s' "$script" | grep -q pg_dump; then cat "$B31_FAKE_DUMP_SQL"; exit 0; fi
-            if printf '%s' "$script" | grep -q psql; then stub_sql "$sql"; exit 0; fi
+            if printf '%s' "$script" | grep -q psql; then stub_psql "$script" "$sql"; exit 0; fi
             exit 0 ;;
     esac; exit 0 ;;
   volume) case "$2" in inspect) exit 0 ;; create) echo "$3"; exit 0 ;; rm) exit 0 ;; ls) exit 0 ;; esac ;;

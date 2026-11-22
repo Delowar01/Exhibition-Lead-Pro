@@ -1,6 +1,6 @@
 # B30 recovery runner (ops/b30-recovery-runner)
 
-Hosted, owner-authorized execution of the reviewed recovery toolkit **v1.1** through a branch-specific GitHub Actions
+Hosted, owner-authorized execution of the reviewed recovery toolkit **v1.2** through a branch-specific GitHub Actions
 workflow served at the repository's **registered** workflow path `.github/workflows/b25-stage1-inspection.yml`
 (workflow id **376505024**). This branch = the locked product commit `6a8dad1fe161dc1b31041794e5e3532e9f13327c` +
 exactly the files listed in `ALLOWED_FILES`. Nothing here changes the product, the database, the Stage 2B tooling, the
@@ -60,11 +60,30 @@ statuses as fixed words, a fixed failure class). The runner filters the summary 
 without printing it. Never reported: host paths, host identity, bucket names, object keys, tenant identifiers, key
 values or key ids, dump or archive contents, credentials.
 
-## Toolkit v1.1
+## Toolkit v1.2
 `toolkit/` = the Batch 31 reviewed scripts; `b30-backup-set.sh` additionally refuses (also in CHECK_ONLY) when a stale
 temporary dump, an orphan sidecar, a retention-pruning candidate (existing dumps + 1 > KEEP) or a pending INCOMPLETE set
-exists, so the repository's dump script is never invoked in a state where it would remove anything. The restore
+exists, so the repository's dump script is never invoked in a state where it would remove anything (v1.1). The restore
 rehearsal, the read-back helper and the owner key-id script are byte-identical to v1 and are not run by this workflow.
+
+### v1.2 — the two corrections after the set run of 2026-11-22
+That run (the first set-mode session on the host) ended without a result line and left an incomplete set. Two defects,
+independent of each other, both invisible in check mode and under the first test stub:
+1. **Standard input.** The host bootstrap is read by `bash -s` from the SSH session. `docker compose exec` keeps standard
+   input attached (also with `-T`); the dump call of the repository's backup script therefore read the rest of the
+   bootstrap, and the shell ended with exit 0 before its summary and result logic. Corrected in the bootstrap (both
+   toolkit invocations start with `</dev/null`) and in `b30-backup-set.sh` (it detaches its own standard input). The
+   repository's backup script is unchanged.
+2. **Query output.** `pgq` ran psql with two `-c` statements without `-q`; psql printed the command tag of the first
+   (`SET`) before the answer, so the fingerprint and the inventory were refused by their shape checks. Corrected with
+   `-q`; the read-only transaction, `ON_ERROR_STOP` and the shape checks are unchanged.
+Unchanged: one set per approved window, no retry, the incomplete-set refusal, the retained host log, every guard of the
+workflow, the product commit. A session that ends without a result line is still a failed run.
+
+Before the next session: the incomplete set of 2026-11-22 is still pending on the host. While it is, check mode and set
+mode both end `CHECK_FAILED` / `incomplete_set` — the required behaviour. Resolving it is a separate owner decision.
+That run also left its private temporary directory (mode 700: the toolkit copy and the bootstrap's error file) on the
+host, because the bootstrap never reached the line that removes it.
 
 ## Interaction with the Stage 2A / 2B workflows (shared id 376505024)
 - Their files on their branches are unchanged; this branch only serves a different file at the same path.
@@ -80,4 +99,20 @@ rehearsal, the read-back helper and the owner key-id script are byte-identical t
 ## Local tests
 `bash .github/recovery/test/b30-runner.test.sh` — real library, bootstrap, toolkit and repository dump script under a
 recording `docker` stub with synthetic envelope files, plus the REAL registry / shared-id step of the workflow under a
-recording `gh` stub (GET only, synthetic registry JSON). Docker integration and hosted dispatch are NOT verified locally.
+recording `gh` stub (GET only, synthetic registry JSON) and the REAL host-session step under an `ssh` stub. Since v1.2
+the stub behaves like the real tools where it matters: `compose exec` reads standard input to its end, and psql command
+tags are printed unless `-q` is given; the suite also runs the runner of 2026-11-22 as a negative control.
+
+`b30-runner.integration.test.sh` (opt-in) — the same bootstrap, toolkit and dump script with the REAL Docker client,
+`docker compose exec` and PostgreSQL in the stack's image, from the product commit's own compose files, with injected
+failures and negative controls for both defects. Started by root with `B30_IT_RUN_AS`, it also runs the workflow's own
+SSH-setup and host-session steps over a real SSH session — to a **local** sshd on 127.0.0.1 only. The compose project and
+the object volume carry the stack's real names, so the test needs a **throwaway Docker daemon** and refuses unless all of
+these hold: an explicit confirmation, a non-default socket, a daemon started with `--label b30.it.throwaway=true`, no
+container / volume / user-defined network / `cardscanner/*` image in it, no stack directory on the machine. These are
+checks against a mistake, not a security boundary: never run it on a machine that hosts the stack.
+
+Not verified by either suite: the host's own sshd, network, Docker and Compose versions; the GitHub runner and its log
+masking; the real API and migrate images; live application traffic during a set run (a readiness request that touches
+the object volume between the archive and the header scan ends the run INCOMPLETE or NOT VERIFIED — fail closed);
+disconnect and timeout behaviour; hosted dispatch. Steps 3–6 of the set script have never run on the host.

@@ -1,7 +1,8 @@
 #!/bin/bash
 # =============================================================================
-# B30 — RECOVERY BACKUP SET (operator artefact; NOT product code). Toolkit v1.1 (Route B): v1 + the fail-closed
-# stale-artifact / orphan-sidecar / retention-candidate / incomplete-set prechecks (the production backup script is unchanged).
+# B30 — RECOVERY BACKUP SET (operator artefact; NOT product code). Toolkit v1.2 = v1.1 (Route B: v1 + the fail-closed
+# stale-artifact / orphan-sidecar / retention-candidate / incomplete-set prechecks) + standard input detached + quiet
+# psql in pgq (the two corrections after the set run of 2026-11-22). The production backup script is unchanged.
 # Runs on the VPS as the deploy user ONLY after the owner's separate A2 authorization and inside a
 # declared quiet period (no uploads / branding changes / exports / deletions). Produces one NEW set
 # directory under the backup tree with:
@@ -27,6 +28,10 @@
 # =============================================================================
 set -euo pipefail
 umask 077
+# v1.2: this script never reads standard input. It is detached here so that nothing started below can read the stream
+# the script was started under: docker compose exec keeps standard input attached (also with -T), in pgq and in the dump
+# call of the repository's backup script. Under the recovery runner that stream is the host bootstrap itself.
+exec </dev/null
 readonly B30_PRODUCT_SHA="6a8dad1fe161dc1b31041794e5e3532e9f13327c"
 readonly B30_OPS_SHA="443fa16468e58eef1e4061cb02932b22eacc6698"
 readonly B30_SCHEMA_FINGERPRINT="30c4ecbd867cd2cd59abcb58581ecb04"
@@ -47,8 +52,10 @@ STAMP="$(date -u +%Y%m%d-%H%M%S)"
 log()  { echo "[b30-backup] $(date -u +%FT%TZ) $*"; }
 fail() { echo "[b30-backup] $(date -u +%FT%TZ) ERROR: $*" >&2; exit 1; }
 compose() { docker compose -f docker-compose.yml -f compose.vps.yml "$@"; }
-# read-only SQL inside the postgres container as its own POSTGRES_USER (no credential leaves the container)
-pgq() { compose exec -T postgres sh -c 'exec psql -X -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "set default_transaction_read_only = on" -c "$1"' sh "$1"; }
+# read-only SQL inside the postgres container as its own POSTGRES_USER (no credential leaves the container).
+# v1.2: -q. Without it psql prints the command tag of the first -c ("SET") before the answer; every value read through
+# pgq then starts with it and is refused by the shape checks below (fingerprint, inventory). The shape checks stay.
+pgq() { compose exec -T postgres sh -c 'exec psql -X -q -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "set default_transaction_read_only = on" -c "$1"' sh "$1"; }
 FP_SQL="select md5(string_agg(t, '|' order by t)) from (select table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,'') as t from information_schema.columns where table_schema='public' union all select 'idx:'||indexname||':'||indexdef from pg_indexes where schemaname='public' union all select 'con:'||conrelid::regclass::text||':'||conname||':'||pg_get_constraintdef(oid) from pg_constraint where connamespace='public'::regnamespace) s"
 INV_SQL="select 'inventory_total='||count(*)||' inventory_active='||count(*) filter (where state='active')||' inventory_active_fs='||count(*) filter (where state='active' and driver='fs')||' inventory_active_fs_migrated='||count(*) filter (where state='active' and driver='fs' and legacy_key is not null)||' inventory_active_gcs='||count(*) filter (where state='active' and driver='gcs')||' inventory_deleted='||count(*) filter (where state='deleted')||' inventory_other_states='||count(*) filter (where state not in ('active','deleted')) from storage_objects"
 # header scan (no key): walks the mounted volume, parses each envelope header, reports counts + the single key id

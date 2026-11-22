@@ -1,5 +1,5 @@
 # =============================================================================
-# B30 RECOVERY RUNNER (ops/b30-recovery-runner) — hosted execution of the REVIEWED recovery toolkit (v1.1)
+# B30 RECOVERY RUNNER (ops/b30-recovery-runner) — hosted execution of the REVIEWED recovery toolkit (v1.2)
 #
 # REGISTRATION (verified repository behaviour): GitHub registers a workflow only when its file exists on the default
 # branch or has produced a run. Merely pushing a workflow_dispatch-only file to a new non-default branch does NOT
@@ -83,8 +83,8 @@ env:
   B30_WORKFLOW_PATH: .github/workflows/b25-stage1-inspection.yml
   # pins: the runner library, the host bootstrap and the toolkit's SHA256SUMS (which in turn pins the five toolkit files)
   B30_LIB_SHA256: d8a2cfeb4c78bec09266ae1005f5813b4446fefb013d35f925de8d1ad4a00127
-  B30_BOOTSTRAP_SHA256: df984b456e20da5bcea6bdb153856c3f8acfe99c1985d99e2d4abc0abe29fbd9
-  B30_SUMS_SHA256: 99bbb9453e55967022e85f7c59e720d07c3eec4660105d9862645a14f45d2818
+  B30_BOOTSTRAP_SHA256: cbea648182606ab903b45dcbe1abb7b25634448414f9c14e6d46530123a46293
+  B30_SUMS_SHA256: 67e04a7e4c4de82f9e3ce8de57034e8674db9f7f456019612212b8d25feb392c
 
 jobs:
   recovery:

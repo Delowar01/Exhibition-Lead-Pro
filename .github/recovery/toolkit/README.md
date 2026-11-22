@@ -1,4 +1,4 @@
-# Lead Capture Pro — Recovery Toolkit v1.1 (Batch 31 reviewed; Route B prechecks added)
+# Lead Capture Pro — Recovery Toolkit v1.2 (Batch 31 reviewed; Route B prechecks; standard-input and psql corrections)
 
 **What this is.** Four operator artefacts for the owner-controlled recovery baseline that must exist
 before the Stage 2B production copy: a recovery backup set (database dump + encrypted object-volume
@@ -7,17 +7,30 @@ owner-side key-id check. They are **operator tooling, not product code**. They l
 package until the owner separately authorizes anything else.
 
 **What this is not.** Nothing here copies, deletes, migrates, deploys, rotates a key or changes
-production configuration. Nothing here was executed on the VPS. Docker integration was **NOT
-VERIFIED** locally (the review sandbox has no docker daemon): every docker call was exercised through
-a recording stub, database facts and the product's verify summary were canned, and the real
-read-back helper ran against a throwaway database. Treat the first VPS run of each script as the
-first integration test and read its output in full.
+production configuration. Until v1.2 Docker integration was **NOT VERIFIED** locally: every docker
+call was exercised through a recording stub, database facts and the product's verify summary were
+canned, and the real read-back helper ran against a throwaway database. That is still the state of
+the restore rehearsal. Treat the first VPS run of each script as the first integration test and read
+its output in full.
+
+**v1.2 (after the set run of 2026-11-22).** The first run of `b30-backup-set.sh` on the VPS was that
+integration test, and it failed: the dump was taken, the schema fingerprint was refused, the set was
+left INCOMPLETE. v1.2 changes `b30-backup-set.sh` only, in two places:
+- `pgq` runs psql with `-q`. Without it psql printed the command tag of the first statement (`SET`)
+  before every answer, and the fingerprint and inventory shape checks refused it.
+- The script detaches its own standard input, so that no `docker compose exec` it starts — directly,
+  or through the repository's dump script — can read the stream it was started under.
+
+The read-only transaction, `ON_ERROR_STOP`, the shape checks, retention, the prechecks and every
+other behaviour are those of v1.1. `b30-backup-set.sh` has since run locally with a real Docker
+client, `docker compose exec` and PostgreSQL 16 in the stack's image (all six steps, stand-ins for
+the API and migrate images). On the VPS, steps 3–6 have still never run.
 
 ## 1. Contents and SHA-256
 
 | file | role | sha256 |
 |---|---|---|
-| `b30-backup-set.sh` | A2 recovery backup set (VPS) | `34200d80b1e4db11c828e3ecaaaa49c0c2f1486981f50b38ac2aaf7a2e3b9829` |
+| `b30-backup-set.sh` | A2 recovery backup set (VPS) | `bbb86d2c6a162f04f99dedee002f5ebde74583f721db93f30e31b022e2689cd1` |
 | `b30-restore-rehearsal.sh` | A3 isolated disposable restore rehearsal (VPS) | `f9aad8d3efee23eefdbaa6f5bdaabced786182abd732329e0d2f7899068f9efc` |
 | `b30-readback.ts` | read-only decrypt / read-back helper (runs inside the rehearsal) | `b50acc0695c0ef8811a4c3fea7a7ee7216fcd63705261f8d72357e40d074a27c` |
 | `b30-keyid-owner.sh` | A1 owner-side key-id check (owner's machine only) | `91e647ef84ca454dcd20e4d3939bb2bdf247601582002e1eff21e2f024d462d0` |
@@ -181,7 +194,8 @@ contain exactly the one key line so no database or bucket variable can be inject
 
 ## 10. Known limitations
 
-- Docker integration NOT VERIFIED locally; first VPS execution = first integration run.
+- Docker integration: `b30-backup-set.sh` verified locally since v1.2 (real client and PostgreSQL, stand-in images);
+  the restore rehearsal NOT VERIFIED locally. Either way the first VPS execution of a step is its first run there.
 - The set proves consistency between a dump and a volume archive taken in the same quiet period; the
   application does not enforce the quiet period.
 - A set held only on the VPS does not protect against total VPS loss (see §4 step 5).

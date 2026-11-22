@@ -3,6 +3,7 @@
 .github/recovery/README.md
 .github/recovery/b30-host-bootstrap.sh
 .github/recovery/b30-runner-lib.sh
+.github/recovery/test/b30-runner.integration.test.sh
 .github/recovery/test/b30-runner.test.sh
 .github/recovery/test/stub/docker
 .github/recovery/toolkit/README.md

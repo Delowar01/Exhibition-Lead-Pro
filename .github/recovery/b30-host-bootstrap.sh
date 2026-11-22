@@ -11,6 +11,10 @@
 #                             removed at exit, and the 600 evidence log);
 #        b30_recovery_set   = CHECK_ONLY once, then b30-backup-set.sh exactly once (KEEP=1000,
 #                             B30_EXPECTED_UNREGISTERED=4), one set per approved window, no retry.
+# STANDARD INPUT: this file is read by `bash -s` from the SSH session's standard input, one command at a time. A child
+# that inherits that stream and reads it (docker compose exec keeps standard input attached, also with -T) takes the
+# rest of this file: the shell then ends with exit 0 and no result line. Every toolkit invocation below is therefore
+# started with </dev/null; the toolkit script detaches its own standard input as well. Nothing else here reads it.
 # =============================================================================
 set -uo pipefail
 umask 077
@@ -126,7 +130,7 @@ summarize_set() {
 }
 
 # ---- 1. the reviewed CHECK_ONLY function, exactly once ---------------------------------------------------------------
-( cd "$KIT" && B30_CHECK_ONLY=1 B30_SCRIPT_DIR="$KIT" KEEP=1000 B30_EXPECTED_UNREGISTERED=4 bash ./b30-backup-set.sh ) >>"$RAW" 2>&1; check_rc=$?
+( cd "$KIT" && B30_CHECK_ONLY=1 B30_SCRIPT_DIR="$KIT" KEEP=1000 B30_EXPECTED_UNREGISTERED=4 bash ./b30-backup-set.sh ) </dev/null >>"$RAW" 2>&1; check_rc=$?
 out "B30_CHECK_EXIT=$check_rc"
 if [ "$check_rc" = 0 ] && grep -q 'B30_CHECK_ONLY=1 — nothing created' "$RAW" && grep -q 'preconditions OK (' "$RAW"; then
   out "B30_PRECONDITIONS=ok"
@@ -139,7 +143,7 @@ fi
 if [ "$MODE" = b30_recovery_check ]; then out "B30_RAW_LOG=retained"; finish CHECK_OK; fi
 
 # ---- 2. the set run, exactly once, no retry -------------------------------------------------------------------------
-( cd "$KIT" && B30_SCRIPT_DIR="$KIT" KEEP=1000 B30_EXPECTED_UNREGISTERED=4 bash ./b30-backup-set.sh ) >>"$RAW" 2>&1; set_rc=$?
+( cd "$KIT" && B30_SCRIPT_DIR="$KIT" KEEP=1000 B30_EXPECTED_UNREGISTERED=4 bash ./b30-backup-set.sh ) </dev/null >>"$RAW" 2>&1; set_rc=$?
 out "B30_SET_EXIT=$set_rc"
 summarize_set "$RAW"
 out "B30_RAW_LOG=retained"

@@ -1,17 +1,21 @@
 #!/bin/bash
 # =============================================================================
 # B30 RECOVERY RUNNER — LOCAL TEST SUITE (self-contained; NO docker daemon, NO network, NO host, NO secrets).
-# Exercises the REAL runner library, the REAL host bootstrap, the REAL toolkit v1.1 backup script and the repository's
-# REAL dump script (docker/scripts/backup-postgres.sh at the product commit) under a recording `docker` stub, against a
+# Exercises the REAL runner library, the REAL host bootstrap, the REAL toolkit v1.2 backup script and the repository's
+# REAL dump script (docker/scripts/backup-postgres.sh at the product commit) under a recording `docker` stub that keeps
+# standard input attached on `compose exec` and prints psql command tags as the real tools do, against a
 # synthetic encrypted-object volume (envelope headers only), a fake pg_dump stream, a throwaway backup tree and a
 # detached worktree of the product commit as the "app directory", and the REAL registry / shared-id step of the workflow
-# under a recording `gh` stub (GET only, synthetic registry JSON). Docker integration and hosted dispatch are NOT verified here.
+# under a recording `gh` stub (GET only, synthetic registry JSON), and the REAL host-session step under an `ssh` stub.
+# The real Docker client, `docker compose exec` and PostgreSQL are covered by b30-runner.integration.test.sh (opt-in,
+# throwaway daemon only). Hosted dispatch is NOT verified by either.
 # Usage: bash .github/recovery/test/b30-runner.test.sh   (from any directory inside the repository checkout)
 # =============================================================================
 set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"; REC="$ROOT/.github/recovery"; KIT="$REC/toolkit"; STUB="$REC/test/stub"
 PRODUCT_SHA="6a8dad1fe161dc1b31041794e5e3532e9f13327c"
-T="$(mktemp -d)"; chmod 700 "$T"
+T="$(mktemp -d)" && [ -n "$T" ] && [ -d "$T" ] || { echo "REFUSED - no temporary directory (is TMPDIR usable?); nothing was done"; exit 3; }   # every path below derives from T
+chmod 700 "$T"
 pass=0; fail=0
 t()  { local n="$1"; shift; if "$@" >/dev/null 2>&1; then pass=$((pass+1)); echo "ok   - $n"; else fail=$((fail+1)); echo "FAIL - $n"; fi; }
 tv() { local n="$1" want="$2" got="$3"; if [ "$want" = "$got" ]; then pass=$((pass+1)); echo "ok   - $n ($got)"; else fail=$((fail+1)); echo "FAIL - $n (want '$want' got '$got')"; fi; }
@@ -102,13 +106,13 @@ echo "== C. runner library — identity, scope, pins, filter"
 export GH_REPOSITORY="owner/repo"
 gi() { GH_REF="$1" GH_SHA="$2" GH_WORKFLOW_REF="$3" EXPECTED_REF="refs/heads/ops/b30-recovery-runner" EXPECTED_WORKFLOW_PATH="$REGP" b30_guard_identity 2>&1 | grep -oE '(b30_identity=ok|b30_input_error=[a-z_]+)' | head -1; }
 HEADSHA="$(git -C "$ROOT" rev-parse HEAD)"
-( cd "$ROOT" && tv "identity ok (registered path on this branch at HEAD)" "b30_identity=ok" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")" )
-( cd "$ROOT" && tv "identity refuses the OLD unregistered path" "b30_input_error=workflow_ref_mismatch" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$OLDP@refs/heads/ops/b30-recovery-runner")" )
-( cd "$ROOT" && tv "identity refuses the registered path on the Stage 2B branch ref" "b30_input_error=wrong_branch" "$(gi refs/heads/ops/b25-stage2b-migration-tooling "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b25-stage2b-migration-tooling")" )
-( cd "$ROOT" && tv "identity refuses a workflow_ref that names the registered path at another ref" "b30_input_error=workflow_ref_mismatch" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b25-stage2b-migration-tooling")" )
-( cd "$ROOT" && tv "identity wrong branch" "b30_input_error=wrong_branch" "$(gi refs/heads/develop "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")" )
-( cd "$ROOT" && tv "identity head mismatch" "b30_input_error=head_mismatch" "$(gi refs/heads/ops/b30-recovery-runner 1111111111111111111111111111111111111111 "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")" )
-( cd "$ROOT" && tv "identity workflow ref mismatch" "b30_input_error=workflow_ref_mismatch" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/.github/workflows/other.yml@refs/heads/ops/b30-recovery-runner")" )
+tv "identity ok (registered path on this branch at HEAD)" "b30_identity=ok" "$(cd "$ROOT" && gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")"
+tv "identity refuses the OLD unregistered path" "b30_input_error=workflow_ref_mismatch" "$(cd "$ROOT" && gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$OLDP@refs/heads/ops/b30-recovery-runner")"
+tv "identity refuses the registered path on the Stage 2B branch ref" "b30_input_error=wrong_branch" "$(cd "$ROOT" && gi refs/heads/ops/b25-stage2b-migration-tooling "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b25-stage2b-migration-tooling")"
+tv "identity refuses a workflow_ref that names the registered path at another ref" "b30_input_error=workflow_ref_mismatch" "$(cd "$ROOT" && gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b25-stage2b-migration-tooling")"
+tv "identity wrong branch" "b30_input_error=wrong_branch" "$(cd "$ROOT" && gi refs/heads/develop "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")"
+tv "identity head mismatch" "b30_input_error=head_mismatch" "$(cd "$ROOT" && gi refs/heads/ops/b30-recovery-runner 1111111111111111111111111111111111111111 "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")"
+tv "identity workflow ref mismatch" "b30_input_error=workflow_ref_mismatch" "$(cd "$ROOT" && gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/.github/workflows/other.yml@refs/heads/ops/b30-recovery-runner")"
 # scope: throwaway repository with a base commit and recovery files
 G="$T/g"; mkdir -p "$G"; ( cd "$G" && git init -q && git config user.email t@example.invalid && git config user.name t && mkdir -p src .github/recovery/toolkit .github/workflows && echo p > src/product.ts && git add -A && git commit -qm base )
 BASE="$(git -C "$G" rev-parse HEAD)"
@@ -132,7 +136,7 @@ tv "filter rejects a 64-hex value" "1" "$(fs $'B30_DUMP=0123456789abcdef01234567
 tv "filter rejects an e-mail / path shaped value" "1" "$(fs $'B30_X=a@b.c\nB30_Y=/opt/thing\n')"
 tv "filter rejects an env-assignment line" "1" "$(fs $'OBJECT_STORAGE_ENCRYPTION_KEY=abc\n')"
 
-echo "== D. host bootstrap under the docker stub (REAL toolkit v1.1 + REAL repository dump script)"
+echo "== D. host bootstrap under the docker stub (REAL toolkit v1.2 + REAL repository dump script)"
 APP="$T/app"; ( cd "$ROOT" && git worktree add -q --detach "$APP" "$PRODUCT_SHA" ) || { echo "FAIL - cannot create the product worktree"; exit 1; }
 tv "app worktree = product commit, clean" "$PRODUCT_SHA 0" "$(git -C "$APP" rev-parse HEAD) $(git -C "$APP" status --porcelain | wc -l | tr -d ' ')"
 VOL="$T/vol"; mkdir -p "$VOL"; chmod 700 "$VOL"
@@ -154,29 +158,53 @@ PY
 voldigest() { ( cd "$VOL" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16 ); }
 VOL0="$(voldigest)"
 DUMP="$T/fake-dump.sql"; { echo "--"; echo "-- PostgreSQL database dump"; echo "--"; echo "SET client_encoding = 'UTF8';"; echo "CREATE TABLE public.storage_objects (id uuid);"; echo "ALTER TABLE public.storage_objects OWNER TO lcp_dev;"; echo "COPY public.storage_objects (id) FROM stdin;"; for i in $(seq 1 60); do head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; echo; done; echo '\.'; echo "--"; echo "-- PostgreSQL database dump complete"; echo "--"; echo '\unrestrict abc123'; } > "$DUMP"
-BK="$T/backups"; ST="$T/state"; HM="$T/home"; mkdir -p "$BK" "$ST" "$HM"; chmod 700 "$BK" "$ST" "$HM"; echo "$PRODUCT_SHA" > "$ST/current-deploy.sha"
+BK="$T/backups"; ST="$T/state"; HM="$T/home"; HT="$T/hosttmp"; mkdir -p "$BK" "$ST" "$HM" "$HT"; chmod 700 "$BK" "$ST" "$HM" "$HT"; echo "$PRODUCT_SHA" > "$ST/current-deploy.sha"
 INV="inventory_total=2 inventory_active=2 inventory_active_fs=2 inventory_active_fs_migrated=0 inventory_active_gcs=0 inventory_deleted=0 inventory_other_states=0"
 SUMS_SHA="$(sha256sum "$KIT/SHA256SUMS" | cut -c1-64)"
 mkpayload() { tar -cf "$T/payload.tar" --owner=0 --group=0 --numeric-owner -C "${1:-$KIT}" . && base64 -w0 "$T/payload.tar"; }
 PAYLOAD="$(mkpayload)"
-# run_host <mode> <start> <end> [NAME=value ...]  → OUT (filtered summary), RC, RAWOUT; mirrors the workflow's stream
+# run_host <mode> <start> <end> [NAME=value ...]  → OUT (filtered summary), RC, RAWOUT; mirrors the workflow's stream.
+# TRANSPORT=file (default): standard input of `bash -s` is a regular file; TRANSPORT=pipe: a pipe, which is what sshd
+# gives the remote shell. BOOT_OVERRIDE: another bootstrap file (negative control with the runner of 2026-11-22).
 run_host() {
   local mode="$1" qs="$2" qe="$3"; shift 3
   local pins="${PIN_OVERRIDE:-$SUMS_SHA}" payload="${PAYLOAD_OVERRIDE:-$PAYLOAD}"
-  { printf 'MODE=%q\n' "$mode"; printf 'B30_PRODUCT_SHA=%q\n' "$PRODUCT_SHA"; printf 'B30_SUMS_SHA256=%q\n' "$pins"; printf 'QUIET_START=%q\n' "$qs"; printf 'QUIET_END=%q\n' "$qe"; printf 'DEPLOY_PATH=%q\n' "$APP"; printf 'B30_PAYLOAD_B64=%q\n' "$payload"; cat "$REC/b30-host-bootstrap.sh"; } > "$T/stream.sh"
+  { printf 'MODE=%q\n' "$mode"; printf 'B30_PRODUCT_SHA=%q\n' "$PRODUCT_SHA"; printf 'B30_SUMS_SHA256=%q\n' "$pins"; printf 'QUIET_START=%q\n' "$qs"; printf 'QUIET_END=%q\n' "$qe"; printf 'DEPLOY_PATH=%q\n' "$APP"; printf 'B30_PAYLOAD_B64=%q\n' "$payload"; cat "${BOOT_OVERRIDE:-$REC/b30-host-bootstrap.sh}"; } > "$T/stream.sh"
   : > "$T/stub.log"
-  env -i PATH="$STUB:$PATH" HOME="$HM" BACKUP_DIR="$BK" STATE_DIR="$ST" B31_STUB_LOG="$T/stub.log" B31_FAKE_VOLUME="$VOL" B31_FAKE_DUMP_SQL="$DUMP" B31_FP="30c4ecbd867cd2cd59abcb58581ecb04" B31_INV="$INV" B31_PRODUCT_SHA="$PRODUCT_SHA" "$@" bash -s < "$T/stream.sh" > "$T/host.out" 2>"$T/host.err"; RC=$?
+  local -a hostenv=(env -i PATH="$STUB:$PATH" HOME="$HM" BACKUP_DIR="$BK" STATE_DIR="$ST" TMPDIR="$HT" B31_STUB_LOG="$T/stub.log" B31_FAKE_VOLUME="$VOL" B31_FAKE_DUMP_SQL="$DUMP" B31_FP="30c4ecbd867cd2cd59abcb58581ecb04" B31_INV="$INV" B31_PRODUCT_SHA="$PRODUCT_SHA" "$@")
+  if [ "${TRANSPORT:-file}" = pipe ]; then cat "$T/stream.sh" | "${hostenv[@]}" bash -s > "$T/host.out" 2>"$T/host.err"; RC="${PIPESTATUS[1]}"
+  else "${hostenv[@]}" bash -s < "$T/stream.sh" > "$T/host.out" 2>"$T/host.err"; RC=$?; fi
   RAWOUT="$(cat "$T/host.out")"
   OUT="$(b30_filter_summary < "$T/host.out")"; FRC=$?
 }
 val() { printf '%s\n' "$OUT" | grep -E "^$1=" | head -1 | cut -d= -f2-; }
 LOGS="$BK/recovery-sets/runner-logs"
+hosttmp() { find "$HT" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' '; }                      # host temp dirs left behind
+incdir() { local s; s="$(ls -d "$BK"/recovery-sets/b30-*/.start 2>/dev/null | head -1)"; [ -n "$s" ] && dirname "$s"; }   # the pending incomplete set, if any
+incfiles() { local d; d="$(incdir)"; [ -n "$d" ] && ls -A "$d" | sed -E 's/leadcapture-[0-9-]+/leadcapture/' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'; }
+dropinc() { local d; d="$(incdir)"; [ -n "$d" ] && rm -rf "$d"; return 0; }                # test cleanup only
+nresult() { grep -c '^B30_RUNNER_RESULT=' "$T/host.out"; }
+nextsec() { sleep 1.1; }                                                                   # set names carry a one-second stamp
 echo "-- D1 check mode positive"
 run_host b30_recovery_check "" ""
 tv "D1 exit 0" 0 "$RC"; tv "D1 filter accepted every line" 0 "$FRC"; tv "D1 result" CHECK_OK "$(val B30_RUNNER_RESULT)"
 tv "D1 preconditions" ok "$(val B30_PRECONDITIONS)"; tv "D1 existing dumps" 0 "$(val B30_EXISTING_DUMPS)"; tv "D1 toolkit verified" verified "$(val B30_TOOLKIT)"; tv "D1 toolkit files" 6 "$(val B30_TOOLKIT_FILES)"
 tv "D1 product commit reported" "$PRODUCT_SHA" "$(val B30_PRODUCT_COMMIT)"; tv "D1 keep/expected/phase" "1000 4 pre-copy" "$(val B30_KEEP) $(val B30_EXPECTED_UNREGISTERED) $(val B30_SET_PHASE)"
 tv "D1 host stderr empty" 0 "$(wc -c < "$T/host.err")"
+EXP_CHECK="B30_MODE=b30_recovery_check
+B30_PRODUCT_COMMIT=$PRODUCT_SHA
+B30_TOOLKIT=verified
+B30_TOOLKIT_FILES=6
+B30_CHECK_EXIT=0
+B30_PRECONDITIONS=ok
+B30_EXISTING_DUMPS=0
+B30_KEEP=1000
+B30_EXPECTED_UNREGISTERED=4
+B30_SET_PHASE=pre-copy
+B30_RAW_LOG=retained
+B30_RUNNER_RESULT=CHECK_OK"
+t "D1 check-mode summary is exactly the one the hosted check runs returned (same lines, same order)" test "$EXP_CHECK" = "$RAWOUT"
+tv "D1 check mode makes six client calls, none of them an exec; host temp dir removed" "6 0 0" "$(wc -l < "$T/stub.log" | tr -d ' ') $(grep -cE '(^| )exec( |$)' "$T/stub.log") $(hosttmp)"
 tv "D1 raw log retained on the host, mode 600" "600" "$(stat -c %a "$LOGS"/b30-b30_recovery_check-*.log 2>/dev/null | head -1)"
 tv "D1 nothing created in the backup dir besides runner-logs" "" "$(cd "$BK" && find . -mindepth 1 ! -path './recovery-sets' ! -path './recovery-sets/runner-logs*' | tr '\n' ' ')"
 tv "D1 volume unchanged" "$VOL0" "$(voldigest)"
@@ -191,6 +219,7 @@ tv "D2 inventory counts" "2 2 2 0 0 0 0" "$(val B30_INV_TOTAL) $(val B30_INV_ACT
 tv "D2 checks" "MATCH OK MATCH valid none MATCH single" "$(val B30_FINGERPRINT) $(val B30_SHA256SUMS) $(val B30_TENANT_FILES) $(val B30_HEADERS) $(val B30_SYMLINKS) $(val B30_ARCHIVE_FILES) $(val B30_KEY_ID)"
 tv "D2 archive regular = tenant + health" "3 2 1" "$(val B30_ARCHIVE_REGULAR) $(val B30_VOLUME_TENANT_FILES) $(val B30_VOLUME_HEALTH_FILES)"
 tv "D2 window sets existing before" 0 "$(val B30_WINDOW_SETS_EXISTING)"
+tv "D2 one result line; one dump call and two queries in the session; host temp dir removed" "1 1 2 0" "$(nresult) $(grep -c 'exec -T postgres sh -c exec pg_dump' "$T/stub.log") $(grep -c 'exec -T postgres sh -c exec psql' "$T/stub.log") $(hosttmp)"
 SET1="$(ls -d "$BK"/recovery-sets/b30-* | head -1)"; t "D2 set directory with SHA256SUMS" bash -c "cd '$SET1' && sha256sum -c --quiet SHA256SUMS"
 tv "D2 manifest set_phase / expected" "pre-copy 4" "$(grep -E '^set_phase=' "$SET1"/recovery-*.txt | cut -d= -f2) $(grep -E '^expected_unregistered_before_copy=' "$SET1"/recovery-*.txt | cut -d= -f2)"
 tv "D2 volume unchanged" "$VOL0" "$(voldigest)"
@@ -201,6 +230,7 @@ echo "-- D3 second execution in the same window"
 run_host b30_recovery_set "$WS" "$WE"
 tv "D3 refused" REFUSED_window_already_used "$(val B30_RUNNER_RESULT)"; tv "D3 exit 1" 1 "$RC"; tv "D3 existing sets in window" 1 "$(val B30_WINDOW_SETS_EXISTING)"
 tv "D3 no second set created" 1 "$(ls -d "$BK"/recovery-sets/b30-* | wc -l | tr -d ' ')"
+tv "D3 no second dump taken, no client call that reaches the database, host temp dir removed" "1 0 0" "$(ls "$BK"/leadcapture-*.sql.gz | wc -l | tr -d ' ') $(grep -cE '(^| )exec( |$)' "$T/stub.log") $(hosttmp)"
 echo "-- D4 tampered toolkit payload"
 mkdir -p "$T/kit2" && cp "$KIT"/* "$T/kit2"/ && printf '\n# tampered\n' >> "$T/kit2/b30-backup-set.sh"
 PAYLOAD_OVERRIDE="$(mkpayload "$T/kit2")" run_host b30_recovery_check "" ""; tv "D4 refused hash mismatch" REFUSED_toolkit_hash_mismatch "$(val B30_RUNNER_RESULT)"; unset PAYLOAD_OVERRIDE
@@ -228,9 +258,10 @@ echo "-- D11 Stage 2B copy lock present"
 echo "-- D12 migrate container running"
 run_host b30_recovery_check "" "" B31_PS_IMAGES="cardscanner/migrate:b25-stage2b-6a8dad1fe161"; tv "D12 class" migrate_container "$(val B30_FAILURE_CLASS)"
 echo "-- D13 docker missing on the host"
-mkdir -p "$T/nodocker"; for b in bash sh git tar gzip gunzip zcat sha256sum find ls cat grep awk sed cut tr head tail wc stat date mktemp chmod mkdir rm cp ln df basename dirname od id base64 sort env printf true false flock touch seq; do p="$(command -v $b 2>/dev/null || true)"; [ -n "$p" ] && ln -s "$p" "$T/nodocker/$b" 2>/dev/null; done
+mkdir -p "$T/nodocker"; for b in bash sh git tar gzip gunzip zcat sha256sum find ls cat grep awk sed cut tr head tail wc stat date mktemp chmod mkdir rm cp ln df basename dirname od id base64 sort env printf true false flock touch seq; do p=""; for d in /usr/bin /bin /usr/local/bin; do [ -x "$d/$b" ] && { p="$d/$b"; break; }; done; [ -n "$p" ] || p="$(type -P $b 2>/dev/null || true)"; [ -n "$p" ] && ln -s "$p" "$T/nodocker/$b" 2>/dev/null; done   # the system binary itself, never a wrapper earlier in PATH
 run_host b30_recovery_check "" "" PATH="$T/nodocker"
 tv "D13 check failed closed without docker" CHECK_FAILED "$(val B30_RUNNER_RESULT)"; t "D13 class services/other" bash -c "[[ '$(val B30_FAILURE_CLASS)' =~ ^(services|other|volume)$ ]]"
+tv "D13 host temp dir removed on that failure too" 0 "$(hosttmp)"
 echo "-- D14 backup failure mid-set (dump stream missing) → incomplete set preserved"
 rm -rf "$BK"/recovery-sets/b30-2*; run_host b30_recovery_set 2026-11-02T14:00Z 2026-11-02T15:00Z B31_FAKE_DUMP_SQL=/nonexistent
 tv "D14 result" SET_INCOMPLETE "$(val B30_RUNNER_RESULT)"; tv "D14 marker" INCOMPLETE "$(val B30_SET_MARKER)"; t "D14 class dump" bash -c "[[ '$(val B30_FAILURE_CLASS)' =~ ^(dump_failed|dump_invalid)$ ]]"
@@ -257,6 +288,72 @@ tv "D17 key id reported as single, never the value" single "$(printf '%s\n' "$SU
 echo "-- D18 no mutation of the fixture volume across all scenarios"
 tv "D18 volume digest unchanged" "$VOL0" "$(voldigest)"
 tv "D18 stub docker never asked to write the live volume (no rw mount)" 0 "$(grep -c -- '-v card-scanner-pro_objectdata:/src ' "$T/stub.log")"
+
+echo "-- D19 the two corrections after the set run of 2026-11-22 are in place (statics)"
+BOOT="$REC/b30-host-bootstrap.sh"; SETSH="$KIT/b30-backup-set.sh"
+tv "D19 the bootstrap starts the toolkit twice, both times with standard input detached" "2 2" "$(grep -cE 'bash \./b30-backup-set\.sh \)' "$BOOT") $(grep -cE 'bash \./b30-backup-set\.sh \) </dev/null >>"\$RAW" 2>&1; (check|set)_rc=\$\?$' "$BOOT")"
+d19_exec_first() { local a b; a="$(grep -n '^exec </dev/null$' "$SETSH" | head -1 | cut -d: -f1)"; b="$(grep -n '^log "B30 recovery backup set — preconditions"$' "$SETSH" | head -1 | cut -d: -f1)"; [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ] && [ "$(grep -c '^exec </dev/null$' "$SETSH")" = 1 ]; }
+t "D19 the set script detaches its own standard input once, before its first command" d19_exec_first
+d19_pgq() { local l; l="$(grep -E '^pgq\(\) ' "$SETSH")"; [ "$(printf '%s\n' "$l" | grep -c .)" = 1 ] && [[ "$l" == *'exec psql -X -q -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "set default_transaction_read_only = on" -c "$1"'* ]]; }
+t "D19 pgq: no psqlrc, quiet, tuples only, ON_ERROR_STOP, read-only transaction, one statement" d19_pgq
+d19_shape() { grep -qF '[[ "$fp" =~ ^[0-9a-f]{32}$ ]] || fail "schema fingerprint unreadable"' "$SETSH" && grep -qF '[[ "$inv" =~ ^inventory_total=[0-9]+ ]] || fail "inventory counts unreadable"' "$SETSH"; }
+t "D19 the shape checks that refused the contaminated answers are unchanged" d19_shape
+# client calls that keep standard input attached: `compose exec` / `docker exec -i` / `run -i`. Allowed in the runner's own
+# files: exactly one, pgq's `compose exec -T` in the set script (the dump call lives in the repository's backup script).
+code() { grep -v '^[[:space:]]*#' "$1"; }
+tv "D19 attached client calls in the runner's own files: bootstrap 0; set script 1, and that one is pgq's compose exec -T" "0 1 1" "$(code "$BOOT" | grep -cE '(compose|docker)[^|]* exec( |$)') $(code "$SETSH" | grep -cE '(compose|docker)[^|]* exec( |$)') $(code "$SETSH" | grep -cE '^pgq\(\) \{ compose exec -T postgres ')"
+tv "D19 no -i / --interactive / --attach on any client call in the bootstrap or the set script" 0 "$(cat <(code "$BOOT") <(code "$SETSH") | grep -cE '(docker|compose)[^|]* (run|exec)[^|]* (-i|-it|-ti|--interactive|--attach)( |$)')"
+tv "D19 restore rehearsal, read-back helper and key-id script byte-identical to the toolkit of the pinned runner" "f9aad8d3efee23eefdbaa6f5bdaabced786182abd732329e0d2f7899068f9efc b50acc0695c0ef8811a4c3fea7a7ee7216fcd63705261f8d72357e40d074a27c 91e647ef84ca454dcd20e4d3939bb2bdf247601582002e1eff21e2f024d462d0" "$(sha256sum "$KIT/b30-restore-rehearsal.sh" "$KIT/b30-readback.ts" "$KIT/b30-keyid-owner.sh" | cut -c1-64 | tr '\n' ' ' | sed 's/ $//')"
+tv "D19 runner library byte-identical to the pinned runner's" "d8a2cfeb4c78bec09266ae1005f5813b4446fefb013d35f925de8d1ad4a00127" "$(sha256sum "$REC/b30-runner-lib.sh" | cut -c1-64)"
+
+echo "-- D20 stream through a pipe (what sshd gives the remote shell): check and set reach their result logic"
+TRANSPORT=pipe; run_host b30_recovery_check "" ""
+tv "D20 check over a pipe: result / exit / result lines / host temp dir" "CHECK_OK 0 1 0" "$(val B30_RUNNER_RESULT) $RC $(nresult) $(hosttmp)"
+nextsec; run_host b30_recovery_set 2026-11-06T12:00Z 2026-11-06T13:00Z
+tv "D20 set over a pipe: result / marker / set exit / exit / result lines / host temp dir" "SET_VERIFIED VERIFIED 0 0 1 0" "$(val B30_RUNNER_RESULT) $(val B30_SET_MARKER) $(val B30_SET_EXIT) $RC $(nresult) $(hosttmp)"
+tv "D20 checks" "MATCH OK MATCH valid none MATCH single" "$(val B30_FINGERPRINT) $(val B30_SHA256SUMS) $(val B30_TENANT_FILES) $(val B30_HEADERS) $(val B30_SYMLINKS) $(val B30_ARCHIVE_FILES) $(val B30_KEY_ID)"
+tv "D20 one dump call and two queries in the session (each of them reads standard input to its end under this stub)" "1 2" "$(grep -c 'exec -T postgres sh -c exec pg_dump' "$T/stub.log") $(grep -c 'exec -T postgres sh -c exec psql' "$T/stub.log")"
+D20SET="$(ls -dt "$BK"/recovery-sets/b30-2* | head -1)"
+d20_manifest() { local m; m="$(ls "$D20SET"/recovery-*.txt | head -1)"; [ "$(grep -cE '^schema_fingerprint=[0-9a-f]{32}$' "$m")" = 1 ] && [ "$(grep -cE '^inventory_total=[0-9]+$' "$m")" = 1 ] && ! grep -q 'SET' "$m" && ! grep -qvE '^[a-z_0-9]+=.+' "$m"; }
+t "D20 manifest: fingerprint exactly 32 hexadecimal characters, inventory lines exact, no command tag, name=value only" d20_manifest
+unset TRANSPORT
+
+echo "-- D21 worst case: EVERY client call reads standard input to its end (both transports, success and failure)"
+for tr in file pipe; do TRANSPORT="$tr"; run_host b30_recovery_check "" "" B31_DRAIN_ALL=1; tv "D21 check ($tr): result / exit / result lines" "CHECK_OK 0 1" "$(val B30_RUNNER_RESULT) $RC $(nresult)"; done
+n=7; for tr in file pipe; do TRANSPORT="$tr"; nextsec; run_host b30_recovery_set "2026-11-0${n}T12:00Z" "2026-11-0${n}T13:00Z" B31_DRAIN_ALL=1
+  tv "D21 set ($tr): result / exit / result lines / host temp dir" "SET_VERIFIED 0 1 0" "$(val B30_RUNNER_RESULT) $RC $(nresult) $(hosttmp)"; n=$((n + 1)); done
+TRANSPORT=pipe; nextsec; run_host b30_recovery_set 2026-11-09T12:00Z 2026-11-09T13:00Z B31_DRAIN_ALL=1 B31_FAKE_DUMP_SQL=/nonexistent
+tv "D21 failing set (pipe): the failure is REPORTED — result / marker / exit / result lines / host temp dir" "SET_INCOMPLETE INCOMPLETE 2 1 0" "$(val B30_RUNNER_RESULT) $(val B30_SET_MARKER) $RC $(nresult) $(hosttmp)"
+t "D21 incomplete set kept" test -n "$(incdir)"; dropinc; unset TRANSPORT
+
+echo "-- D22 a query answer that carries a psql command tag is refused, never accepted (the failure of 2026-11-22, now reported)"
+nd0="$(ls "$BK"/leadcapture-*.sql.gz | wc -l | tr -d ' ')"
+TRANSPORT=pipe; nextsec; run_host b30_recovery_set 2026-11-10T12:00Z 2026-11-10T13:00Z B31_PSQL_TAG=1
+tv "D22 result / marker / class / exit / result lines" "SET_INCOMPLETE INCOMPLETE db_facts 2 1" "$(val B30_RUNNER_RESULT) $(val B30_SET_MARKER) $(val B30_FAILURE_CLASS) $RC $(nresult)"
+tv "D22 incomplete set preserved exactly as on the host: .start + dump + sidecar" ".start leadcapture.sql.gz leadcapture.sql.gz.sha256" "$(incfiles)"
+tv "D22 the dump taken before the failure stays published (one more, nothing pruned); host temp dir removed" "$((nd0 + 1)) 0" "$(ls "$BK"/leadcapture-*.sql.gz | wc -l | tr -d ' ') $(hosttmp)"
+run_host b30_recovery_check "" ""; tv "D22 next session refuses while that set is pending" "CHECK_FAILED incomplete_set 2" "$(val B30_RUNNER_RESULT) $(val B30_FAILURE_CLASS) $RC"
+nextsec; run_host b30_recovery_set 2026-11-12T12:00Z 2026-11-12T13:00Z; tv "D22 a set session refuses too, before any dump" "CHECK_FAILED incomplete_set 2 $((nd0 + 1))" "$(val B30_RUNNER_RESULT) $(val B30_FAILURE_CLASS) $RC $(ls "$BK"/leadcapture-*.sql.gz | wc -l | tr -d ' ')"
+t "D22 the pending set is still there, untouched by the refusals" test ".start leadcapture.sql.gz leadcapture.sql.gz.sha256" = "$(incfiles)"; dropinc; unset TRANSPORT
+
+echo "-- D23 negative control: the runner as dispatched on 2026-11-22 under the same stub shows both defects"
+OLD="62f3dea50206eedb8ad1ca82a1e1dc91d93ec0f3"
+if git -C "$ROOT" cat-file -e "$OLD:.github/recovery/b30-host-bootstrap.sh" 2>/dev/null; then
+  mkdir -p "$T/old/kit"; git -C "$ROOT" show "$OLD:.github/recovery/b30-host-bootstrap.sh" > "$T/old/bootstrap.sh"
+  for f in $(git -C "$ROOT" ls-tree --name-only "$OLD" .github/recovery/toolkit/); do git -C "$ROOT" show "$OLD:$f" > "$T/old/kit/$(basename "$f")"; done
+  BOOT_OVERRIDE="$T/old/bootstrap.sh"; PAYLOAD_OVERRIDE="$(mkpayload "$T/old/kit")"; PIN_OVERRIDE="$(sha256sum "$T/old/kit/SHA256SUMS" | cut -c1-64)"
+  run_host b30_recovery_check "" ""; tv "D23 old runner, check mode: unaffected (no client call of check mode reads standard input)" "CHECK_OK 0" "$(val B30_RUNNER_RESULT) $RC"
+  for tr in file pipe; do TRANSPORT="$tr"; nextsec; run_host b30_recovery_set "2026-11-1$([ "$tr" = file ] && echo 3 || echo 4)T12:00Z" "2026-11-1$([ "$tr" = file ] && echo 3 || echo 4)T13:00Z"
+    tv "D23 old runner, set mode ($tr): no result line, last line B30_SET_PHASE=pre-copy, exit 0 — the run of 2026-11-22" "0 B30_SET_PHASE=pre-copy 0" "$(nresult) $(tail -1 "$T/host.out") $RC"
+    tv "D23 old runner ($tr): incomplete set with .start + dump + sidecar; host temp dir left behind" ".start leadcapture.sql.gz leadcapture.sql.gz.sha256 1" "$(incfiles) $(hosttmp)"
+    t "D23 old runner ($tr): host log records the unreadable fingerprint" grep -q 'ERROR: schema fingerprint unreadable' "$(ls -t "$LOGS"/b30-b30_recovery_set-*.log | head -1)"
+    dropinc; find "$HT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  done
+  unset BOOT_OVERRIDE PAYLOAD_OVERRIDE PIN_OVERRIDE TRANSPORT
+else echo "note - commit $OLD not available in this checkout: negative control skipped"; fi
+
+echo "-- D24 no mutation of the fixture volume by D19–D23"
+tv "D24 volume digest unchanged" "$VOL0" "$(voldigest)"
 
 echo "== E. registry / shared-id guard — the REAL workflow step under a recording gh stub (GET only; no network)"
 RS="$T/registry.sh"
@@ -349,5 +446,49 @@ mkfix; set_runs "$SELF" in_progress 0; run_reg
 tv "E24 own run not (yet) listed by the API → nothing excluded, still passes with 0 others" 0 "$RRC"; t "E24 excluded 0x" bash -c "grep -q 'own run excluded 0x' <<<\"\$1\"" _ "$ROUT"
 mkfix; run_reg; t "E25 no self-dispatch and no Stage 2B mode in the extracted step" bash -c "! grep -qE 'dispatches|POST|stage2b|workflow run' '$RS'"
 
-echo "== RESULT pass=$pass fail=$fail (docker integration NOT verified: stub only; hosted dispatch NOT verified)"
+echo "== F. host-session step — the REAL workflow step under an ssh stub (no network, no host)"
+HS="$T/hoststep.sh"
+awk '/name: Recovery runner — host session/{p=1} p&&/^        run: \|/{r=1;next} r&&/^      - name:/{exit} r{sub(/^          /,""); print}' "$W" > "$HS"
+f0_static() { head -1 "$HS" | grep -q 'set -euo pipefail' && [ "$(grep -cE '^[[:space:]]*ssh |(\|\||&&|;|\|) *ssh ' "$HS")" = 1 ] && grep -q "^ssh vps 'bash -s' < " "$HS" && grep -q 'b30_filter_summary <' "$HS" && grep -q 'grep -qx "B30_RUNNER_RESULT=\$want"' "$HS"; }
+t "F0 host step extracted: one ssh call, the filter, the exact result test" f0_static
+tv "F0 the step has no loop, no retry, no second session and no GitHub call" 0 "$(grep -cE '(^|[ ;{(])(for|while|until) |(^|[ ;{(])gh |retry|sleep ' "$HS")"
+SSHS="$T/sshstub"; mkdir -p "$SSHS"; : > "$T/ssh.mode"; : > "$T/ssh.env"
+cat > "$SSHS/ssh" <<EOS
+#!/bin/bash
+# ssh stub: "ssh vps 'bash -s'" runs the remote shell locally; the stream reaches it through a pipe, as under sshd.
+[ \$# = 2 ] && [ "\$1" = vps ] && [ "\$2" = "bash -s" ] || exit 255
+extra=(); mapfile -t extra < "$T/ssh.env"
+case "\$(cat "$T/ssh.mode")" in
+  no_result) cat >/dev/null; printf 'B30_MODE=b30_recovery_set\nB30_PRECONDITIONS=ok\nB30_SET_PHASE=pre-copy\n'; exit 0 ;;
+  raw_line)  cat >/dev/null; printf 'B30_MODE=b30_recovery_set\n[b30-backup] ERROR: detail /opt/private/path\nB30_RUNNER_RESULT=SET_VERIFIED\n'; exit 0 ;;
+  no_host)   cat >/dev/null; exit 255 ;;
+esac
+: > "$T/stub.log"
+cat | env -i PATH="$STUB:$PATH" HOME="$HM" BACKUP_DIR="$BK" STATE_DIR="$ST" TMPDIR="$HT" B31_STUB_LOG="$T/stub.log" B31_FAKE_VOLUME="$VOL" B31_FAKE_DUMP_SQL="$DUMP" B31_FP="30c4ecbd867cd2cd59abcb58581ecb04" B31_INV="$INV" B31_PRODUCT_SHA="$PRODUCT_SHA" "\${extra[@]}" bash -s
+EOS
+chmod 755 "$SSHS/ssh"
+# run_step <mode> <start> <end> → SOUT (everything the step prints, i.e. what the GitHub log would hold), SRC
+run_step() { rm -rf "$T/rt"; mkdir -p "$T/rt"
+  SOUT="$(cd "$ROOT" && env -i PATH="$SSHS:$PATH" HOME="$T" RUNNER_TEMP="$T/rt" MODE="$1" IN_START="$2" IN_END="$3" VPS_DEPLOY_PATH="$APP" B30_PRODUCT_SHA="$PRODUCT_SHA" B30_SUMS_SHA256="$(pin B30_SUMS_SHA256)" bash "$HS" 2>&1)"; SRC=$?; }
+sline() { printf '%s\n' "$SOUT" | grep -cx -- "$1"; }
+run_step b30_recovery_check "" ""
+tv "F1 check mode: step passes, result line printed" "0 1" "$SRC $(sline 'B30_RUNNER_RESULT=CHECK_OK')"
+nextsec; run_step b30_recovery_set 2026-11-15T12:00Z 2026-11-15T13:00Z
+tv "F2 set mode: step passes; SET_VERIFIED and VERIFIED marker printed; host temp dir removed" "0 1 1 0" "$SRC $(sline 'B30_RUNNER_RESULT=SET_VERIFIED') $(sline 'B30_SET_MARKER=VERIFIED') $(hosttmp)"
+t "F2 the log of a passing set run holds allow-listed summary lines only" bash -c 'printf "%s\n" "$1" | b30_filter_summary >/dev/null' _ "$SOUT"
+t "F2 nothing path-, e-mail-, key- or digest-shaped in that log" bash -c '! grep -qE "/|@|[0-9a-fA-F]{16,}" <(printf "%s\n" "$1" | grep -v "^B30_PRODUCT_COMMIT=")' _ "$SOUT"
+tv "F2 one host session, one dump call" "1" "$(grep -c 'exec -T postgres sh -c exec pg_dump' "$T/stub.log")"
+echo "B31_FAKE_DUMP_SQL=/nonexistent" > "$T/ssh.env"; nextsec; run_step b30_recovery_set 2026-11-16T12:00Z 2026-11-16T13:00Z
+tv "F3 failing set: step FAILS (exit 1); the failure result and the host exit code are in the log" "1 1 1" "$SRC $(sline 'B30_RUNNER_RESULT=SET_INCOMPLETE') $(sline '::error::the host did not report B30_RUNNER_RESULT=SET_VERIFIED (ssh exit 2)')"
+t "F3 incomplete set kept on the 'host'" test -n "$(incdir)"; dropinc; : > "$T/ssh.env"
+echo no_result > "$T/ssh.mode"; run_step b30_recovery_set 2026-11-17T12:00Z 2026-11-17T13:00Z
+tv "F4 a host session that ends with exit 0 and no result line is a FAILED step (never a pass)" "1 1" "$SRC $(sline '::error::the host did not report B30_RUNNER_RESULT=SET_VERIFIED (ssh exit 0)')"
+echo raw_line > "$T/ssh.mode"; run_step b30_recovery_set 2026-11-17T12:00Z 2026-11-17T13:00Z
+tv "F5 a host line outside the allow-list: step FAILS and prints nothing of the host output" "1 0 0" "$SRC $(printf '%s\n' "$SOUT" | grep -c 'private') $(sline 'B30_RUNNER_RESULT=SET_VERIFIED')"
+echo no_host > "$T/ssh.mode"; run_step b30_recovery_check "" ""
+tv "F6 no host session at all (ssh exit 255): step FAILS" "1" "$SRC"
+: > "$T/ssh.mode"; run_step b30_recovery_copy "" ""; tv "F7 unknown mode refused before any session" "1 0" "$SRC $([ -e "$T/rt/b30-stream.sh" ] && echo 1 || echo 0)"
+tv "F8 fixture volume unchanged" "$VOL0" "$(voldigest)"
+
+echo "== RESULT pass=$pass fail=$fail (stub suite; real Docker client / compose exec / PostgreSQL: b30-runner.integration.test.sh; hosted dispatch NOT verified)"
 [ "$fail" = 0 ]
