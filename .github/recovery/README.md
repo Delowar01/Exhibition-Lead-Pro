@@ -71,9 +71,11 @@ That run (the first set-mode session on the host) ended without a result line an
 independent of each other, both invisible in check mode and under the first test stub:
 1. **Standard input.** The host bootstrap is read by `bash -s` from the SSH session. `docker compose exec` keeps standard
    input attached (also with `-T`); the dump call of the repository's backup script therefore read the rest of the
-   bootstrap, and the shell ended with exit 0 before its summary and result logic. Corrected in the bootstrap (both
-   toolkit invocations start with `</dev/null`) and in `b30-backup-set.sh` (it detaches its own standard input). The
-   repository's backup script is unchanged.
+   bootstrap, and the shell ended with exit 0 before its summary and result logic. Corrected in three layers: the
+   bootstrap's body is one function that the shell has parsed completely before its single call (with `</dev/null`)
+   runs — the construction `.github/scripts/verify-hosted-backup.sh` on the default branch already uses; with it a
+   stream that arrives incomplete runs nothing. Both toolkit invocations start with `</dev/null`. `b30-backup-set.sh`
+   detaches its own standard input. The repository's backup script is unchanged.
 2. **Query output.** `pgq` ran psql with two `-c` statements without `-q`; psql printed the command tag of the first
    (`SET`) before the answer, so the fingerprint and the inventory were refused by their shape checks. Corrected with
    `-q`; the read-only transaction, `ON_ERROR_STOP` and the shape checks are unchanged.
