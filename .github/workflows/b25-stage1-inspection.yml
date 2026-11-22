@@ -83,7 +83,7 @@ env:
   B30_WORKFLOW_PATH: .github/workflows/b25-stage1-inspection.yml
   # pins: the runner library, the host bootstrap and the toolkit's SHA256SUMS (which in turn pins the five toolkit files)
   B30_LIB_SHA256: d8a2cfeb4c78bec09266ae1005f5813b4446fefb013d35f925de8d1ad4a00127
-  B30_BOOTSTRAP_SHA256: cbea648182606ab903b45dcbe1abb7b25634448414f9c14e6d46530123a46293
+  B30_BOOTSTRAP_SHA256: b0fc1e3d6919cbaf35f837909401c47bef0058aa82268f241fe82dadc3a7545f
   B30_SUMS_SHA256: 67e04a7e4c4de82f9e3ce8de57034e8674db9f7f456019612212b8d25feb392c
 
 jobs:

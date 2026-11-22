@@ -292,6 +292,8 @@ tv "D18 stub docker never asked to write the live volume (no rw mount)" 0 "$(gre
 echo "-- D19 the two corrections after the set run of 2026-11-22 are in place (statics)"
 BOOT="$REC/b30-host-bootstrap.sh"; SETSH="$KIT/b30-backup-set.sh"
 tv "D19 the bootstrap starts the toolkit twice, both times with standard input detached" "2 2" "$(grep -cE 'bash \./b30-backup-set\.sh \)' "$BOOT") $(grep -cE 'bash \./b30-backup-set\.sh \) </dev/null >>"\$RAW" 2>&1; (check|set)_rc=\$\?$' "$BOOT")"
+d19_wrapper() { [ "$(grep -c '^b30_bootstrap() {$' "$BOOT")" = 1 ] && [ "$(grep -c '^b30_bootstrap </dev/null; exit 2$' "$BOOT")" = 1 ] && [ "$(grep -c 'b30_bootstrap </dev/null' "$BOOT")" = 1 ] && [ "$(grep -v '^[[:space:]]*$' "$BOOT" | tail -1)" = 'b30_bootstrap </dev/null; exit 2' ] && [ "$(awk '/^b30_bootstrap\(\) \{$/{f=1} !f && !/^#/ && !/^[[:space:]]*$/ && !/^set -uo pipefail$/ && !/^umask 077$/' "$BOOT" | wc -l | tr -d ' ')" = 0 ]; }
+t "D19 the bootstrap body is one function, called once on the last line with standard input detached and followed by exit; nothing but set/umask runs before it is complete" d19_wrapper
 d19_exec_first() { local a b; a="$(grep -n '^exec </dev/null$' "$SETSH" | head -1 | cut -d: -f1)"; b="$(grep -n '^log "B30 recovery backup set — preconditions"$' "$SETSH" | head -1 | cut -d: -f1)"; [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ] && [ "$(grep -c '^exec </dev/null$' "$SETSH")" = 1 ]; }
 t "D19 the set script detaches its own standard input once, before its first command" d19_exec_first
 d19_pgq() { local l; l="$(grep -E '^pgq\(\) ' "$SETSH")"; [ "$(printf '%s\n' "$l" | grep -c .)" = 1 ] && [[ "$l" == *'exec psql -X -q -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "set default_transaction_read_only = on" -c "$1"'* ]]; }
@@ -352,8 +354,28 @@ if git -C "$ROOT" cat-file -e "$OLD:.github/recovery/b30-host-bootstrap.sh" 2>/d
   unset BOOT_OVERRIDE PAYLOAD_OVERRIDE PIN_OVERRIDE TRANSPORT
 else echo "note - commit $OLD not available in this checkout: negative control skipped"; fi
 
-echo "-- D24 no mutation of the fixture volume by D19–D23"
-tv "D24 volume digest unchanged" "$VOL0" "$(voldigest)"
+echo "-- D24 a stream that arrives incomplete runs nothing (no partial session)"
+ns0="$(ls -d "$BK"/recovery-sets/b30-2* | wc -l | tr -d ' ')"; nd0="$(ls "$BK"/leadcapture-*.sql.gz | wc -l | tr -d ' ')"; nl0="$(ls "$LOGS" | wc -l | tr -d ' ')"
+run_cut() { # <bytes kept after the start of the bootstrap text> <transport> → RC, host.out; the stream of a set-mode session, cut short
+  local keep="$1" tr="$2" pre
+  { printf 'MODE=%q\n' b30_recovery_set; printf 'B30_PRODUCT_SHA=%q\n' "$PRODUCT_SHA"; printf 'B30_SUMS_SHA256=%q\n' "$SUMS_SHA"; printf 'QUIET_START=%q\n' 2026-11-19T12:00Z; printf 'QUIET_END=%q\n' 2026-11-19T13:00Z; printf 'DEPLOY_PATH=%q\n' "$APP"; printf 'B30_PAYLOAD_B64=%q\n' "$PAYLOAD"; } > "$T/pre.sh"
+  pre="$(wc -c < "$T/pre.sh" | tr -d ' ')"; cat "$T/pre.sh" "$REC/b30-host-bootstrap.sh" | head -c "$((pre + keep))" > "$T/stream.sh"; : > "$T/stub.log"
+  local -a hostenv=(env -i PATH="$STUB:$PATH" HOME="$HM" BACKUP_DIR="$BK" STATE_DIR="$ST" TMPDIR="$HT" B31_STUB_LOG="$T/stub.log" B31_FAKE_VOLUME="$VOL" B31_FAKE_DUMP_SQL="$DUMP" B31_FP="30c4ecbd867cd2cd59abcb58581ecb04" B31_INV="$INV" B31_PRODUCT_SHA="$PRODUCT_SHA")
+  if [ "$tr" = pipe ]; then cat "$T/stream.sh" | "${hostenv[@]}" bash -s > "$T/host.out" 2>"$T/host.err"; RC="${PIPESTATUS[1]}"; else "${hostenv[@]}" bash -s < "$T/stream.sh" > "$T/host.out" 2>"$T/host.err"; RC=$?; fi
+}
+BSZ="$(wc -c < "$REC/b30-host-bootstrap.sh" | tr -d ' ')"
+# cut points: in the middle of the file; right after the line that starts the set run (where the session of 2026-11-22
+# lost its stream); just before the single call on the last line (the function complete, never called)
+CUT_SET="$(grep -b -n 'bash ./b30-backup-set.sh ) </dev/null >>"$RAW" 2>&1; set_rc=' "$REC/b30-host-bootstrap.sh" | head -1 | cut -d: -f2)"; CUT_SET=$((CUT_SET + 150))
+CUT_CALL="$(grep -b -n '^b30_bootstrap </dev/null; exit 2$' "$REC/b30-host-bootstrap.sh" | head -1 | cut -d: -f2)"
+for cut in "$((BSZ / 2))" "$CUT_SET" "$CUT_CALL"; do for tr in file pipe; do
+  run_cut "$cut" "$tr"
+  tv "D24 cut at byte $cut of $BSZ ($tr): no output (so no result line: a failed run), no client call, no set, no dump, no log, no temp dir" "0 0 $ns0 $nd0 $nl0 0" "$(wc -c < "$T/host.out" | tr -d ' ') $(wc -l < "$T/stub.log" | tr -d ' ') $(ls -d "$BK"/recovery-sets/b30-2* | wc -l | tr -d ' ') $(ls "$BK"/leadcapture-*.sql.gz | wc -l | tr -d ' ') $(ls "$LOGS" | wc -l | tr -d ' ') $(hosttmp)"
+done; done
+nextsec; run_cut "$BSZ" pipe; tv "D24 control: the same stream complete runs a normal session" "1 SET_VERIFIED" "$(nresult) $(grep '^B30_RUNNER_RESULT=' "$T/host.out" | cut -d= -f2)"
+
+echo "-- D25 no mutation of the fixture volume by D19–D24"
+tv "D25 volume digest unchanged" "$VOL0" "$(voldigest)"
 
 echo "== E. registry / shared-id guard — the REAL workflow step under a recording gh stub (GET only; no network)"
 RS="$T/registry.sh"

@@ -11,13 +11,18 @@
 #                             removed at exit, and the 600 evidence log);
 #        b30_recovery_set   = CHECK_ONLY once, then b30-backup-set.sh exactly once (KEEP=1000,
 #                             B30_EXPECTED_UNREGISTERED=4), one set per approved window, no retry.
-# STANDARD INPUT: this file is read by `bash -s` from the SSH session's standard input, one command at a time. A child
-# that inherits that stream and reads it (docker compose exec keeps standard input attached, also with -T) takes the
-# rest of this file: the shell then ends with exit 0 and no result line. Every toolkit invocation below is therefore
-# started with </dev/null; the toolkit script detaches its own standard input as well. Nothing else here reads it.
+# STANDARD INPUT: this file is read by `bash -s` from the SSH session's standard input. Read one command at a time, a
+# child that inherits that stream and reads it (docker compose exec keeps standard input attached, also with -T) takes
+# the rest of this file: the shell then ends with exit 0 and no result line. Therefore (1) the whole body is one
+# function, b30_bootstrap, which the shell has parsed completely before its single call on the last line runs — the
+# same construction as .github/scripts/verify-hosted-backup.sh on the default branch (export-ready) — and that call gets
+# </dev/null, so nothing started here can read the stream, and a stream that arrives incomplete runs nothing at all;
+# (2) every toolkit invocation is started with </dev/null explicitly; (3) the toolkit script detaches its own standard
+# input as well.
 # =============================================================================
 set -uo pipefail
 umask 077
+b30_bootstrap() {
 BACKUP_DIR="${BACKUP_DIR:-/opt/lead-capture-pro/backups/postgres}"   # default identical to the repository's backup script
 if [ -n "${DEPLOY_PATH:-}" ]; then export DEPLOY_PATH; else unset DEPLOY_PATH; fi
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
@@ -151,3 +156,8 @@ if grep -q 'INCOMPLETE SET left for review' "$RAW"; then out "B30_SET_MARKER=INC
 if [ "$set_rc" = 0 ] && grep -qE 'RECOVERY SET VERIFIED: b30-' "$RAW"; then out "B30_SET_MARKER=VERIFIED"; finish SET_VERIFIED; fi
 if grep -q 'RECOVERY SET NOT VERIFIED' "$RAW"; then out "B30_SET_MARKER=NOT_VERIFIED"; out "B30_FAILURE_CLASS=$(classify_error "$RAW")"; finish SET_NOT_VERIFIED; fi
 out "B30_SET_MARKER=none"; out "B30_FAILURE_CLASS=$(classify_error "$RAW")"; finish SET_FAILED
+}
+# Nothing of the body has run yet (only set, umask and the streamed assignments have): the function is complete only
+# once the shell has read up to here. Every path through it ends in finish (exit); the exit after the call is never
+# reached today and keeps it that way by construction — the shell can never go on to read the stream as commands.
+b30_bootstrap </dev/null; exit 2
