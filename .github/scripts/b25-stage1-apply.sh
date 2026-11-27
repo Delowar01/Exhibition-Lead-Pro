@@ -2471,6 +2471,116 @@ stage2a_init_facts() {
   echo "leak_bucket_ref=$(printf '%s\n' "$body" | grep -c -F 'gs://' || true)"
   echo "leak_signature=$(printf '%s\n' "$body" | grep -c -F 'X-Goog-Signature' || true)"
 }
+# ---- B25 deploy verifier only — the CURRENT api process (condition 9) ---------------------------------------------
+# stage2a_init_facts (shared by the Stage 2A modes, unchanged) counts the "Object storage initialized" records of the
+# WHOLE container log, which holds one record per start of the container (restart policy unless-stopped, a host or
+# daemon restart): the hosted post-deploy run 45957051472 saw init_records_current=2 with zero failures. The product
+# logs that record once per process (storage/registry.ts initStorage, called once from src/index.ts) and the
+# entrypoint execs the server as PID 1, so a second record means a second container start — which this reader PROVES
+# at run time instead of assuming. Read-only throughout:
+#   - docker inspect: State.StartedAt (RFC3339, never empty / zero / malformed), Running, Pid > 0; RestartCount, the
+#     log driver and whether a rotation size is configured are printed as facts only;
+#   - inside the api container: /proc/1/cmdline is exactly the node server the entrypoint execs;
+#   - the log is read ONCE with docker's own per-line timestamps, its exit status checked (never masked); every line
+#     must carry a timestamp, in non-decreasing order; current run = lines at or after StartedAt - 2 s (docker records
+#     StartedAt after the task has started, so the entrypoint's first lines may carry an earlier timestamp; the margin
+#     can only pull earlier lines INTO the current run, where a second banner or init record fails), history = the rest;
+#   - the WHOLE log must begin with the entrypoint banner (the container's first start is still in the log: nothing was
+#     rotated or truncated away, so the historical checks below see the complete history) and no message may carry an
+#     embedded docker timestamp (json-file splits a line longer than 16 KiB into parts that each get their own prefix:
+#     the joined text would hide what the whole-log checks look for);
+#   - the current run holds the entrypoint banner exactly once, BEFORE exactly ONE init record, whose pino time lies
+#     between StartedAt and that line's docker timestamp (+1 s): docker and application clocks must agree;
+#   - init_* / banner_* come from the current run only; every historical check (initialization failures, refusals,
+#     mirror / integrity failures, the Correction 8 classification, the leak counts) stays over the WHOLE log.
+STAGE2A_DEPLOY_LOG_AWK=$(cat <<'AWK'
+function frac9(ts,   f) { f = ""; if (substr(ts, 20, 1) == ".") { f = substr(ts, 21); sub(/Z$/, "", f) }; return substr(f "000000000", 1, 9) }
+function norm(ts) { return substr(ts, 1, 19) "." frac9(ts) }
+function valid(ts,   f) {
+  if (ts !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z$/) return 0
+  if (substr(ts, 1, 5) == "0001-") return 0
+  f = ""; if (substr(ts, 20, 1) == ".") { f = substr(ts, 21); sub(/Z$/, "", f) }
+  return length(f) <= 9
+}
+function ms_of(ts,   y, mo, d, yy, era, yoe, doy, doe) {
+  y = substr(ts, 1, 4) + 0; mo = substr(ts, 6, 2) + 0; d = substr(ts, 9, 2) + 0
+  yy = (mo <= 2) ? y - 1 : y; era = int(yy / 400); yoe = yy - era * 400
+  doy = int((153 * (mo > 2 ? mo - 3 : mo + 9) + 2) / 5) + d - 1
+  doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+  return ((era * 146097 + doe - 719468) * 86400 + substr(ts, 12, 2) * 3600 + substr(ts, 15, 2) * 60 + substr(ts, 18, 2)) * 1000 + (substr(frac9(ts), 1, 3) + 0)
+}
+BEGIN { BANNER = "[entrypoint] Card Scanner Pro API"; INIT = "\"msg\":\"Object storage initialized\""; sok = valid(started); sn = sok ? norm(started) : ""; sb = sok ? ms_of(started) - 2000 : 0; last = "" }
+{
+  sp = index($0, " "); ts = (sp > 1) ? substr($0, 1, sp - 1) : ""
+  if (ts == "" || !valid(ts)) { untimestamped++; if (mode == "all") print $0; next }
+  msg = substr($0, sp + 1); n = norm(ts); lines++
+  if (lines == 1) first = msg
+  if (msg ~ /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]Z /) embedded++
+  if (last != "" && n < last) nonmono++
+  last = n
+  if (mode == "all") { print msg; next }
+  cur = (sok && ms_of(ts) >= sb)
+  if (mode == "run") { if (cur) print msg; next }
+  if (cur) { run++; if (n < sn) early++; if (msg == BANNER) { rb++; bl = NR; bts = n }; if (index(msg, INIT)) { ri++; il = NR; its = ts; imsg = msg } }
+  else { hist++; if (msg == BANNER) hb++; if (index(msg, INIT)) hi++ }
+}
+END {
+  if (mode != "facts") exit
+  tok = 0
+  if (sok && ri == 1 && match(imsg, /"time":[0-9]+/)) { pt = substr(imsg, RSTART + 7, RLENGTH - 7) + 0; tok = (pt >= ms_of(started) && pt <= ms_of(its) + 1000) }
+  printf "proc_started_at_ok=%s\ndlog_lines=%d\ndlog_untimestamped=%d\ndlog_nonmonotonic=%d\nrun_lines=%d\nhistory_lines=%d\n", (sok ? "true" : "false"), lines, untimestamped, nonmono, run, hist
+  printf "run_lines_before_start=%d\nrun_banner_count=%d\nhistory_banner_count=%d\ninit_records_current=%d\ninit_records_history=%d\n", early, rb, hb, ri, hi
+  printf "dlog_first_is_banner=%s\ndlog_embedded_timestamps=%d\n", ((lines > 0 && first == BANNER) ? "true" : "false"), embedded
+  printf "run_banner_before_init=%s\nrun_init_time_ok=%s\n", ((rb == 1 && ri == 1 && bl < il && bts <= norm(its)) ? "true" : "false"), (tok ? "true" : "false")
+}
+AWK
+)
+STAGE2A_PID1_JS='const fs = require("node:fs"); let a; try { a = fs.readFileSync("/proc/1/cmdline", "latin1").split("\u0000"); } catch { console.log("unreadable"); process.exit(0); } if (a.length > 0 && a[a.length - 1] === "") a.pop(); console.log(a.length === 3 && a[0] === "node" && a[1] === "--enable-source-maps" && a[2] === "/app/dist/index.mjs" ? "true" : "false");'
+stage2a_deploy_init_facts() {   # <api container id> → the current-process boundary + current-run init / banner facts + the whole-log counts
+  local cid="$1" insp="" st="" running="" pid="" meta="" raw="" all="" run="" rec="" p1
+  if [ -n "$cid" ] && insp="$(docker inspect -f '{{.State.StartedAt}}|{{.State.Running}}|{{.State.Pid}}' "$cid" 2>/dev/null)"; then echo "proc_inspect_ok=true"; else echo "proc_inspect_ok=false"; insp="||"; fi
+  IFS='|' read -r st running pid <<<"$insp"
+  echo "proc_running=$([ "$running" = true ] && echo true || echo false)"
+  echo "proc_pid_ok=$([[ "$pid" =~ ^[1-9][0-9]*$ ]] && echo true || echo false)"
+  meta="$(docker inspect -f '{{.RestartCount}}|{{.HostConfig.LogConfig.Type}}|{{index .HostConfig.LogConfig.Config "max-size"}}' "$cid" 2>/dev/null || echo "||")"
+  echo "proc_restart_count=$(printf '%s' "${meta%%|*}" | grep -xE '[0-9]+' || echo unavailable)"
+  meta="${meta#*|}"; echo "proc_log_driver=$(printf '%s' "${meta%%|*}" | grep -xE '[a-z0-9_-]+' || echo unavailable)"
+  meta="${meta#*|}"; echo "proc_log_rotation=$([ -n "$meta" ] && [ "$meta" != "<no value>" ] && echo true || echo false)"
+  p1="$(compose exec -T api node -e "$STAGE2A_PID1_JS" 2>/dev/null || echo unavailable)"
+  echo "proc_pid1_is_server=$([ "$p1" = true ] && echo true || echo false)"
+  if [ -n "$cid" ] && raw="$(docker logs --timestamps "$cid" 2>&1)" && [ -n "$raw" ]; then echo "dlog_read_ok=true"; else echo "dlog_read_ok=false"; raw=""; fi
+  printf '%s' "$raw" | awk -v mode=facts -v started="$st" "$STAGE2A_DEPLOY_LOG_AWK"
+  all="$(printf '%s' "$raw" | awk -v mode=all -v started="$st" "$STAGE2A_DEPLOY_LOG_AWK")"
+  run="$(printf '%s' "$raw" | awk -v mode=run -v started="$st" "$STAGE2A_DEPLOY_LOG_AWK")"
+  echo "init_records_container=$(printf '%s\n' "$all" | grep -c '"msg":"Object storage initialized"' || true)"
+  rec="$(printf '%s\n' "$run" | grep '"msg":"Object storage initialized"' | tail -1 || true)"
+  if [ -n "$rec" ]; then echo "init_record_found=true"; else echo "init_record_found=false"; fi
+  echo "init_driver=$(printf '%s' "$rec" | sed -nE 's/.*"driver":"([a-z]+)".*/\1/p')"
+  echo "init_fallback=$(printf '%s' "$rec" | sed -nE 's/.*"legacyFallback":(true|false).*/\1/p')"
+  echo "init_mirror=$(printf '%s' "$rec" | sed -nE 's/.*"mirror":(true|false).*/\1/p')"
+  echo "init_legacy_delete=$(printf '%s' "$rec" | sed -nE 's/.*"legacyDelete":(true|false).*/\1/p')"
+  echo "init_encryption=$(printf '%s' "$rec" | sed -nE 's/.*"encryption":"([a-z/-]+)".*/\1/p')"
+  # the historical checks: over the WHOLE container log, exactly as stage2a_init_facts
+  echo "log_refusals=$(printf '%s\n' "$all" | grep -c 'Object storage initialization failed' || true)"
+  echo "log_init_failures=$(printf '%s\n' "$all" | grep -c 'Object storage initialization failed' || true)"
+  echo "log_mirror_failures=$(printf '%s\n' "$all" | grep -c 'strict mirror write failed' || true)"
+  echo "log_integrity_failures=$(printf '%s\n' "$all" | grep -c 'copy failed integrity verification' || true)"
+  echo "log_level50=$(printf '%s\n' "$all" | grep -c '"level":50' || true)"
+  stage2a_log_classify_facts "$all"
+  # the banner of the CURRENT run only
+  echo "banner_driver=$(printf '%s\n' "$run" | grep -oE '^\[entrypoint\]\s+OBJECT_STORAGE_DRIVER=[^ ]+' | tail -1 | sed -E 's/.*=//')"
+  echo "banner_root_set=$(printf '%s\n' "$run" | grep -E '^\[entrypoint\]\s+OBJECT_STORAGE_FS_ROOT=' | tail -1 | grep -q '=(set)' && echo true || echo false)"
+  echo "banner_root_not_set=$(printf '%s\n' "$run" | grep -E '^\[entrypoint\]\s+OBJECT_STORAGE_FS_ROOT=' | tail -1 | grep -q '=(not set)' && echo true || echo false)"
+  echo "banner_key_set=$(printf '%s\n' "$run" | grep -E '^\[entrypoint\]\s+OBJECT_STORAGE_ENCRYPTION_KEY=' | tail -1 | grep -q '=(set)' && echo true || echo false)"
+  echo "banner_fallback=$(printf '%s\n' "$run" | grep -oE '^\[entrypoint\]\s+OBJECT_STORAGE_LEGACY_FALLBACK=[a-z]+' | tail -1 | sed -E 's/.*=//')"
+  echo "banner_mirror=$(printf '%s\n' "$run" | grep -oE 'OBJECT_STORAGE_MIRROR=[a-z]+' | tail -1 | sed -E 's/.*=//')"
+  # the leak gate: over the WHOLE log, exactly as stage2a_init_facts
+  echo "leak_root_path=$(printf '%s\n' "$all" | grep -c -F -- "$STAGE2A_FS_ROOT" || true)"
+  echo "leak_key_shaped=$(printf '%s\n' "$all" | grep -cE '[^0-9a-f][0-9a-f]{64}([^0-9a-f]|$)' || true)"
+  echo "leak_key_assignment=$(printf '%s\n' "$all" | grep -E 'OBJECT_STORAGE_ENCRYPTION_KEY=' | grep -vcE 'OBJECT_STORAGE_ENCRYPTION_KEY=\((not )?set\)' || true)"
+  echo "leak_bucket_ref=$(printf '%s\n' "$all" | grep -c -F 'gs://' || true)"
+  echo "leak_signature=$(printf '%s\n' "$all" | grep -c -F 'X-Goog-Signature' || true)"
+}
 stage2a_web_leak_facts() {
   local wb; wb="$(docker logs "$WEB_CID" 2>&1 || true)"
   echo "web_leak_root_path=$(printf '%s\n' "$wb" | grep -c -F -- "$STAGE2A_FS_ROOT" || true)"
@@ -4392,12 +4502,12 @@ stage2a_deploy_run() {   # <pre|post>
   section "1. host / deployment / containers / readiness (the $FORM form expects product $([ "$FORM" = pre ] && echo "$S2A_DEPLOY_PREV_SHA" || echo "$S2A_DEPLOY_NEXT_SHA"))"
   facts+="$(stage2a_host_facts)"$'\n'; facts+="$(stage2a_container_facts "$cid")"$'\n'; facts+="$(stage2a_readyz_facts)"$'\n'
   printf '%s\n' "$facts" | grep -E '^(head_sha|current_deploy_sha|previous_deploy_sha|dirty|lock_absent|schema_fingerprint|storage_jobs_active|dead_jobs_total|api_running|api_health|web_health|pg_health|readyz_status|readyz_database|readyz_storage|readyz_inside|env_mode|key_line_count|env_core_identity_ok)=' | sed 's/^/  /'
-  section "2. storage runtime configuration (startup record, banner, container environment, the api log classification; values never printed)"
-  facts+="$(stage2a_init_facts "$cid")"$'\n'; facts+="$(stage2a_container_env_facts)"$'\n'; facts+="$(stage2a_web_leak_facts)"$'\n'
+  section "2. storage runtime configuration (the current api process: container start, PID 1, the timestamped log partitioned at the start; its startup record and banner; container environment; the whole-log classification; values never printed)"
+  facts+="$(stage2a_deploy_init_facts "$cid")"$'\n'; facts+="$(stage2a_container_env_facts)"$'\n'; facts+="$(stage2a_web_leak_facts)"$'\n'
   local mg; mg="$(stage2a_env_managed_of activate < "$ENV_FILE" | sha256sum | cut -c1-64)"
   facts+="env_file_managed_ok=$([ "$mg" = "$(stage2a_env_lines activate | sha256sum | cut -c1-64)" ] && echo true || echo false)"$'\n'
   facts+="env_file_key_lines=$(stage2a_key_lines)"$'\n'
-  printf '%s\n' "$facts" | grep -E '^(init_|banner_|env_|log_|leak_|web_leak_)' | sed 's/^/  /'
+  printf '%s\n' "$facts" | grep -E '^(proc_|dlog_|run_|history_|init_|banner_|env_|log_|leak_|web_leak_)' | sed 's/^/  /'
   section "3. the named volume"
   rf="$(stage2a_root_facts "$cid")"; facts+="$rf"$'\n'; facts+="root_entries_allowed=$(stage2a_root_entries_allowed "$rf")"$'\n'
   printf '%s\n' "$rf" | sed 's/^/  /'
