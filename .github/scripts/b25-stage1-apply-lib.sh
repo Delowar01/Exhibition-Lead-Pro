@@ -1500,16 +1500,23 @@ stage2a_tenant_post_eval() {   # [strict (default: the smoke's own post gate) | 
   echo "B25_STAGE2A_TENANT_POST_GATE=FAIL"; return 1
 }
 
-# ---- B25 MOBILE R1/R2 DEPLOYMENT — read-only storage regression across the product deployment ---------------------
+# ---- B25 PRODUCT DEPLOYMENT VERIFIER — read-only storage regression across one reviewed product deployment ----------
 # The Stage 2A verifiers stay pinned to the Stage 2A product commit (STAGE2A_PRODUCT_SHA); this separate, read-only pair
-# proves that the ordinary product deployment of the approved mobile head leaves the protected storage inventory
-# untouched: a FRESH pre-deploy snapshot (the live state must equal the locked baseline below, product = the previous
-# commit) and the post-deploy verification (the live state must still equal the same baseline, product = the next commit,
-# runtime healthy, a fresh api process with no error-level record). Constants only — never an input, never a record
-# handed across runs; a baseline that has legitimately moved makes the snapshot FAIL and is reviewed, never adopted.
-readonly S2A_DEPLOY_PREV_SHA="e559b0024b28d4a77becdcb10c4168004dddea75"
-readonly S2A_DEPLOY_NEXT_SHA="6a8dad1fe161dc1b31041794e5e3532e9f13327c"
-readonly S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT="30c4ecbd867cd2cd59abcb58581ecb04"
+# proves that one ordinary product deployment leaves the protected storage inventory untouched: a FRESH pre-deploy
+# snapshot (the live state must equal the locked baseline below, product = the previous commit) and the post-deploy
+# verification (the live state must still equal the same baseline, product = the next commit, runtime healthy, a fresh
+# api process with no error-level record). Constants only — never an input, never a record handed across runs; a
+# baseline that has legitimately moved makes the snapshot FAIL and is reviewed, never adopted.
+# The pinned deployment is ONE step of the reviewed release chain S2A_DEPLOY_CHAIN (fast-forward deployments of develop,
+# each element an ancestor of the next): its first element is the Stage 2A product commit and (PREV, NEXT) must be two
+# CONSECUTIVE elements, so every PREV is the anchor itself or the NEXT of the preceding step (the mobile R1/R2 step
+# e559b002 → 6a8dad1 was the first one pinned). Current pin: release wave 1, 6a8dad1 → d1e884b; the wave's schema step
+# (migration 0040) is applied by the operator kit BEFORE the deployment, so the pre-deploy snapshot already sees the
+# fingerprint below and the deployment itself must not change it.
+readonly S2A_DEPLOY_CHAIN="e559b0024b28d4a77becdcb10c4168004dddea75 6a8dad1fe161dc1b31041794e5e3532e9f13327c d1e884b8253fca2ad4c70794a4d0d68c3f8a762b 740f581b6a2e1aee5960d04899cd4565f5271f9a cd08c733ee0d1bd329eea59e96707fae42723b83"
+readonly S2A_DEPLOY_PREV_SHA="6a8dad1fe161dc1b31041794e5e3532e9f13327c"
+readonly S2A_DEPLOY_NEXT_SHA="d1e884b8253fca2ad4c70794a4d0d68c3f8a762b"
+readonly S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT="c36a8a2d9c7e502a2ce31ff5f3f412d9"
 # the protected live inventory of the real tenant as recorded unchanged by every hosted read-only inspection since
 # 2026-10-22 and re-proven on 2026-10-23 by the settlement 39905207903, the readiness 39905481382, the smoke 39905712331
 # (before / during / after) and the post-switch verification 39906211918
@@ -1520,9 +1527,24 @@ readonly S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5="5c4f378ee12117ad6d40d02457d8cf1a"
 readonly S2A_DEPLOY_BASE_PF_CIPHER_MD5="c5f0796fffede47b7900def36ca59bd3"
 readonly S2A_DEPLOY_BASE_PM_GENERATIONS_MD5="2e554409f57e27a4874a840175146407"
 readonly S2A_DEPLOY_BASE_CENSUS_MD5="b7c8dd371c7d7e076f05ae8f69fc44e2"
+# s2a_deploy_chain_step_ok <chain> <prev> <next> — 0 only when the chain is canonical (single spaces, nothing else), has at
+# least two elements, every element is a 40-hex commit id, no element repeats, the FIRST element is the Stage 2A product
+# commit, and (prev, next) are two CONSECUTIVE elements of it in that order.
+s2a_deploy_chain_step_ok() {
+  local IFS=' ' i j; local -a c=()
+  read -r -a c <<<"${1:-}"
+  [ "${#c[@]}" -ge 2 ] && [ "${c[*]}" = "${1:-}" ] || return 1
+  [ "${c[0]}" = "$STAGE2A_PRODUCT_SHA" ] || return 1
+  for ((i = 0; i < ${#c[@]}; i++)); do
+    [[ "${c[i]}" =~ ^[0-9a-f]{40}$ ]] || return 1
+    for ((j = 0; j < i; j++)); do [ "${c[j]}" != "${c[i]}" ] || return 1; done
+  done
+  for ((i = 1; i < ${#c[@]}; i++)); do [ "${c[i-1]}" = "${2:-}" ] && [ "${c[i]}" = "${3:-}" ] && return 0; done
+  return 1
+}
 s2a_deploy_constants_ok() {
   [[ "$S2A_DEPLOY_PREV_SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$S2A_DEPLOY_NEXT_SHA" =~ ^[0-9a-f]{40}$ ]] && [ "$S2A_DEPLOY_PREV_SHA" != "$S2A_DEPLOY_NEXT_SHA" ] \
-    && [ "$S2A_DEPLOY_PREV_SHA" = "$STAGE2A_PRODUCT_SHA" ] && [[ "$S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT" =~ ^[0-9a-f]{32}$ ]] \
+    && s2a_deploy_chain_step_ok "$S2A_DEPLOY_CHAIN" "$S2A_DEPLOY_PREV_SHA" "$S2A_DEPLOY_NEXT_SHA" && [[ "$S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT" =~ ^[0-9a-f]{32}$ ]] \
     && [[ "$S2A_DEPLOY_BASE_PROTECTED_ROWS" =~ ^[1-9][0-9]*$ ]] && [[ "$S2A_DEPLOY_BASE_PROTECTED_BYTES" =~ ^[1-9][0-9]*$ ]] \
     && [[ "$S2A_DEPLOY_BASE_PROTECTED_MD5$S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5$S2A_DEPLOY_BASE_PF_CIPHER_MD5$S2A_DEPLOY_BASE_PM_GENERATIONS_MD5$S2A_DEPLOY_BASE_CENSUS_MD5" =~ ^[0-9a-f]{160}$ ]]
 }
@@ -1563,7 +1585,7 @@ stage2a_deploy_eligibility() {
   ok=1; is_true env_file_managed_ok && is_eq env_file_key_lines 1 && is_eq env_mode 600 && is_true env_core_identity_ok && ok=0
   cond "VPS env file: managed lines = the fixed activation set, exactly one key line, mode 600, core identity unchanged" $ok "managed_ok=$(g env_file_managed_ok) key_lines=$(g env_file_key_lines) mode=$(g env_mode) core_identity_ok=$(g env_core_identity_ok)"
   ok=1; is_eq schema_fingerprint "$S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT" && ok=0
-  cond "schema fingerprint unchanged by the deployment ($S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT: the mobile release carries no schema change)" $ok "fingerprint=$(g schema_fingerprint)"
+  cond "schema fingerprint unchanged by the deployment ($S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT: release wave 1 — migration 0040 is applied by the operator kit before the deployment; the deployment itself carries no schema change)" $ok "fingerprint=$(g schema_fingerprint)"
   ok=1; is_zero log_mirror_failures && is_zero log_integrity_failures && is_zero log_init_failures && is_eq init_records_current 1 && is_zero log_refusals && ok=0
   [ "$ok" = 0 ] && ! { is_true proc_inspect_ok && is_true proc_started_at_ok && is_true proc_running && is_true proc_pid_ok && is_true proc_pid1_is_server && is_true dlog_read_ok && is_true dlog_first_is_banner && is_zero dlog_embedded_timestamps && is_zero dlog_untimestamped && is_zero dlog_nonmonotonic && is_eq run_banner_count 1 && is_true run_banner_before_init && is_true run_init_time_ok; } && ok=1
   cond "the CURRENT api process (container start from docker inspect, running, PID 1 = the node server; the log read once with docker timestamps, beginning with the entrypoint banner (nothing rotated away), every line timestamped and ordered, no line split; the current run = lines at or after the start minus 2 s: the entrypoint banner exactly once and before its init record, docker and application clocks agreeing) initialized storage exactly once; over the WHOLE container log mirror failures = 0, integrity failures = 0, initialization failures = 0 and no refusal to start" $ok "inspect=$(g proc_inspect_ok) started_at_ok=$(g proc_started_at_ok) running=$(g proc_running) pid_ok=$(g proc_pid_ok) pid1_server=$(g proc_pid1_is_server) restarts=$(g proc_restart_count) log_driver=$(g proc_log_driver) log_rotation=$(g proc_log_rotation) log_read_ok=$(g dlog_read_ok) first_is_banner=$(g dlog_first_is_banner) embedded_timestamps=$(g dlog_embedded_timestamps) lines=$(g dlog_lines) untimestamped=$(g dlog_untimestamped) nonmonotonic=$(g dlog_nonmonotonic) run_lines=$(g run_lines) run_lines_before_start=$(g run_lines_before_start) history_lines=$(g history_lines) run_banner=$(g run_banner_count) banner_before_init=$(g run_banner_before_init) init_time_ok=$(g run_init_time_ok) init_records=$(g init_records_current) init_records_history=$(g init_records_history) init_records_container=$(g init_records_container) mirror_failures=$(g log_mirror_failures) integrity_failures=$(g log_integrity_failures) init_failures=$(g log_init_failures) refusals=$(g log_refusals)"

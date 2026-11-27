@@ -4483,8 +4483,9 @@ phase_stage2a_tenant_drift() {
 }
 
 # =============================================================================================================
-# B25 MOBILE R1/R2 DEPLOYMENT — read-only storage regression across the product deployment (library evaluator
-# stage2a_deploy_eligibility; constants S2A_DEPLOY_*). Two READ-ONLY phases, no argument, nothing written:
+# B25 PRODUCT DEPLOYMENT VERIFIER — read-only storage regression across one reviewed product deployment, currently
+# release wave 1 (6a8dad1 → d1e884b; one consecutive step of the library's release chain S2A_DEPLOY_CHAIN; library
+# evaluator stage2a_deploy_eligibility; constants S2A_DEPLOY_*). Two READ-ONLY phases, no argument, nothing written:
 #   stage2a-predeploy-snapshot  (product must still be the previous commit; the live state must equal the locked baseline)
 #   stage2a-postdeploy-verify   (product must be the next commit; the same baseline; a fresh api process; no error record)
 # =============================================================================================================
